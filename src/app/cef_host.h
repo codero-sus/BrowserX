@@ -46,6 +46,13 @@ class BrowserShell {
   virtual void OnContextInitialized() = 0;
   /// Called on the UI thread when the message loop is about to end.
   virtual void OnShuttingDown() = 0;
+  /// Current session state as JSON, for the internal browserx:// pages.
+  /// Empty when no window exists yet; the pages then say so.
+  virtual std::string SessionJson() const { return std::string(); }
+  /// Applies a mode chosen outside the app layer (an internal page requesting
+  /// browserx://modes?set=..., the command palette). The shell owns the live
+  /// policy, so it is the one that must do this.
+  virtual void ApplyMode(core::Mode mode) { (void)mode; }
 };
 
 namespace app {

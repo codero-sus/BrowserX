@@ -14,6 +14,7 @@
 #include "core/format.h"
 #include "core/log.h"
 #include "core/url_utils.h"
+#include "web/internal_scheme.h"
 
 namespace browserx {
 namespace app {
@@ -308,6 +309,12 @@ class BrowserXApp : public CefApp, public CefBrowserProcessHandler {
   // --- CefBrowserProcessHandler --------------------------------------------
   void OnContextInitialized() override {
     auto& host = browserx::app::Host();
+    // browserx:// must be servable before the first window loads it: the new-tab
+    // page is where an empty session starts, so a missing handler would mean a
+    // blank window on first run.
+    if (!browserx::web::RegisterInternalSchemeHandler(&host)) {
+      browserx::core::log::Warn("web", "browserx:// handler registration failed");
+    }
     browserx::BrowserShell* shell = host.shell();
     if (shell != nullptr) shell->OnContextInitialized();
   }
