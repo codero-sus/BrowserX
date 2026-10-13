@@ -1,0 +1,19 @@
+{
+  "//": "Pins the exact CEF binary distribution MyBrowser builds against. Generated/maintained by build/fetch_cef.py.",
+  "//usage": "make deps            -> download + verify + extract the pinned build",
+  "//usage2": "make deps-update     -> resolve the newest stable build and re-pin this file",
+  "//usage3": "make headers         -> download just the CEF headers (no binaries) for compile checks",
+  "pin_mode": "track-stable",
+  "platform_entry": "linux64",
+  "version": "",
+  "sha1": "",
+  "size_bytes": 0,
+  "cef_git_ref": "master",
+  "chromium_version": "",
+  "generated_at": "",
+  "notes": [
+    "version/sha1 are empty until `make deps-update` (or `make deps`) resolves and locks them.",
+    "Once locked, builds are byte-for-byte reproducible: the download is sha1-verified.",
+    "Set pin_mode to 'hard' to refuse automatic re-pinning."
+  ]
+}
