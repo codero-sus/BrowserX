@@ -5,7 +5,10 @@
 > **Scope:** full browser (tabs, omnibox, history, bookmarks, downloads, shield, panels), extensions/sync deferred to v2.
 > **Editions:** desktop (C++/CEF, this plan) and **mobile** (Android, same `src/core` over JNI) — see §10.
 >
-> Status: **in progress.** Stage 1-4 complete and green (`make check`, `make test` = 167 tests, `make bench`); stage 5 (internal pages/panels) next. Every claim below is tracked against what is committed.
+> Status: **in progress.** Stages 1-4 complete, stage 5 half done (internal pages
+> live, panels next), mobile edition source-complete. `make check` = 27 files,
+> `make test` = 178 tests, `make bench` = the resolved flag plan. Every claim below
+> is tracked against what is committed.
 
 ---
 
@@ -167,7 +170,11 @@ Everything above is user-visible and explainable in the Settings panel (each tog
 2. **Core (no CEF deps)**: catalog → mode engine → settings schema → system profile → url utils → blocklist → memory policy → auto-pilot → format/log, **with unit tests**.
 3. **App + browser core**: `main.cc`, `app`, windows/tabs, client + handlers, sessions (normal/incognito), shield.
 4. **Chromium UI**: tabstrip, toolbar, mode bar, status bar, find bar, context menus, command palette, theme.
-5. **Panels + internal pages**: settings, telemetry, game, downloads, history, bookmarks, shortcuts, about, new tab page.
+5. **Internal pages + panels**: `browserx://` scheme handler serving
+   newtab/modes/telemetry/settings/shortcuts/catalogue/session/about/find from live
+   state (done, `src/web/internal_pages.cc` + `internal_scheme.cc`, 11 tests); the
+   history/bookmark/download *stores* and their pages, plus the native panels
+   (game, downloads, find bar) are next.
 6. **Runtime engines**: memory guard, power manager, perf HUD, preconnect; `--smoke-test`; docs (README, ARCHITECTURE, MODES, FLAGS, SHORTCUTS, BUILD, TROUBLESHOOTING) + `make bench`.
 
 ---

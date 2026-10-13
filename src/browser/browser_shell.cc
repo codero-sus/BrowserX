@@ -100,6 +100,16 @@ void BrowserShellImpl::OnShuttingDown() {
 // ---------------------------------------------------------------------------
 // Session persistence
 // ---------------------------------------------------------------------------
+std::string BrowserShellImpl::SessionJson() const {
+  // Same document SaveSession() writes, so browserx://session shows exactly what
+  // the next launch would restore - not a pretty-printed approximation.
+  for (const CefRefPtr<BrowserWindow>& window : windows_) {
+    if (window.get() == nullptr) continue;
+    return window->session().ToJson();
+  }
+  return std::string();
+}
+
 void BrowserShellImpl::SaveSession() {
   const std::string path = host_->paths().session_file();
   std::ofstream out(path, std::ios::binary | std::ios::trunc);

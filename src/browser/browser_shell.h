@@ -39,6 +39,8 @@ class BrowserShellImpl : public BrowserShell {
   // --- BrowserShell --------------------------------------------------------
   void OnContextInitialized() override;
   void OnShuttingDown() override;
+  std::string SessionJson() const override;
+  void ApplyMode(core::Mode mode) override { SetMode(mode); }
 
   // --- window management ---------------------------------------------------
   void OpenWindow(const std::string& url);
