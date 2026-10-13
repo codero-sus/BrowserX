@@ -1,5 +1,5 @@
 # =============================================================================
-#  MyBrowser — Makefile
+#  BrowserX — Makefile
 #  An ULTRA-optimised Chromium (CEF) browser with GAME / HIGH-PERFORMANCE /
 #  LOW-RAM / ECO modes.
 #
@@ -40,8 +40,8 @@ SANITIZE       ?=
 RUN_ARGS       ?=
 
 # --- locate a real CEF binary distribution (preferred) -----------------------
-ifdef MYBROWSER_CEF_DIR
-CEF_ROOT       := $(MYBROWSER_CEF_DIR)
+ifdef BROWSERX_CEF_DIR
+CEF_ROOT       := $(BROWSERX_CEF_DIR)
 else
 CEF_ROOT       := $(lastword $(sort $(wildcard $(DEPS_DIR)/cef_binary_*)))
 endif
@@ -71,7 +71,7 @@ WARN           := -Wall -Wno-unused-parameter -Wno-missing-field-initializers \
 BASE_FLAGS     := $(CXX_STD) -fno-rtti -fno-exceptions -fno-threadsafe-statics \
                   -fPIC -fno-strict-aliasing -fstack-protector -funwind-tables \
                   -fvisibility=hidden -fvisibility-inlines-hidden -pipe -pthread
-DEFINES        := -D_FILE_OFFSET_BITS=64 -DUSING_CEF_SHARED -DMYBROWSER_VERSION=\"$(shell $(PYTHON) -c "import json;print(json.load(open('$(ROOT)/cef.lock.json')).get('version') or 'dev')" 2>/dev/null)\"
+DEFINES        := -D_FILE_OFFSET_BITS=64 -DUSING_CEF_SHARED -DBROWSERX_VERSION=\"$(shell $(PYTHON) -c "import json;print(json.load(open('$(ROOT)/cef.lock.json')).get('version') or 'dev')" 2>/dev/null)\"
 
 ifeq ($(SANITIZE),asan)
 SAN_FLAGS      := -fsanitize=address -fno-omit-frame-pointer -g -O1
@@ -120,10 +120,10 @@ TEST_OBJS      := $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(CORE_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_EXTRA_SRCS))
 
-BIN            := $(OUT_DIR)/MyBrowser
-TEST_BIN       := $(OUT_DIR)/mybrowser_tests
-BENCH_BIN      := $(OUT_DIR)/mybrowser-flagplan
-DOCTOR_BIN     := $(OUT_DIR)/mybrowser-doctor
+BIN            := $(OUT_DIR)/BrowserX
+TEST_BIN       := $(OUT_DIR)/browserx_tests
+BENCH_BIN      := $(OUT_DIR)/browserx-flagplan
+DOCTOR_BIN     := $(OUT_DIR)/browserx-doctor
 
 # -----------------------------------------------------------------------------
 # Help
@@ -131,19 +131,19 @@ DOCTOR_BIN     := $(OUT_DIR)/mybrowser-doctor
 .PHONY: help
 help:
 	@echo ""
-	@echo "  MyBrowser — build targets"
+	@echo "  BrowserX — build targets"
 	@echo "  ------------------------------------------------------------------"
 	@echo "  make deps            download + SHA-1 verify + extract pinned CEF"
 	@echo "  make deps-update     resolve newest stable CEF, re-pin, download"
 	@echo "  make deps-list       list recent CEF builds for this platform"
 	@echo "  make headers         fetch CEF headers only (for compile checks)"
-	@echo "  make build           build out/MyBrowser ($(BUILD_TYPE))"
+	@echo "  make build           build out/BrowserX ($(BUILD_TYPE))"
 	@echo "  make debug           build with -O0 -g"
 	@echo "  make check           compile-check every source file (strict)"
 	@echo "  make test            build + run unit tests (no CEF required)"
 	@echo "  make bench           print the resolved flag plan for all modes"
 	@echo "  make doctor          environment + capability report"
-	@echo "  make run             build and launch MyBrowser"
+	@echo "  make run             build and launch BrowserX"
 	@echo "  make run-nosandbox   launch without the Chromium sandbox (dev)"
 	@echo "  make smoke           run the headless smoke test (needs CEF)"
 	@echo "  make package         assemble a distributable in out/dist/"
@@ -314,17 +314,17 @@ doctor: $(DOCTOR_BIN)
 # -----------------------------------------------------------------------------
 .PHONY: run
 run: build stage
-	@echo "  → launching MyBrowser$(if $(RUN_ARGS), $(RUN_ARGS),)"
-	@cd $(OUT_DIR) && ./MyBrowser $(RUN_ARGS)
+	@echo "  → launching BrowserX$(if $(RUN_ARGS), $(RUN_ARGS),)"
+	@cd $(OUT_DIR) && ./BrowserX $(RUN_ARGS)
 
 .PHONY: run-nosandbox
 run-nosandbox: build stage
-	@echo "  → launching MyBrowser (sandbox disabled — dev only)"
-	@cd $(OUT_DIR) && ./MyBrowser --no-sandbox $(RUN_ARGS)
+	@echo "  → launching BrowserX (sandbox disabled — dev only)"
+	@cd $(OUT_DIR) && ./BrowserX --no-sandbox $(RUN_ARGS)
 
 .PHONY: smoke
 smoke: build stage
-	@cd $(OUT_DIR) && ./MyBrowser --smoke-test $(RUN_ARGS)
+	@cd $(OUT_DIR) && ./BrowserX --smoke-test $(RUN_ARGS)
 
 # Symlink the CEF runtime next to our binary so `$ORIGIN` rpath resolves and
 # Chromium finds icudtl.dat / *.pak / locales.

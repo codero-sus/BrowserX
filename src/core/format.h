@@ -1,15 +1,15 @@
-// MyBrowser — small string/number formatting helpers used across core, the
+// BrowserX — small string/number formatting helpers used across core, the
 // native UI and the tooling. Header-mostly, no dependencies, unit-tested.
 
-#ifndef MYBROWSER_CORE_FORMAT_H_
-#define MYBROWSER_CORE_FORMAT_H_
+#ifndef BROWSERX_CORE_FORMAT_H_
+#define BROWSERX_CORE_FORMAT_H_
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace fmt {
 
@@ -59,6 +59,6 @@ std::string Sparkline(const std::vector<double>& values, int buckets = 24);
 
 }  // namespace fmt
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_FORMAT_H_
+#endif  // BROWSERX_CORE_FORMAT_H_

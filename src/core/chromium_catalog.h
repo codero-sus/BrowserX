@@ -1,11 +1,11 @@
-// MyBrowser — verified Chromium command-line switch catalogue.
+// BrowserX — verified Chromium command-line switch catalogue.
 //
 // WHY THIS FILE EXISTS
 // -------------------
 // Most "optimised Chromium browser" projects ship long lists of switches copied
 // from blog posts. A large fraction of those switches were removed years ago, or
 // never existed, so they do nothing at all. This catalogue instead records, for
-// every switch MyBrowser can apply:
+// every switch BrowserX can apply:
 //
 //   * where the switch is *declared* in Chromium's source (file path), and
 //   * how it was verified, and
@@ -24,7 +24,7 @@
 // Entries are tagged:
 //   kVerified   literal found in Chromium source; safe to apply.
 //   kChromeOnly declared in chrome/ (the browser product, not the content
-//               layer). Under CEF these may be no-ops, so MyBrowser does not
+//               layer). Under CEF these may be no-ops, so BrowserX does not
 //               rely on them; provided for completeness/lab use.
 //   kLegacy     historically real; consumer could not be confirmed in current
 //               Chromium. Never applied unless the user opts into lab flags.
@@ -32,15 +32,15 @@
 //               default). Catalogued so the code and docs can never claim to
 //               "optimise" with a flag that does nothing.
 
-#ifndef MYBROWSER_CORE_CHROMIUM_CATALOG_H_
-#define MYBROWSER_CORE_CHROMIUM_CATALOG_H_
+#ifndef BROWSERX_CORE_CHROMIUM_CATALOG_H_
+#define BROWSERX_CORE_CHROMIUM_CATALOG_H_
 
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 /// Date of the verification sweep. Update when re-verifying against a newer
@@ -128,6 +128,6 @@ std::string RenderCatalogReport(bool include_removed = false);
 std::string SourceSearchUrl(std::string_view literal);
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_CHROMIUM_CATALOG_H_
+#endif  // BROWSERX_CORE_CHROMIUM_CATALOG_H_

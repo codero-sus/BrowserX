@@ -1,16 +1,16 @@
-// MyBrowser — single-instance guard.
+// BrowserX — single-instance guard.
 //
 // Chromium refuses to share a profile between two browser processes; without a
 // guard the second launch exits with a cryptic message. We take an advisory lock
 // on <profile>/instance.lock first and can then say something useful — and the
 // lock is released automatically by the OS if we crash.
 
-#ifndef MYBROWSER_APP_SINGLE_INSTANCE_H_
-#define MYBROWSER_APP_SINGLE_INSTANCE_H_
+#ifndef BROWSERX_APP_SINGLE_INSTANCE_H_
+#define BROWSERX_APP_SINGLE_INSTANCE_H_
 
 #include <string>
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 class InstanceLock {
@@ -39,6 +39,6 @@ class InstanceLock {
 };
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_SINGLE_INSTANCE_H_
+#endif  // BROWSERX_APP_SINGLE_INSTANCE_H_

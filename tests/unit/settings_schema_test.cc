@@ -2,7 +2,7 @@
 
 #include "test_harness.h"
 
-using namespace mybrowser::core;
+using namespace browserx::core;
 
 TEST(SettingsSchema, DefaultsAreValidAndComplete) {
   const Settings settings = Settings::Defaults();

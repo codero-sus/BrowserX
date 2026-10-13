@@ -1,4 +1,4 @@
-// MyBrowser — live telemetry: what this browser is costing you, right now.
+// BrowserX — live telemetry: what this browser is costing you, right now.
 //
 // Beyond the process counts CEF gives us, the sampler walks /proc to add up the
 // resident memory of the whole process tree (browser + GPU + every renderer +
@@ -9,8 +9,8 @@
 // The parsing is kept pure (see ParseProcStatLine / ParseProcStatmLine) so it can
 // be unit-tested without touching a real /proc.
 
-#ifndef MYBROWSER_APP_METRICS_SAMPLER_H_
-#define MYBROWSER_APP_METRICS_SAMPLER_H_
+#ifndef BROWSERX_APP_METRICS_SAMPLER_H_
+#define BROWSERX_APP_METRICS_SAMPLER_H_
 
 #include <cstdint>
 #include <deque>
@@ -20,7 +20,7 @@
 #include "core/memory_policy.h"
 #include "core/system_profile.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 /// One /proc/<pid>/stat record. `comm` may contain spaces/parentheses, which is
@@ -124,6 +124,6 @@ class MetricsSampler {
 };
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_METRICS_SAMPLER_H_
+#endif  // BROWSERX_APP_METRICS_SAMPLER_H_

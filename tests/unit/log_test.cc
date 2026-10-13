@@ -4,17 +4,17 @@
 
 #include "test_harness.h"
 
-using mybrowser::core::LogLevel;
-using mybrowser::core::Logger;
+using browserx::core::LogLevel;
+using browserx::core::Logger;
 
 TEST(Log, LevelNamesRoundTrip) {
-  EXPECT_EQ(std::string(mybrowser::core::LogLevelName(LogLevel::kWarn)), std::string("WARN"));
+  EXPECT_EQ(std::string(browserx::core::LogLevelName(LogLevel::kWarn)), std::string("WARN"));
   LogLevel parsed = LogLevel::kOff;
-  EXPECT_TRUE(mybrowser::core::ParseLogLevel("debug", &parsed));
+  EXPECT_TRUE(browserx::core::ParseLogLevel("debug", &parsed));
   EXPECT_TRUE(parsed == LogLevel::kDebug);
-  EXPECT_TRUE(mybrowser::core::ParseLogLevel("ERROR", &parsed));
+  EXPECT_TRUE(browserx::core::ParseLogLevel("ERROR", &parsed));
   EXPECT_TRUE(parsed == LogLevel::kError);
-  EXPECT_FALSE(mybrowser::core::ParseLogLevel("nonsense", &parsed));
+  EXPECT_FALSE(browserx::core::ParseLogLevel("nonsense", &parsed));
 }
 
 TEST(Log, RingBufferKeepsNewestEntries) {
@@ -51,14 +51,14 @@ TEST(Log, LevelFiltering) {
 
   logger.SetLevel(LogLevel::kTrace);
   logger.Clear();
-  mybrowser::core::log::InfoF("fmt", "value=%d name=%s", 7, "seven");
+  browserx::core::log::InfoF("fmt", "value=%d name=%s", 7, "seven");
   const auto formatted = logger.SnapshotFrom(LogLevel::kInfo);
   EXPECT_GT(formatted.size(), 0u);
   EXPECT_EQ(formatted.back().message, std::string("value=7 name=seven"));
 }
 
 TEST(Log, EntryFormatting) {
-  mybrowser::core::LogEntry entry;
+  browserx::core::LogEntry entry;
   entry.timestamp_ms = 1234.0;
   entry.level = LogLevel::kWarn;
   entry.category = "modes";

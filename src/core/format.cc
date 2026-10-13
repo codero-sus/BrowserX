@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace fmt {
 namespace {
@@ -352,4 +352,4 @@ std::string Sparkline(const std::vector<double>& values, int buckets) {
 
 }  // namespace fmt
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

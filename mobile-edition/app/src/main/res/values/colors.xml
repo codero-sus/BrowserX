@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The same palette as the desktop edition's native chrome. -->
+    <color name="bx_background">#FF101318</color>
+    <color name="bx_surface">#FF1B1D22</color>
+    <color name="bx_surface_alt">#FF23262E</color>
+    <color name="bx_field">#FF2C3039</color>
+    <color name="bx_text">#FFE6E8EE</color>
+    <color name="bx_text_dim">#FF9AA1AE</color>
+    <color name="bx_accent">#FF5AC8FA</color>
+</resources>

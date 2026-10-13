@@ -1,4 +1,4 @@
-// MyBrowser — the window: native CEF Views chrome + one browser view.
+// BrowserX — the window: native CEF Views chrome + one browser view.
 //
 // Stage 3 ships a complete single-page window (toolbar, omnibox, mode button,
 // status bar, shortcuts, live telemetry, memory policy). Stage 4 swaps the single
@@ -13,8 +13,8 @@
 //     ambiguous. All clicks funnel into one command table, so a button, an
 //     accelerator and a menu entry can never drift apart.
 
-#ifndef MYBROWSER_BROWSER_BROWSER_WINDOW_H_
-#define MYBROWSER_BROWSER_BROWSER_WINDOW_H_
+#ifndef BROWSERX_BROWSER_BROWSER_WINDOW_H_
+#define BROWSERX_BROWSER_BROWSER_WINDOW_H_
 
 #include <map>
 #include <string>
@@ -44,7 +44,7 @@
 #include "app/cef_host.h"
 #include "browser/tab_strip.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 class BrowserWindow;
@@ -362,6 +362,6 @@ class BrowserWindow : public CefWindowDelegate,
 };
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_BROWSER_WINDOW_H_
+#endif  // BROWSERX_BROWSER_BROWSER_WINDOW_H_

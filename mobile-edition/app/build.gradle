@@ -1,0 +1,73 @@
+// BrowserX mobile edition — application module.
+//
+// Deliberately dependency-free at runtime: the UI is built from framework
+// widgets, so the APK contains the shared native core and nothing else. No
+// Material, no AndroidX, no analytics. That keeps the install small (which is a
+// feature for a "low RAM" browser) and the cold start fast.
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.browserx.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.browserx.mobile"
+        minSdk 26          // WebView.setRendererPriorityPolicy()
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        ndk {
+            // The ABIs a modern phone or emulator actually needs.
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DBROWSERX_CORE_DIR=' + file('src/main/jni').absolutePath + '/../../../../../src/core'
+                cppFlags '-std=c++20'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/jni/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Per-mode behaviour must not depend on debuggability.
+            debuggable false
+        }
+        debug {
+            // Keep the native core in debug builds: "nativeAvailable = false"
+            // builds are meant to be the exception, not the default.
+            ndk { debugSymbolLevel 'FULL' }
+        }
+    }
+
+    // Keep the APK small: the core has no assets, but the WebView-based app does
+    // not need per-density launcher art beyond what is shipped.
+    packagingOptions {
+        jniLibs { useLegacyPackaging false }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
+
+// No third-party runtime dependencies on purpose (see the header comment).
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

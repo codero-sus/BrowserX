@@ -8,7 +8,7 @@
 #include "core/json.h"
 #include "core/log.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -42,7 +42,7 @@ int64_t Session::NowMs() {
 Session Session::Restore(const std::string& json_text, std::string* error) {
   Session session;
   if (json_text.empty()) {
-    session.AddTab("mybrowser://newtab", true);
+    session.AddTab("browserx://newtab", true);
     return session;
   }
   if (!session.FromJson(json_text, error)) {
@@ -50,7 +50,7 @@ Session Session::Restore(const std::string& json_text, std::string* error) {
       core::log::WarnF("session", "restore failed: %s", error->c_str());
     }
     session = Session();
-    session.AddTab("mybrowser://newtab", true);
+    session.AddTab("browserx://newtab", true);
   }
   return session;
 }
@@ -339,7 +339,7 @@ bool Session::FromJson(const std::string& json_text, std::string* error) {
   const int64_t version = IntOf(*parsed, "version", kSessionFormatVersion);
   if (version > kSessionFormatVersion) {
     if (error != nullptr) {
-      *error = "session was written by a newer MyBrowser (version " + std::to_string(version) + ")";
+      *error = "session was written by a newer BrowserX (version " + std::to_string(version) + ")";
     }
     return false;
   }
@@ -365,7 +365,7 @@ bool Session::FromJson(const std::string& json_text, std::string* error) {
     tab.last_active_ms = IntOf(entry, "last_active_ms", Session::NowMs());
     tab.created_ms = tab.last_active_ms;
     if (tab.id <= 0) tab.id = next_id_;
-    if (tab.url.empty()) tab.url = "mybrowser://newtab";
+    if (tab.url.empty()) tab.url = "browserx://newtab";
     next_id_ = std::max(next_id_, tab.id + 1);
     tabs_.push_back(tab);
   }
@@ -376,4 +376,4 @@ bool Session::FromJson(const std::string& json_text, std::string* error) {
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

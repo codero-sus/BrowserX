@@ -5,7 +5,7 @@
 #include "core/format.h"
 #include "core/url_utils.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -153,7 +153,7 @@ BlockDecision Blocklist::Decide(std::string_view document_host, std::string_view
                                 std::string_view request_path, ResourceType type) const {
   if (!enabled_) return BlockDecision::kDisabled;
 
-  // Never touch first-party document loads or MyBrowser's own pages.
+  // Never touch first-party document loads or BrowserX's own pages.
   const std::string request_host_text = fmt::ToLower(std::string(request_host));
   if (request_host_text.empty()) return BlockDecision::kAllow;
   if (type == ResourceType::kDocument && document_host.empty()) return BlockDecision::kAllow;
@@ -210,4 +210,4 @@ bool Blocklist::IsHeavyResource(ResourceType type) {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

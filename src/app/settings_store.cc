@@ -7,7 +7,7 @@
 #include "core/json.h"
 #include "core/log.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 bool SettingsStore::Load(const std::string& path) {
@@ -75,4 +75,4 @@ bool SettingsStore::NeedsRestartFor(const std::vector<std::string>& flags) const
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

@@ -5,7 +5,7 @@
 
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -93,7 +93,7 @@ const std::vector<SwitchEntry>& SwitchTable() {
        "Raise the audio service/thread priority: fewer audio dropouts while the GPU is saturated."},
       {"enable-precise-memory-info", false, "", Provenance::kVerified, Scope::kAll, Risk::kSafe,
        kSrcContentC,
-       "High-resolution memory counters. Makes MyBrowser's live telemetry and pressure gauge "
+       "High-resolution memory counters. Makes BrowserX's live telemetry and pressure gauge "
        "accurate instead of quantised."},
       {"enable-aggressive-domstorage-flushing", false, "", Provenance::kVerified, Scope::kAll,
        Risk::kSafe, kSrcContentC,
@@ -220,7 +220,7 @@ const std::vector<SwitchEntry>& SwitchTable() {
       {"force-prefers-reduced-motion", false, "", Provenance::kVerified, Scope::kAll, Risk::kAdvanced,
        kSrcGfx, "Tell sites the user prefers reduced motion: less animation work everywhere."},
       {"show-fps-counter", false, "", Provenance::kVerified, Scope::kAll, Risk::kSafe, kSrcCc,
-       "Chromium's built-in FPS overlay (MyBrowser ships its own richer HUD instead; provided for "
+       "Chromium's built-in FPS overlay (BrowserX ships its own richer HUD instead; provided for "
        "cross-checking measurements)."},
       {"v8-cache-options", true, "code", Provenance::kVerified, Scope::kBrowser, Risk::kAdvanced,
        kSrcContentC, "Control V8 code caching (none/code/...). 'none' reduces disk writes; 'code' "
@@ -239,7 +239,7 @@ const std::vector<SwitchEntry>& SwitchTable() {
       // ---- declared only in the Chrome product layer -------------------------
       {"disable-background-networking", false, "", Provenance::kChromeOnly, Scope::kBrowser,
        Risk::kAdvanced, kSrcChrome,
-       "Chrome-product switch (variations, updates, safe browsing pings). MyBrowser achieves the "
+       "Chrome-product switch (variations, updates, safe browsing pings). BrowserX achieves the "
        "same effect with its own request blocker, which also works under CEF."},
       {"disable-component-update", false, "", Provenance::kChromeOnly, Scope::kBrowser, Risk::kSafe,
        kSrcChrome, "Chrome component updater; CEF has no component updater."},
@@ -259,7 +259,7 @@ const std::vector<SwitchEntry>& SwitchTable() {
       // ---- confirmed gone or superseded: catalogued so we never claim them ---
       {"memory-pressure-off", false, "", Provenance::kRemoved, Scope::kAll, Risk::kLab, "(absent)",
        "Removed: no literal exists in current Chromium. Superseded by Chromium's own memory "
-       "pressure signals, which MyBrowser drives through the memory guard."},
+       "pressure signals, which BrowserX drives through the memory guard."},
       {"enable-quic", false, "", Provenance::kRemoved, Scope::kAll, Risk::kSafe, "(default-on)",
        "Removed: QUIC/HTTP3 is enabled by default, so the flag is unnecessary."},
       {"media-cache-size", true, "", Provenance::kRemoved, Scope::kAll, Risk::kSafe, "(absent)",
@@ -437,4 +437,4 @@ std::string RenderCatalogReport(bool include_removed) {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

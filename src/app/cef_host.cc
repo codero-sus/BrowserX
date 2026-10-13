@@ -15,7 +15,7 @@
 #include "core/log.h"
 #include "core/url_utils.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 namespace {
 
@@ -268,7 +268,7 @@ CefHost& Host() {
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
 // ---------------------------------------------------------------------------
 // The CEF application object
@@ -277,16 +277,16 @@ namespace {
 
 /// CefApp + CefBrowserProcessHandler in one object: the browser process is the
 /// only process that owns both.
-class MyBrowserApp : public CefApp, public CefBrowserProcessHandler {
+class BrowserXApp : public CefApp, public CefBrowserProcessHandler {
  public:
-  MyBrowserApp() = default;
+  BrowserXApp() = default;
 
   // --- CefApp ---------------------------------------------------------------
   void OnBeforeCommandLineProcessing(const CefString& process_type,
                                      CefRefPtr<CefCommandLine> command_line) override {
     // Runs in every process *before* Chromium parses the command line: the only
     // place where boot switches can be injected.
-    auto& host = mybrowser::app::Host();
+    auto& host = browserx::app::Host();
     if (process_type.empty()) {
       host.ApplyBootSwitches(command_line.get());
     } else {
@@ -295,37 +295,37 @@ class MyBrowserApp : public CefApp, public CefBrowserProcessHandler {
   }
 
   void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override {
-    // mybrowser:// is a real (standard, secure, fetch-capable, display-isolated)
+    // browserx:// is a real (standard, secure, fetch-capable, display-isolated)
     // scheme so our internal pages can use modules, fetch() and their own origin.
     const int options = CEF_SCHEME_OPTION_STANDARD | CEF_SCHEME_OPTION_SECURE |
                         CEF_SCHEME_OPTION_FETCH_ENABLED | CEF_SCHEME_OPTION_DISPLAY_ISOLATED |
                         CEF_SCHEME_OPTION_CORS_ENABLED;
-    registrar->AddCustomScheme("mybrowser", options);
+    registrar->AddCustomScheme("browserx", options);
   }
 
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
 
   // --- CefBrowserProcessHandler --------------------------------------------
   void OnContextInitialized() override {
-    auto& host = mybrowser::app::Host();
-    mybrowser::BrowserShell* shell = host.shell();
+    auto& host = browserx::app::Host();
+    browserx::BrowserShell* shell = host.shell();
     if (shell != nullptr) shell->OnContextInitialized();
   }
 
   void OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) override {
-    mybrowser::app::Host().ApplyChildSwitches(command_line.get());
+    browserx::app::Host().ApplyChildSwitches(command_line.get());
   }
 
  private:
-  IMPLEMENT_REFCOUNTING(MyBrowserApp);
+  IMPLEMENT_REFCOUNTING(BrowserXApp);
 };
 
 }  // namespace
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
-CefRefPtr<CefApp> CreateApplication() { return new MyBrowserApp(); }
+CefRefPtr<CefApp> CreateApplication() { return new BrowserXApp(); }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

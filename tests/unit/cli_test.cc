@@ -14,15 +14,15 @@
 
 namespace {
 
-using mybrowser::app::CliAction;
-using mybrowser::app::LaunchOptions;
-using mybrowser::app::ParseCli;
-using mybrowser::core::AutoPilotMode;
-using mybrowser::core::Mode;
+using browserx::app::CliAction;
+using browserx::app::LaunchOptions;
+using browserx::app::ParseCli;
+using browserx::core::AutoPilotMode;
+using browserx::core::Mode;
 
 LaunchOptions Parse(const std::vector<std::string>& args) {
   std::vector<const char*> argv;
-  argv.push_back("mybrowser");
+  argv.push_back("browserx");
   for (const std::string& arg : args) argv.push_back(arg.c_str());
   return ParseCli(static_cast<int>(argv.size()), argv.data());
 }
@@ -85,7 +85,7 @@ TEST(Cli, SearchTermsAreKeptRawAndResolvedAtLaunch) {
   const LaunchOptions options = Parse({"how to speed up chromium"});
   ASSERT_TRUE_OR_RETURN(options.parse_error.empty());
   EXPECT_EQ(options.url, std::string("how to speed up chromium"));
-  EXPECT_EQ(mybrowser::core::url::ResolveInput(options.url, "https://ddg.example/?q=%s"),
+  EXPECT_EQ(browserx::core::url::ResolveInput(options.url, "https://ddg.example/?q=%s"),
             std::string("https://ddg.example/?q=how+to+speed+up+chromium"));
 }
 
@@ -141,9 +141,9 @@ TEST(Cli, DoubleDashEndsOptionParsing) {
 }
 
 TEST(Cli, PathsAndJoinHelpers) {
-  using mybrowser::app::FileName;
-  using mybrowser::app::JoinPath;
-  using mybrowser::app::ParentDir;
+  using browserx::app::FileName;
+  using browserx::app::JoinPath;
+  using browserx::app::ParentDir;
 
   EXPECT_EQ(JoinPath("/a", "b"), std::string("/a/b"));
   EXPECT_EQ(JoinPath("/a/", "b"), std::string("/a/b"));
@@ -155,7 +155,7 @@ TEST(Cli, PathsAndJoinHelpers) {
 }
 
 TEST(Cli, UsageTextDocumentsEveryRealOption) {
-  const std::string usage = mybrowser::app::CliUsage("mybrowser");
+  const std::string usage = browserx::app::CliUsage("browserx");
   for (const char* needle : {"--mode", "--auto-pilot", "--advanced", "--lab", "--renderers",
                             "--cache-mb", "--fps", "--gl", "--portable", "--profile",
                             "--cache-dir", "--downloads", "--frameless", "--no-sandbox",
