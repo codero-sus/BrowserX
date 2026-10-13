@@ -54,6 +54,14 @@ make             # build out/BrowserX
 make run         # launch it
 ```
 
+Want to see it before building? `make preview` serves a clickable mock of the
+window whose numbers come straight from the mode engine — the mode switcher, the
+real switch list with provenance, and the memory-pressure escalation ladder.
+
+```bash
+make preview     # http://localhost:8770
+```
+
 Other useful targets:
 
 ```bash
@@ -62,7 +70,8 @@ make test        # 167 unit tests over the CEF-free core (no CEF needed)
 make bench       # print the resolved Chromium flag plan for every mode
 make smoke       # headless start-up probe: does the browser actually come up?
 make doctor      # environment diagnosis (missing libs, sandbox, GL, caches)
-make package     # distributable layout in out/
+make package     # distributable tarball in out/dist/
+make preview     # clickable UI preview driven by the real mode engine
 make help        # all targets, with one-line explanations
 ```
 
@@ -103,7 +112,9 @@ src/app/        entry point, CLI, paths, settings store, metrics sampler,
 src/browser/    window chrome (CEF Views), tab strip, session model, tab commands,
                 headless probe/smoke test
 tests/unit/     167 tests, no dependencies beyond the standard library
-tools/          flagplan printer (make bench), doctor
+tools/          fetch_cef.py (verified CEF acquisition), flagplan printer
+                (make bench), doctor, package.sh
+preview/        clickable preview served by preview/serve.py
 mobile-edition/ Android app: Kotlin UI + JNI bridge to src/core
 PLAN.md         the build plan, the verified evidence, and the decision log
 ```
