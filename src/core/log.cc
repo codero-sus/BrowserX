@@ -8,7 +8,7 @@
 #include <deque>
 #include <mutex>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 namespace {
@@ -181,4 +181,4 @@ void ErrorF(std::string_view category, const char* format, ...) {
 }  // namespace log
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

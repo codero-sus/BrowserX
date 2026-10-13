@@ -10,7 +10,7 @@
 #include "core/chromium_catalog.h"
 #include "test_harness.h"
 
-using namespace mybrowser::core;
+using namespace browserx::core;
 
 namespace {
 

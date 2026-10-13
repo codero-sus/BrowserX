@@ -2,7 +2,7 @@
 
 #include "test_harness.h"
 
-using namespace mybrowser::core::fmt;
+using namespace browserx::core::fmt;
 
 TEST(Format, CaseAndTrimHelpers) {
   EXPECT_EQ(ToLower("HeLLo"), std::string("hello"));
@@ -14,7 +14,7 @@ TEST(Format, CaseAndTrimHelpers) {
 }
 
 TEST(Format, Predicates) {
-  EXPECT_TRUE(StartsWith("mybrowser://settings", "mybrowser://"));
+  EXPECT_TRUE(StartsWith("browserx://settings", "browserx://"));
   EXPECT_FALSE(StartsWith("https://x", "http://"));
   EXPECT_TRUE(EndsWith("index.html", ".html"));
   EXPECT_TRUE(Contains("a needle here", "needle"));

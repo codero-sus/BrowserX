@@ -1,10 +1,11 @@
-# MyBrowser — Build Plan (C++ / CEF)
+# BrowserX — Build Plan (C++ / CEF)
 
 > **Stack chosen by you:** C++ + CEF (Chromium Embedded Framework) — maximum performance, native memory control.
 > **Modes:** all 5 (ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO) + Auto-Pilot.
 > **Scope:** full browser (tabs, omnibox, history, bookmarks, downloads, shield, panels), extensions/sync deferred to v2.
+> **Editions:** desktop (C++/CEF, this plan) and **mobile** (Android, same `src/core` over JNI) — see §10.
 >
-> Status: **planning — awaiting your go-ahead before code.**
+> Status: **in progress.** Stage 1-4 complete and green (`make check`, `make test` = 167 tests, `make bench`); stage 5 (internal pages/panels) next. Every claim below is tracked against what is committed.
 
 ---
 
@@ -29,12 +30,12 @@ CEF = Chromium's content API in a reusable binary. It gives us the real Chromium
 ## 2. Modifications summary (what gets built)
 
 ```
-mybrowser/
+browserx/
 ├── Makefile                  # primary build: deps → build → check → test → run → package
 ├── CMakeLists.txt            # alternative build for CMake users (mirrors CEF's own flags)
 ├── cef.lock.json             # pinned CEF version + sha1 + size (reproducible builds)
 ├── build/
-│   ├── fetch_cef.py          # download/verify/extract CEF (CDN, local tarball, MYBROWSER_CEF_DIR)
+│   ├── fetch_cef.py          # download/verify/extract CEF (CDN, local tarball, BROWSERX_CEF_DIR)
 │   │                         #   --headers-only  → works in this sandbox (GitHub) for `make check`
 │   ├── app_sources.mk        # generated source lists, incl. CEF wrapper sources discovery
 │   └── package.sh            # builds distributable layout (binary + CEF runtime + resources)
@@ -73,7 +74,7 @@ mybrowser/
 │   │   ├── perf_hud.{h,cc}           FPS/frame-time collector (renderer probe + native overlay)
 │   │   └── preconnect.{h,cc}         speculative warmup, code-cache warm, cache trimming
 │   ├── web/
-│   │   ├── internal_scheme.{h,cc}    mybrowser:// (newtab, settings, telemetry, history,
+│   │   ├── internal_scheme.{h,cc}    browserx:// (newtab, settings, telemetry, history,
 │   │   │                             bookmarks, downloads, shortcuts, about, game)
 │   │   ├── page_bridge.{h,cc}        renderer↔browser: FPS probe, HUD, JS API
 │   │   └── renderer_app.{h,cc}       subprocess side (CefRenderProcessHandler)
@@ -131,7 +132,7 @@ Everything above is user-visible and explainable in the Settings panel (each tog
 - **Chrome UI** (native CEF Views — no Electron, no web-tech chrome): tabstrip, toolbar (back/forward/reload/home), mode bar with live RAM/CPU/FPS readout, status bar with blocker counters, find bar, context menus, command palette (Ctrl+K).
 - **Shield**: curated, versioned blocklist (ads/trackers/fingerprinting), per-site allowlist, live count in status bar, `webRequest`-style interception in `OnBeforeResourceLoad`.
 - **History / Bookmarks / Downloads**: ring-buffer history with search; bookmarks bar + folders; downloads with progress, pause/resume where the platform allows, "open/reveal", speed + ETA.
-- **Panels** (`mybrowser://` internal pages): Settings (all modes + per-mode overrides), Telemetry (live graphs + process table + action log), Game (Boost, HUD, FPS cap, always-on-top), Downloads, History, Bookmarks, Shortcuts, About (CEF/Chromium version, cold-start timing).
+- **Panels** (`browserx://` internal pages): Settings (all modes + per-mode overrides), Telemetry (live graphs + process table + action log), Game (Boost, HUD, FPS cap, always-on-top), Downloads, History, Bookmarks, Shortcuts, About (CEF/Chromium version, cold-start timing).
 - **Shortcuts**: Ctrl+T/W/Shift+T/Tab, Ctrl+L/K, Ctrl+1..9, F5/Ctrl+R, F11, Ctrl+Shift+M (cycle mode), Ctrl+Shift+G (Game), Esc, Ctrl+F, Ctrl+Shift+Delete, Ctrl+Shift+I/J (DevTools), Alt+←/→.
 - **Sessions**: normal profile, incognito (in-memory request context), per-profile caches; crash-safe restore.
 
@@ -171,7 +172,36 @@ Everything above is user-visible and explainable in the Settings panel (each tog
 
 ---
 
-## 9. Decision points
+## 9. Decisions taken (so no question is left open)
 
-1. **CEF version pinning**: default = track latest stable from `index.json` with the exact resolved version written into `cef.lock.json` (recommended), or hard-pin a specific build now?
-2. **Sandbox verification**: your machine is the only place the GUI can actually run. Is that acceptable, given the compile-checks + unit tests + `--smoke-test` I ship? (Alternative: I could deliver a *second*, runnable Electron/JS front-end on the same mode engine so you can see and click the browser inside this session — extra work, deletes nothing, keeps CEF as the real product. Say the word if you want it.)
+1. **CEF version pinning** — track latest *stable*, resolved into `cef.lock.json` (version + SHA-1 + size) by `make deps-update`, so builds stay reproducible while security fixes keep flowing. `build/fetch_cef.py` also accepts a local archive or `BROWSERX_CEF_DIR` for air-gapped machines.
+2. **Sandbox verification** — the GUI cannot run here (no CEF binary, no GTK/X11). Instead of asking again, the project ships three layers of in-sandbox evidence: `make check` (every file against real CEF headers), `make test` (167 unit tests over all policy logic), and `make bench` (the exact resolved flag plan per mode). `make smoke` then verifies the real binary on your machine.
+3. **Second, clickable front-end** — *not* built. The mobile edition (§10) already gives a second, real front-end on the same core, and it is a shipping product rather than a demo.
+
+---
+
+## 10. Mobile edition (added after the desktop plan)
+
+**Goal:** the same browser on Android, driven by the *same* performance core.
+
+* **Engine:** Android's system WebView — which *is* Chromium. CEF is not shipped for
+  Android, and a custom Chromium fork is not a sustainable deliverable. The mode
+  engine's intent is preserved by mapping each decision onto the Android API that
+  implements it (renderer priority, offscreen pre-raster, per-tab WebView teardown,
+  `onTrimMemory`, `BatteryManager`); the table is in `mobile-edition/README.md`.
+* **Shared code:** `src/core/*.cc` is compiled by the NDK into `libbrowserxcore.so`
+  and called through a hand-written JNI bridge (`app/src/main/jni/core_bridge.cc`).
+  `make check-core-purity` in the desktop Makefile is what keeps this possible: no
+  file in `src/core` may include a CEF header.
+* **New in the core for mobile:** `ApplyLowRamDeviceCaps()` — when the OS reports
+  low-memory hardware (`isLowRamDevice` → `SystemProfile::low_ram_hint`) or the
+  device has ≤ 4 GB, *every* mode is capped (≤ 3 renderers, ≤ 2 raster threads,
+  ≤ 128 MB HTTP cache, bfcache off, tab-sleep ≤ 10 min) while keeping its
+  character (GAME still disables vsync/throttling and keeps the screen awake).
+  This benefits 4 GB laptops too, and is covered by
+  `tests/unit/mobile_profile_test.cc`.
+* **Not yet built here:** the Android toolchain (SDK/NDK/Gradle) is unavailable in
+  this sandbox, so the Kotlin/Java layer is written and reviewed but compiled on
+  your machine. The JNI bridge *is* verified here: it compiles against the shared
+  core and exports exactly the nine `Java_com_browserx_mobile_PerformanceCore_*`
+  entry points the Kotlin code declares.

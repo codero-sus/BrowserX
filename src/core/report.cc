@@ -8,7 +8,7 @@
 #include "core/chromium_catalog.h"
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace report {
 namespace {
@@ -96,7 +96,7 @@ std::string RenderPlanText(const ModePlan& plan, const SystemProfile& profile, b
     for (const std::string& warning : plan.warnings) out += "    ! " + warning + "\n";
   }
 
-  out += "\n  resolved: MyBrowser " + plan.boot.ToCommandLine() + "\n";
+  out += "\n  resolved: BrowserX " + plan.boot.ToCommandLine() + "\n";
   if (profile.total_ram_mb != 0) {
     out += "  (plan generated for " + std::to_string(profile.total_ram_mb) + " MB RAM / " +
            std::to_string(profile.cpu_physical) + " cores / shm " +
@@ -195,7 +195,7 @@ std::string RenderPlanDiff(const ModePlan& plan_a, const ModePlan& plan_b) {
 std::string RenderModeList(const SystemProfile& profile) {
   const Mode recommended = DefaultModeFor(profile);
   std::string out;
-  out += "\n  MyBrowser modes\n";
+  out += "\n  BrowserX modes\n";
   out += "  =====================================================================\n";
   for (const ModeInfo& info : AllModes()) {
     const ModePlan plan = [&] {
@@ -255,4 +255,4 @@ std::string ModePlan::ToReport() const {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

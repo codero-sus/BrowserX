@@ -1,0 +1,12 @@
+# Android build products
+.gradle/
+build/
+local.properties
+*.apk
+*.ap_
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+.cxx/
+.idea/

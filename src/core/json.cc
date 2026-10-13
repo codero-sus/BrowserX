@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace json {
 namespace {
@@ -436,4 +436,4 @@ std::string Serialize(const Value& value, int indent) {
 
 }  // namespace json
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

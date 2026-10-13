@@ -12,10 +12,10 @@
 
 namespace {
 
-using mybrowser::browser::Session;
-using mybrowser::browser::TabLifecycle;
-using mybrowser::browser::TabState;
-using mybrowser::core::json::Parse;
+using browserx::browser::Session;
+using browserx::browser::TabLifecycle;
+using browserx::browser::TabState;
+using browserx::core::json::Parse;
 
 Session MakeSession() {
   Session session;
@@ -238,7 +238,7 @@ TEST(Session, RestoreFallsBackToANewTab) {
   std::string error;
   const Session empty = Session::Restore("", &error);
   EXPECT_EQ(empty.count(), size_t{1});
-  EXPECT_EQ(empty.ActiveUrl(), std::string("mybrowser://newtab"));
+  EXPECT_EQ(empty.ActiveUrl(), std::string("browserx://newtab"));
 
   const Session broken = Session::Restore("{{{", &error);
   EXPECT_EQ(broken.count(), size_t{1});

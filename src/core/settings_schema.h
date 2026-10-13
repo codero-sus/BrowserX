@@ -1,11 +1,11 @@
-// MyBrowser — persistent settings: schema, defaults, validation, migration.
+// BrowserX — persistent settings: schema, defaults, validation, migration.
 //
 // Settings live in a JSON file (user profile). This module is pure so the file
 // format can be unit-tested: broken or hand-edited files must never be able to
 // crash the browser or silently switch on a dangerous option.
 
-#ifndef MYBROWSER_CORE_SETTINGS_SCHEMA_H_
-#define MYBROWSER_CORE_SETTINGS_SCHEMA_H_
+#ifndef BROWSERX_CORE_SETTINGS_SCHEMA_H_
+#define BROWSERX_CORE_SETTINGS_SCHEMA_H_
 
 #include <map>
 #include <optional>
@@ -15,10 +15,10 @@
 #include "core/json.h"
 #include "core/mode_engine.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
-/// How MyBrowser decides to change modes on its own.
+/// How BrowserX decides to change modes on its own.
 enum class AutoPilotMode { kOff, kAsk, kAuto };
 
 const char* AutoPilotModeId(AutoPilotMode mode);
@@ -46,11 +46,11 @@ struct Settings {
   bool restore_session = true;
   bool start_maximized = false;
   bool confirm_close_with_multiple_tabs = false;
-  std::string startup_url = "mybrowser://newtab";
+  std::string startup_url = "browserx://newtab";
 
   // --- navigation ----------------------------------------------------------
   std::string search_template = "https://duckduckgo.com/?q=%s";
-  std::string homepage = "mybrowser://newtab";
+  std::string homepage = "browserx://newtab";
 
   // --- privacy / shield ----------------------------------------------------
   bool shield_enabled = true;
@@ -59,7 +59,7 @@ struct Settings {
   std::vector<std::string> shield_allowlist;  // hosts that skip the shield
   bool do_not_track_header = true;
   bool enable_crash_reporter = false;
-  bool send_telemetry = false;  // MyBrowser never sends anything; kept explicit
+  bool send_telemetry = false;  // BrowserX never sends anything; kept explicit
 
   // --- appearance ----------------------------------------------------------
   std::string theme = "dark";  // "dark" | "light" | "system"
@@ -106,6 +106,6 @@ RuntimeOverrides OverridesFromJson(const json::Value& value);
 json::Value OverridesToJson(const RuntimeOverrides& overrides);
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_SETTINGS_SCHEMA_H_
+#endif  // BROWSERX_CORE_SETTINGS_SCHEMA_H_

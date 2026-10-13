@@ -17,7 +17,7 @@
 #include <unistd.h>
 #endif
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 namespace {
 
@@ -284,7 +284,7 @@ std::string MetricsSampler::RenderOneLineStatus() const {
 std::string MetricsSampler::RenderPanelText() const {
   const TelemetrySample& sample = latest_;
   std::string text;
-  text += "MYBROWSER TELEMETRY\n";
+  text += "BROWSERX TELEMETRY\n";
   text += "=====================================================\n";
   text += "Mode                : " + sample.mode_id + "\n";
   text += "Uptime ticks        : " + std::to_string(sample.tick) + "\n";
@@ -318,4 +318,4 @@ std::string MetricsSampler::RenderPanelText() const {
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

@@ -17,7 +17,7 @@
 #include "core/log.h"
 #include "core/report.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -207,7 +207,7 @@ void BrowserShellImpl::SetMode(core::Mode mode) {
   for (const CefRefPtr<BrowserWindow>& window : windows_) {
     if (window.get() == nullptr) continue;
     window->UpdateModeIndicators(label, summary);
-    window->Flash(restart ? label + " selected - restart MyBrowser to apply the boot switches"
+    window->Flash(restart ? label + " selected - restart BrowserX to apply the boot switches"
                           : label + " active");
   }
   core::log::InfoF("modes", "%s", summary.c_str());
@@ -392,4 +392,4 @@ std::unique_ptr<BrowserShell> CreateBrowserShell(app::CefHost* host) {
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

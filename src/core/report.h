@@ -1,14 +1,14 @@
-// MyBrowser — human and machine readable reports of a resolved plan.
+// BrowserX — human and machine readable reports of a resolved plan.
 //
 // One implementation, three callers: the browser (`--flag-plan`, the Mode panel,
-// the diagnostics page), the `mybrowser-flagplan` tool (`make bench`) and the
+// the diagnostics page), the `browserx-flagplan` tool (`make bench`) and the
 // unit tests. Because they all print the same string, "the browser really does
 // apply what `make bench` shows" is a property you can check by eye.
 //
 // Pure string building - no I/O, no globals, no CEF.
 
-#ifndef MYBROWSER_CORE_REPORT_H_
-#define MYBROWSER_CORE_REPORT_H_
+#ifndef BROWSERX_CORE_REPORT_H_
+#define BROWSERX_CORE_REPORT_H_
 
 #include <string>
 #include <vector>
@@ -16,7 +16,7 @@
 #include "core/mode_engine.h"
 #include "core/system_profile.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace report {
 
@@ -36,7 +36,7 @@ std::string RenderPlanDiff(const ModePlan& plan_a, const ModePlan& plan_b);
 /// A one-line-per-mode table, with the recommendation for this machine marked.
 std::string RenderModeList(const SystemProfile& profile);
 
-/// Detected hardware plus what MyBrowser makes of it.
+/// Detected hardware plus what BrowserX makes of it.
 std::string RenderProfileReport(const SystemProfile& profile);
 
 /// The catalogue footer printed after a plan ("every switch is verified").
@@ -47,6 +47,6 @@ std::string RenderRuntimePolicySummary(const RuntimePolicy& policy);
 
 }  // namespace report
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_REPORT_H_
+#endif  // BROWSERX_CORE_REPORT_H_

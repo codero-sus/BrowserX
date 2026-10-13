@@ -1,4 +1,4 @@
-// MyBrowser — the Shield: a small, curated, honest content blocker.
+// BrowserX — the Shield: a small, curated, honest content blocker.
 //
 // Design notes (important for honesty in the UI):
 //   * This is NOT uBlock Origin. It is a curated list of well-known ad,
@@ -9,15 +9,15 @@
 //     the user can allowlist a host from the toolbar in one click.
 //   * Matching is pure string logic => fully unit tested.
 
-#ifndef MYBROWSER_CORE_BLOCKLIST_H_
-#define MYBROWSER_CORE_BLOCKLIST_H_
+#ifndef BROWSERX_CORE_BLOCKLIST_H_
+#define BROWSERX_CORE_BLOCKLIST_H_
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 enum class BlockCategory { kAds, kAnalytics, kSocial, kCrypto, kFingerprint };
@@ -95,6 +95,6 @@ class Blocklist {
 };
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_BLOCKLIST_H_
+#endif  // BROWSERX_CORE_BLOCKLIST_H_

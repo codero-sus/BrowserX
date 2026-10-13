@@ -1,4 +1,4 @@
-// MyBrowser — the mode engine.
+// BrowserX — the mode engine.
 //
 // A "mode" is a complete, coherent performance profile. The engine turns
 //   (mode, detected system profile, user overrides)
@@ -9,8 +9,8 @@
 // unit-testable, printable from a CLI (`make bench`), shown in the UI with the
 // same data the browser actually applies, and diffable between releases.
 
-#ifndef MYBROWSER_CORE_MODE_ENGINE_H_
-#define MYBROWSER_CORE_MODE_ENGINE_H_
+#ifndef BROWSERX_CORE_MODE_ENGINE_H_
+#define BROWSERX_CORE_MODE_ENGINE_H_
 
 #include <optional>
 #include <string>
@@ -19,7 +19,7 @@
 
 #include "core/system_profile.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 enum class Mode {
@@ -207,6 +207,6 @@ Mode DefaultModeFor(const SystemProfile& profile);
 std::string DescribePlanOneLine(const ModePlan& plan);
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_MODE_ENGINE_H_
+#endif  // BROWSERX_CORE_MODE_ENGINE_H_

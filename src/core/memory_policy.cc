@@ -4,7 +4,7 @@
 
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -168,4 +168,4 @@ void MemoryPolicy::NoteActionPerformed(MemoryAction action, const std::string& d
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

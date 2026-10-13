@@ -5,7 +5,7 @@
 
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -69,7 +69,7 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
 
   switch (action.command) {
     case TabCommand::kNewTab: {
-      const std::string url = action.argument.empty() ? "mybrowser://newtab" : action.argument;
+      const std::string url = action.argument.empty() ? "browserx://newtab" : action.argument;
       const int id = session->AddTab(url, /*activate=*/true);
       outcome.handled = true;
       outcome.activate_id = id;
@@ -87,7 +87,7 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
       session->CloseTab(target);
       if (was_last) {
         // The last tab never leaves an empty window: replace it, like Chromium.
-        const int id = session->AddTab("mybrowser://newtab", /*activate=*/true);
+        const int id = session->AddTab("browserx://newtab", /*activate=*/true);
         outcome.create_ids.push_back(id);
         outcome.activate_id = id;
         outcome.message = "New tab";
@@ -257,4 +257,4 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

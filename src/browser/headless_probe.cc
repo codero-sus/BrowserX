@@ -17,7 +17,7 @@
 #include "core/format.h"
 #include "core/log.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -211,4 +211,4 @@ ProbeResult RunHeadlessProbe(app::CefHost* host, const std::string& url, int tim
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

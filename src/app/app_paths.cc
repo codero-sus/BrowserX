@@ -18,7 +18,7 @@
 #include <unistd.h>
 #endif
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 namespace {
 
@@ -176,7 +176,7 @@ std::string Paths::settings_file() const { return JoinPath(profile_dir, "setting
 std::string Paths::history_file() const { return JoinPath(profile_dir, "history.json"); }
 std::string Paths::bookmarks_file() const { return JoinPath(profile_dir, "bookmarks.json"); }
 std::string Paths::session_file() const { return JoinPath(sessions_dir, "last-session.json"); }
-std::string Paths::log_file() const { return JoinPath(logs_dir, "mybrowser.log"); }
+std::string Paths::log_file() const { return JoinPath(logs_dir, "browserx.log"); }
 
 Paths ResolvePaths() {
   Paths paths;
@@ -188,7 +188,7 @@ Paths ResolvePaths() {
                          DirectoryExists(JoinPath(paths.executable_dir, "profile")));
   paths.portable = portable;
 
-  const std::string override_dir = EnvOrEmpty("MYBROWSER_PROFILE");
+  const std::string override_dir = EnvOrEmpty("BROWSERX_PROFILE");
   if (!override_dir.empty()) {
     paths.profile_dir = override_dir;
     paths.portable = true;  // custom profile implies self-contained data
@@ -197,17 +197,17 @@ Paths ResolvePaths() {
   } else {
 #if defined(_WIN32)
     const std::string base = EnvOrEmpty("LOCALAPPDATA");
-    paths.profile_dir = base.empty() ? JoinPath(HomeDir(), "MyBrowser") : JoinPath(base, "MyBrowser");
+    paths.profile_dir = base.empty() ? JoinPath(HomeDir(), "BrowserX") : JoinPath(base, "BrowserX");
 #elif defined(__APPLE__)
-    paths.profile_dir = JoinPath(HomeDir(), "Library/Application Support/MyBrowser");
+    paths.profile_dir = JoinPath(HomeDir(), "Library/Application Support/BrowserX");
 #else
     const std::string xdg = EnvOrEmpty("XDG_DATA_HOME");
     paths.profile_dir =
-        xdg.empty() ? JoinPath(HomeDir(), ".local/share/mybrowser") : JoinPath(xdg, "mybrowser");
+        xdg.empty() ? JoinPath(HomeDir(), ".local/share/browserx") : JoinPath(xdg, "browserx");
 #endif
   }
 
-  const std::string cache_override = EnvOrEmpty("MYBROWSER_CACHE");
+  const std::string cache_override = EnvOrEmpty("BROWSERX_CACHE");
   if (!cache_override.empty()) {
     paths.cache_dir = cache_override;
   } else if (paths.portable) {
@@ -216,20 +216,20 @@ Paths ResolvePaths() {
 #if defined(_WIN32)
     paths.cache_dir = JoinPath(EnvOrEmpty("LOCALAPPDATA").empty() ? paths.profile_dir
                                                                  : EnvOrEmpty("LOCALAPPDATA"),
-                               "MyBrowser/cache");
+                               "BrowserX/cache");
 #elif defined(__APPLE__)
-    paths.cache_dir = JoinPath(HomeDir(), "Library/Caches/MyBrowser");
+    paths.cache_dir = JoinPath(HomeDir(), "Library/Caches/BrowserX");
 #else
     const std::string xdg_cache = EnvOrEmpty("XDG_CACHE_HOME");
     paths.cache_dir =
-        xdg_cache.empty() ? JoinPath(HomeDir(), ".cache/mybrowser") : JoinPath(xdg_cache, "mybrowser");
+        xdg_cache.empty() ? JoinPath(HomeDir(), ".cache/browserx") : JoinPath(xdg_cache, "browserx");
 #endif
   }
   paths.code_cache_dir = JoinPath(paths.profile_dir, "code_cache");
   paths.sessions_dir = JoinPath(paths.profile_dir, "sessions");
   paths.logs_dir = JoinPath(paths.profile_dir, "logs");
 
-  const std::string downloads_override = EnvOrEmpty("MYBROWSER_DOWNLOADS");
+  const std::string downloads_override = EnvOrEmpty("BROWSERX_DOWNLOADS");
   if (!downloads_override.empty()) {
     paths.downloads_dir = downloads_override;
   } else if (paths.portable) {
@@ -250,4 +250,4 @@ Paths ResolvePaths() {
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

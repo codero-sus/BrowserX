@@ -1,4 +1,4 @@
-// mybrowser-flagplan — prints exactly which Chromium switches MyBrowser would
+// browserx-flagplan — prints exactly which Chromium switches BrowserX would
 // apply for every mode, with the reason and provenance for each one.
 //
 //   make bench                       # all modes, this machine's detected profile
@@ -25,18 +25,18 @@
 
 namespace {
 
-using mybrowser::core::EngineContext;
-using mybrowser::core::GetModeInfo;
-using mybrowser::core::Mode;
-using mybrowser::core::ModePlan;
-using mybrowser::core::ParseMode;
-using mybrowser::core::RuntimeOverrides;
-using mybrowser::core::SystemProfile;
+using browserx::core::EngineContext;
+using browserx::core::GetModeInfo;
+using browserx::core::Mode;
+using browserx::core::ModePlan;
+using browserx::core::ParseMode;
+using browserx::core::RuntimeOverrides;
+using browserx::core::SystemProfile;
 
 void PrintUsage() {
   std::printf(
-      "\n  mybrowser-flagplan — Chromium switch plan inspector\n\n"
-      "  usage: mybrowser-flagplan [mode] [options]\n\n"
+      "\n  browserx-flagplan — Chromium switch plan inspector\n\n"
+      "  usage: browserx-flagplan [mode] [options]\n\n"
       "    mode              ultra | gaming | high-performance | low-ram | eco\n"
       "    --all             print every mode (default when no mode is given)\n"
       "    --diff A B        compare the switch plans of two modes\n"
@@ -56,7 +56,7 @@ void PrintUsage() {
 int main(int argc, char** argv) {
   // The tool's own output is the artifact: keep the log out of the way unless
   // something is wrong.
-  mybrowser::core::Logger::Get().SetLevel(mybrowser::core::LogLevel::kError);
+  browserx::core::Logger::Get().SetLevel(browserx::core::LogLevel::kError);
 
   std::vector<std::string> modes;
   bool all = false;
@@ -113,15 +113,15 @@ int main(int argc, char** argv) {
   overrides.allow_advanced = advanced;
   overrides.allow_lab = lab;
 
-  const SystemProfile profile = mybrowser::core::DetectSystemProfile();
+  const SystemProfile profile = browserx::core::DetectSystemProfile();
 
   if (show_profile) {
-    std::printf("%s\n", mybrowser::core::report::RenderProfileReport(profile).c_str());
+    std::printf("%s\n", browserx::core::report::RenderProfileReport(profile).c_str());
     return 0;
   }
 
   if (show_catalog) {
-    std::printf("\n%s\n", mybrowser::core::RenderCatalogReport(include_removed).c_str());
+    std::printf("\n%s\n", browserx::core::RenderCatalogReport(include_removed).c_str());
     std::printf("  Evidence: https://source.chromium.org/search?q=<switch-name>&ss=chromium\n\n");
     return 0;
   }
@@ -137,15 +137,15 @@ int main(int argc, char** argv) {
       std::printf("could not parse modes to diff\n");
       return 2;
     }
-    const mybrowser::core::ModePlan plan_a = mybrowser::core::BuildPlan(mode_a, context);
-    const mybrowser::core::ModePlan plan_b = mybrowser::core::BuildPlan(mode_b, context);
-    std::printf("%s", mybrowser::core::report::RenderPlanDiff(plan_a, plan_b).c_str());
+    const browserx::core::ModePlan plan_a = browserx::core::BuildPlan(mode_a, context);
+    const browserx::core::ModePlan plan_b = browserx::core::BuildPlan(mode_b, context);
+    std::printf("%s", browserx::core::report::RenderPlanDiff(plan_a, plan_b).c_str());
     return 0;
   }
 
   std::vector<Mode> selected;
   if (all || modes.empty()) {
-    for (const auto& info : mybrowser::core::AllModes()) selected.push_back(info.mode);
+    for (const auto& info : browserx::core::AllModes()) selected.push_back(info.mode);
   } else {
     for (const std::string& text : modes) {
       Mode mode = Mode::kUltra;
@@ -158,21 +158,21 @@ int main(int argc, char** argv) {
   }
 
   if (json) {
-    std::vector<mybrowser::core::ModePlan> plans;
-    for (const Mode mode : selected) plans.push_back(mybrowser::core::BuildPlan(mode, context));
-    std::printf("%s", mybrowser::core::report::RenderPlansJson(plans, profile).c_str());
+    std::vector<browserx::core::ModePlan> plans;
+    for (const Mode mode : selected) plans.push_back(browserx::core::BuildPlan(mode, context));
+    std::printf("%s", browserx::core::report::RenderPlansJson(plans, profile).c_str());
     return 0;
   }
 
   if (modes.empty() && !all) {
     // No arguments at all: behave like `--all`, but print a short header.
-    std::printf("\n  MyBrowser — Chromium switch plans (verified %s against chromium@%s)\n",
-                mybrowser::core::kCatalogVerifiedOn, mybrowser::core::kCatalogChromiumRef);
+    std::printf("\n  BrowserX — Chromium switch plans (verified %s against chromium@%s)\n",
+                browserx::core::kCatalogVerifiedOn, browserx::core::kCatalogChromiumRef);
   }
   for (const Mode mode : selected) {
-    const ModePlan plan = mybrowser::core::BuildPlan(mode, context);
-    std::printf("%s", mybrowser::core::report::RenderPlanText(plan, profile, quiet).c_str());
+    const ModePlan plan = browserx::core::BuildPlan(mode, context);
+    std::printf("%s", browserx::core::report::RenderPlanText(plan, profile, quiet).c_str());
   }
-  if (!json && !quiet) std::printf("%s", mybrowser::core::report::RenderCatalogFooter().c_str());
+  if (!json && !quiet) std::printf("%s", browserx::core::report::RenderCatalogFooter().c_str());
   return 0;
 }

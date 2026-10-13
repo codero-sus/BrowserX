@@ -1,4 +1,4 @@
-// MyBrowser — tab commands as pure logic.
+// BrowserX — tab commands as pure logic.
 //
 // The window, the menus and the keyboard all funnel into `ApplyTabAction`, which
 // mutates a Session and reports exactly which tab views must be created or
@@ -6,15 +6,15 @@
 // shortcut (including the awkward ones: close-others, sleep, reopen) is covered
 // by unit tests instead of by clicking around.
 
-#ifndef MYBROWSER_BROWSER_TAB_COMMANDS_H_
-#define MYBROWSER_BROWSER_TAB_COMMANDS_H_
+#ifndef BROWSERX_BROWSER_TAB_COMMANDS_H_
+#define BROWSERX_BROWSER_TAB_COMMANDS_H_
 
 #include <string>
 #include <vector>
 
 #include "browser/session.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 enum class TabCommand {
@@ -75,6 +75,6 @@ std::string NextGroupNameIn(const Session& session, const TabState& tab);
 std::string DescribeTabLifecycle(const Session& session);
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_TAB_COMMANDS_H_
+#endif  // BROWSERX_BROWSER_TAB_COMMANDS_H_
