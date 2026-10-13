@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+build/
+release/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.tmp/
+tmp/
+coverage/
+*.tsbuildinfo
+.electron/
+.arena/
