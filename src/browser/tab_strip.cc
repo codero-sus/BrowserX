@@ -10,7 +10,7 @@
 #include "core/format.h"
 #include "core/log.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -242,7 +242,7 @@ int TabStrip::SleepTabs(const std::vector<int>& tab_ids) {
 // Reopen stack
 // ---------------------------------------------------------------------------
 void TabStrip::PushClosed(const std::string& url, const std::string& title) {
-  if (url.empty() || url == "mybrowser://newtab") return;  // nothing worth restoring
+  if (url.empty() || url == "browserx://newtab") return;  // nothing worth restoring
   closed_.emplace_back(url, title);
   // Ten is enough to undo an accident without holding on to stale pages forever.
   static constexpr size_t kMaxClosed = 10;
@@ -269,4 +269,4 @@ std::string TabStrip::ActiveTabSummary() const {
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

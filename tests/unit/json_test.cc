@@ -4,9 +4,9 @@
 
 #include "test_harness.h"
 
-using mybrowser::core::json::Parse;
-using mybrowser::core::json::Serialize;
-using mybrowser::core::json::Value;
+using browserx::core::json::Parse;
+using browserx::core::json::Serialize;
+using browserx::core::json::Value;
 
 TEST(Json, ParsesNullBoolNumbers) {
   auto v = Parse("null");

@@ -1,4 +1,4 @@
-// MyBrowser — system detection.
+// BrowserX — system detection.
 //
 // The profile is what makes the modes *adaptive* rather than hard-coded: a
 // 4 GB laptop and a 64 GB workstation do not deserve the same renderer limit,
@@ -7,14 +7,14 @@
 // All parsing helpers are pure functions over strings so they can be unit
 // tested on any platform (see tests/unit/system_profile_test.cc).
 
-#ifndef MYBROWSER_CORE_SYSTEM_PROFILE_H_
-#define MYBROWSER_CORE_SYSTEM_PROFILE_H_
+#ifndef BROWSERX_CORE_SYSTEM_PROFILE_H_
+#define BROWSERX_CORE_SYSTEM_PROFILE_H_
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 enum class OS { kLinux, kMac, kWindows, kUnknown };
@@ -88,6 +88,6 @@ void RefreshLiveMetrics(SystemProfile* profile);
 std::string DescribeProfile(const SystemProfile& profile);
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_SYSTEM_PROFILE_H_
+#endif  // BROWSERX_CORE_SYSTEM_PROFILE_H_

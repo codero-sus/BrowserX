@@ -1,4 +1,4 @@
-// MyBrowser — the CEF application: mode plan -> real Chromium command lines.
+// BrowserX — the CEF application: mode plan -> real Chromium command lines.
 //
 // Lifecycle of one launch:
 //
@@ -16,11 +16,11 @@
 //   OnBeforeChildProcessLaunch() <-- per-child switches (renderer/GPU/utility)
 //
 // Anything the mode engine plans is applied here and nothing is applied behind
-// its back, which is what makes `mybrowser --flag-plan` an honest proof
+// its back, which is what makes `browserx --flag-plan` an honest proof
 // artifact: the switches it prints are exactly the switches this file appends.
 
-#ifndef MYBROWSER_APP_CEF_HOST_H_
-#define MYBROWSER_APP_CEF_HOST_H_
+#ifndef BROWSERX_APP_CEF_HOST_H_
+#define BROWSERX_APP_CEF_HOST_H_
 
 #include <memory>
 #include <string>
@@ -35,7 +35,7 @@
 // CEF types are forward-declared so this header stays CEF-include-free.
 class CefCommandLine;
 
-namespace mybrowser {
+namespace browserx {
 
 /// Implemented by the browser layer (src/browser): owns tabs, windows and the
 /// per-launch runtime policy. The app layer never reaches into UI code directly.
@@ -128,6 +128,6 @@ namespace browser {
 std::unique_ptr<BrowserShell> CreateBrowserShell(app::CefHost* host);
 }  // namespace browser
 
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_CEF_HOST_H_
+#endif  // BROWSERX_APP_CEF_HOST_H_

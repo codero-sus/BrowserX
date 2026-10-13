@@ -3,7 +3,7 @@
 #include <exception>
 #include <string>
 
-namespace mybrowser {
+namespace browserx {
 namespace tests {
 namespace {
 
@@ -76,7 +76,7 @@ RunStats RunAll(const std::string& filter) {
 }
 
 }  // namespace tests
-}  // namespace mybrowser
+}  // namespace browserx
 
 int main(int argc, char** argv) {
   std::string filter;
@@ -91,8 +91,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::printf("\n  MyBrowser unit tests\n  ====================\n");
-  const mybrowser::tests::RunStats stats = mybrowser::tests::RunAll(filter);
+  std::printf("\n  BrowserX unit tests\n  ====================\n");
+  const browserx::tests::RunStats stats = browserx::tests::RunAll(filter);
   std::printf("\n  %d passed, %d failed", stats.passed, stats.failed);
   if (stats.skipped != 0) std::printf(", %d filtered out", stats.skipped);
   std::printf("\n");

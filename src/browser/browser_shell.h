@@ -1,4 +1,4 @@
-// MyBrowser — the shell: owns windows, the runtime policy and the ticker.
+// BrowserX — the shell: owns windows, the runtime policy and the ticker.
 //
 // Responsibilities (and nothing else):
 //   * create the first window once CEF is ready,
@@ -10,8 +10,8 @@
 // Keeping this file free of view code means the policy can be tested by driving
 // a fake shell; the views only render what the shell reports.
 
-#ifndef MYBROWSER_BROWSER_BROWSER_SHELL_H_
-#define MYBROWSER_BROWSER_BROWSER_SHELL_H_
+#ifndef BROWSERX_BROWSER_BROWSER_SHELL_H_
+#define BROWSERX_BROWSER_BROWSER_SHELL_H_
 
 #include <memory>
 #include <string>
@@ -28,7 +28,7 @@
 #include "core/blocklist.h"
 #include "core/memory_policy.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 class BrowserShellImpl : public BrowserShell {
@@ -116,6 +116,6 @@ class BrowserShellImpl : public BrowserShell {
 };
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_BROWSER_SHELL_H_
+#endif  // BROWSERX_BROWSER_BROWSER_SHELL_H_

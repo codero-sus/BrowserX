@@ -1,4 +1,4 @@
-// MyBrowser — minimal, dependency-free JSON for the core library.
+// BrowserX — minimal, dependency-free JSON for the core library.
 //
 // Why not a third-party JSON library? The core must build and unit-test with
 // nothing but a C++20 compiler (see `make test`). Chromium/CEF's own Value API
@@ -8,8 +8,8 @@
 // Compile-time constraints inherited from CEF: -fno-exceptions -fno-rtti.
 // Therefore: std::get_if everywhere, no throwing accessors, errors returned.
 
-#ifndef MYBROWSER_CORE_JSON_H_
-#define MYBROWSER_CORE_JSON_H_
+#ifndef BROWSERX_CORE_JSON_H_
+#define BROWSERX_CORE_JSON_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +20,7 @@
 #include <variant>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace json {
 
@@ -206,6 +206,6 @@ Value ParseOrObject(std::string_view text, std::string* error = nullptr);
 
 }  // namespace json
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_JSON_H_
+#endif  // BROWSERX_CORE_JSON_H_

@@ -12,13 +12,13 @@
 
 namespace {
 
-using mybrowser::browser::ApplyTabAction;
-using mybrowser::browser::NextGroupNameIn;
-using mybrowser::browser::Session;
-using mybrowser::browser::TabAction;
-using mybrowser::browser::TabActionOutcome;
-using mybrowser::browser::TabCommand;
-using mybrowser::browser::TabLabelFor;
+using browserx::browser::ApplyTabAction;
+using browserx::browser::NextGroupNameIn;
+using browserx::browser::Session;
+using browserx::browser::TabAction;
+using browserx::browser::TabActionOutcome;
+using browserx::browser::TabCommand;
+using browserx::browser::TabLabelFor;
 
 Session MakeSession() {
   Session session;
@@ -41,7 +41,7 @@ TEST(TabCommands, NewTabActivatesAndAsksForAView) {
   const TabActionOutcome outcome = ApplyTabAction(Action(TabCommand::kNewTab), &session);
   EXPECT_TRUE(outcome.handled);
   EXPECT_EQ(session.count(), size_t{4});
-  EXPECT_EQ(session.ActiveUrl(), std::string("mybrowser://newtab"));
+  EXPECT_EQ(session.ActiveUrl(), std::string("browserx://newtab"));
   ASSERT_TRUE_OR_RETURN(outcome.create_ids.size() == 1);
   EXPECT_EQ(outcome.activate_id, outcome.create_ids[0]);
   EXPECT_TRUE(outcome.structure_changed);
@@ -68,7 +68,7 @@ TEST(TabCommands, ClosingTheLastTabLeavesANewTab) {
   EXPECT_TRUE(outcome.handled);
   // Never an empty window: exactly one fresh tab replaces it.
   EXPECT_EQ(session.count(), size_t{1});
-  EXPECT_EQ(session.ActiveUrl(), std::string("mybrowser://newtab"));
+  EXPECT_EQ(session.ActiveUrl(), std::string("browserx://newtab"));
   EXPECT_EQ(outcome.create_ids.size(), size_t{1});
 }
 

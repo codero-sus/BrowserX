@@ -21,7 +21,7 @@
 // Windows detection lives in src/platforms/win/; the core stays portable.
 #endif
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -546,4 +546,4 @@ std::string DescribeProfile(const SystemProfile& profile) {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

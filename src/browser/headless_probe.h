@@ -1,4 +1,4 @@
-// MyBrowser — headless start-up probe.
+// BrowserX — headless start-up probe.
 //
 // `--smoke-test` and `--benchmark` must work on machines with no display (CI,
 // containers, SSH sessions), so they do not open a window at all: the browser is
@@ -8,14 +8,14 @@
 //
 // Exit codes:  0 = page loaded and painted, 1 = load error, 2 = timeout/failure.
 
-#ifndef MYBROWSER_BROWSER_HEADLESS_PROBE_H_
-#define MYBROWSER_BROWSER_HEADLESS_PROBE_H_
+#ifndef BROWSERX_BROWSER_HEADLESS_PROBE_H_
+#define BROWSERX_BROWSER_HEADLESS_PROBE_H_
 
 #include <string>
 
 #include "app/cef_host.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 struct ProbeResult {
@@ -37,6 +37,6 @@ struct ProbeResult {
 ProbeResult RunHeadlessProbe(app::CefHost* host, const std::string& url, int timeout_seconds);
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_HEADLESS_PROBE_H_
+#endif  // BROWSERX_BROWSER_HEADLESS_PROBE_H_

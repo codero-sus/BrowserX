@@ -1,4 +1,4 @@
-// MyBrowser — the session model: which tabs exist, in which order, and how they
+// BrowserX — the session model: which tabs exist, in which order, and how they
 // are doing.
 //
 // This is deliberately CEF-free: the shell tells the session what happened and
@@ -7,14 +7,14 @@
 // what makes crash-safe session restore possible - the whole state is one small
 // JSON document written on a timer and on exit.
 
-#ifndef MYBROWSER_BROWSER_SESSION_H_
-#define MYBROWSER_BROWSER_SESSION_H_
+#ifndef BROWSERX_BROWSER_SESSION_H_
+#define BROWSERX_BROWSER_SESSION_H_
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 struct TabState {
@@ -100,6 +100,6 @@ class Session {
 };
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_SESSION_H_
+#endif  // BROWSERX_BROWSER_SESSION_H_

@@ -8,11 +8,11 @@
 #include "core/settings_schema.h"
 #include "core/url_utils.h"
 
-#ifndef MYBROWSER_VERSION
-#define MYBROWSER_VERSION "dev"
+#ifndef BROWSERX_VERSION
+#define BROWSERX_VERSION "dev"
 #endif
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 namespace {
 
@@ -74,8 +74,8 @@ std::string VersionBanner() {
 #else
   const char* arch = "unknown-arch";
 #endif
-  std::string banner = "MyBrowser ";
-  banner += MYBROWSER_VERSION;
+  std::string banner = "BrowserX ";
+  banner += BROWSERX_VERSION;
   banner += " (";
   banner += arch;
   banner += ", CEF/Chromium";
@@ -89,7 +89,7 @@ std::string VersionBanner() {
 }
 
 std::string CliUsage(const char* program) {
-  const std::string name = (program != nullptr && program[0] != '\0') ? program : "mybrowser";
+  const std::string name = (program != nullptr && program[0] != '\0') ? program : "browserx";
   std::string text;
   text += VersionBanner() + "\n\n";
   text += "usage: " + name + " [options] [url | search terms]\n\n";
@@ -133,7 +133,7 @@ std::string CliUsage(const char* program) {
 
 LaunchOptions ParseCli(int argc, const char* const* argv) {
   LaunchOptions options;
-  options.executable = (argc > 0 && argv[0] != nullptr) ? argv[0] : "mybrowser";
+  options.executable = (argc > 0 && argv[0] != nullptr) ? argv[0] : "browserx";
   for (int i = 0; i < argc; ++i) {
     if (argv[i] != nullptr) options.argv.emplace_back(argv[i]);
   }
@@ -146,7 +146,7 @@ LaunchOptions ParseCli(int argc, const char* const* argv) {
     if (end_of_options || token[0] != '-') {
       // A positional argument: URL or search terms. It is kept *raw* here and
       // resolved at launch with the user's configured search template (which the
-      // CLI cannot know yet), so `mybrowser "my query"` respects settings.json.
+      // CLI cannot know yet), so `browserx "my query"` respects settings.json.
       if (options.url.empty()) {
         options.url = token;
       } else {
@@ -389,4 +389,4 @@ LaunchOptions ParseCli(int argc, const char* const* argv) {
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

@@ -6,7 +6,7 @@
 #include "core/format.h"
 #include "core/url_utils.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -220,7 +220,7 @@ bool Settings::FromJson(const json::Value& value, std::string* error) {
   const int version = value.Get("schema_version").AsInt(1);
   if (version > 1) {
     if (error != nullptr) {
-      *error = "settings were written by a newer MyBrowser (schema_version " +
+      *error = "settings were written by a newer BrowserX (schema_version " +
                std::to_string(version) + "); refusing to guess";
     }
     return false;
@@ -422,4 +422,4 @@ EngineContext Settings::MakeContext(Mode mode, const SystemProfile* profile) con
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

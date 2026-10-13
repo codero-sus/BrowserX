@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      A deliberately tiny theme: BrowserX paints its own chrome, and a light/ARGB
+      theme costs lookups on every frame. Dark, no action bar, no elevation pass.
+    -->
+    <style name="BrowserXTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bx_background</item>
+        <item name="android:colorPrimary">@color/bx_surface</item>
+        <item name="android:colorAccent">@color/bx_accent</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowContentTransitions">false</item>
+    </style>
+</resources>

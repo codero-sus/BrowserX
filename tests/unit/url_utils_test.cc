@@ -7,25 +7,25 @@
 
 namespace {
 
-using mybrowser::core::url::BuildSearchUrl;
-using mybrowser::core::url::EncodePath;
-using mybrowser::core::url::EncodeQuery;
-using mybrowser::core::url::HasScheme;
-using mybrowser::core::url::HostMatchesPattern;
-using mybrowser::core::url::HostOf;
-using mybrowser::core::url::IsHttp;
-using mybrowser::core::url::IsInternal;
-using mybrowser::core::url::IsPrivileged;
-using mybrowser::core::url::LooksLikeUrl;
-using mybrowser::core::url::PortOf;
-using mybrowser::core::url::PrettyForDisplay;
-using mybrowser::core::url::RegistrableHostForDisplay;
-using mybrowser::core::url::ResolveInput;
-using mybrowser::core::url::SameOrigin;
-using mybrowser::core::url::SanitizeInput;
-using mybrowser::core::url::SchemeOf;
-using mybrowser::core::url::StripFragment;
-using mybrowser::core::url::StripTrackingParams;
+using browserx::core::url::BuildSearchUrl;
+using browserx::core::url::EncodePath;
+using browserx::core::url::EncodeQuery;
+using browserx::core::url::HasScheme;
+using browserx::core::url::HostMatchesPattern;
+using browserx::core::url::HostOf;
+using browserx::core::url::IsHttp;
+using browserx::core::url::IsInternal;
+using browserx::core::url::IsPrivileged;
+using browserx::core::url::LooksLikeUrl;
+using browserx::core::url::PortOf;
+using browserx::core::url::PrettyForDisplay;
+using browserx::core::url::RegistrableHostForDisplay;
+using browserx::core::url::ResolveInput;
+using browserx::core::url::SameOrigin;
+using browserx::core::url::SanitizeInput;
+using browserx::core::url::SchemeOf;
+using browserx::core::url::StripFragment;
+using browserx::core::url::StripTrackingParams;
 
 constexpr const char* kSearch = "https://duckduckgo.com/?q=%s";
 
@@ -40,20 +40,20 @@ TEST(Url, PercentEncoding) {
 
 TEST(Url, SchemeDetection) {
   EXPECT_TRUE(HasScheme("https://example.com"));
-  EXPECT_TRUE(HasScheme("mybrowser://settings"));
+  EXPECT_TRUE(HasScheme("browserx://settings"));
   EXPECT_TRUE(HasScheme("about:blank"));
   EXPECT_TRUE(HasScheme("mailto:a@b.c"));
   EXPECT_FALSE(HasScheme("example.com"));
   EXPECT_FALSE(HasScheme("localhost:8080"));
   EXPECT_EQ(SchemeOf("HTTPS://Example.com/A"), std::string("https"));
-  EXPECT_EQ(SchemeOf("mybrowser://telemetry"), std::string("mybrowser"));
+  EXPECT_EQ(SchemeOf("browserx://telemetry"), std::string("browserx"));
   EXPECT_EQ(SchemeOf("example.com"), std::string(""));
 }
 
 TEST(Url, HostAndPortExtraction) {
   EXPECT_EQ(HostOf("https://user:pw@Example.com:8443/x"), std::string("example.com"));
   EXPECT_EQ(HostOf("https://www.example.com"), std::string("www.example.com"));
-  EXPECT_EQ(HostOf("mybrowser://telemetry"), std::string("telemetry"));
+  EXPECT_EQ(HostOf("browserx://telemetry"), std::string("telemetry"));
   EXPECT_EQ(HostOf("about:blank"), std::string(""));
   EXPECT_EQ(RegistrableHostForDisplay("www.example.com"), std::string("example.com"));
   EXPECT_EQ(RegistrableHostForDisplay("example.com"), std::string("example.com"));
@@ -64,11 +64,11 @@ TEST(Url, HostAndPortExtraction) {
 TEST(Url, SchemeFamilies) {
   EXPECT_TRUE(IsHttp("https://example.com"));
   EXPECT_TRUE(IsHttp("http://example.com"));
-  EXPECT_FALSE(IsHttp("mybrowser://settings"));
+  EXPECT_FALSE(IsHttp("browserx://settings"));
   EXPECT_FALSE(IsHttp("about:blank"));
-  EXPECT_TRUE(IsInternal("mybrowser://settings"));
-  EXPECT_TRUE(IsInternal("mybrowser://telemetry?x=1"));
-  EXPECT_FALSE(IsInternal("https://mybrowser.com"));
+  EXPECT_TRUE(IsInternal("browserx://settings"));
+  EXPECT_TRUE(IsInternal("browserx://telemetry?x=1"));
+  EXPECT_FALSE(IsInternal("https://browserx.com"));
   EXPECT_TRUE(IsPrivileged("about:blank"));
   EXPECT_TRUE(IsPrivileged("view-source:https://example.com"));
   EXPECT_FALSE(IsPrivileged("https://example.com"));
@@ -79,7 +79,7 @@ TEST(Url, LooksLikeUrlHeuristics) {
   EXPECT_TRUE(LooksLikeUrl("https://example.com/x"));
   EXPECT_TRUE(LooksLikeUrl("localhost:8080"));
   EXPECT_TRUE(LooksLikeUrl("192.168.1.1/admin"));
-  EXPECT_TRUE(LooksLikeUrl("mybrowser://telemetry"));
+  EXPECT_TRUE(LooksLikeUrl("browserx://telemetry"));
   EXPECT_FALSE(LooksLikeUrl("how to bake bread"));
   EXPECT_FALSE(LooksLikeUrl("chromium memory usage"));
   EXPECT_FALSE(LooksLikeUrl("banana"));
@@ -135,7 +135,7 @@ TEST(Url, DisplayFormHidesNoise) {
   EXPECT_EQ(PrettyForDisplay("https://example.com/"), std::string("example.com"));
   // Only a bare root slash is dropped; a real path keeps its trailing slash.
   EXPECT_EQ(PrettyForDisplay("https://example.com/a/"), std::string("example.com/a/"));
-  EXPECT_EQ(PrettyForDisplay("mybrowser://telemetry"), std::string("mybrowser://telemetry"));
+  EXPECT_EQ(PrettyForDisplay("browserx://telemetry"), std::string("browserx://telemetry"));
   const std::string long_url = std::string("https://example.com/") + std::string(200, 'x');
   // Truncation appends a 3-byte ellipsis, hence the +3.
   EXPECT_TRUE(PrettyForDisplay(long_url, 40).size() <= 43);
@@ -156,7 +156,7 @@ TEST(Url, TrackingParametersAreRemovable) {
   EXPECT_TRUE(cleaned.find("id=7") != std::string::npos);
   EXPECT_FALSE(cleaned.find("utm_source") != std::string::npos);
   EXPECT_FALSE(cleaned.find("fbclid") != std::string::npos);
-  EXPECT_TRUE(mybrowser::core::url::TrackingParamPrefixes().size() > 3);
+  EXPECT_TRUE(browserx::core::url::TrackingParamPrefixes().size() > 3);
 }
 
 TEST(Url, HostPatternMatching) {

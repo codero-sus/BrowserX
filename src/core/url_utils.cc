@@ -7,7 +7,7 @@
 
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace url {
 namespace {
@@ -116,7 +116,7 @@ bool HasScheme(std::string_view text) {
   const std::string scheme = fmt::ToLower(text.substr(0, colon));
   static const std::set<std::string> kKnown = {
       "http", "https", "file", "ftp", "about", "data", "chrome", "devtools",
-      "view-source", "blob", "ws", "wss", "mailto", "tel", "mybrowser", "javascript"};
+      "view-source", "blob", "ws", "wss", "mailto", "tel", "browserx", "javascript"};
   if (text.compare(colon, 3, "://") == 0) return true;
   return kKnown.count(scheme) > 0;
 }
@@ -182,11 +182,11 @@ bool IsHttp(std::string_view url_text) {
   return scheme == "http" || scheme == "https";
 }
 
-bool IsInternal(std::string_view url_text) { return SchemeOf(url_text) == "mybrowser"; }
+bool IsInternal(std::string_view url_text) { return SchemeOf(url_text) == "browserx"; }
 
 bool IsPrivileged(std::string_view url_text) {
   const std::string scheme = SchemeOf(url_text);
-  return scheme == "mybrowser" || scheme == "chrome" || scheme == "devtools" ||
+  return scheme == "browserx" || scheme == "chrome" || scheme == "devtools" ||
          scheme == "about" || scheme == "view-source";
 }
 
@@ -266,7 +266,7 @@ namespace {
 bool IsNavigableScheme(std::string_view text) {
   const std::string scheme = SchemeOf(text);
   if (scheme.empty()) return false;
-  static const char* const kAllowed[] = {"http",   "https",      "mybrowser", "file",
+  static const char* const kAllowed[] = {"http",   "https",      "browserx", "file",
                                          "ftp",    "view-source", "about",    "ws",
                                          "wss"};
   for (const char* allowed : kAllowed) {
@@ -284,7 +284,7 @@ std::string ResolveInput(std::string_view text, std::string_view search_template
   if (LooksLikeUrl(clean)) {
     if (HasScheme(clean)) {
       if (!IsNavigableScheme(clean)) return BuildSearchUrl(search_template, clean);
-      // view-source:mybrowser://... and similar pass through untouched.
+      // view-source:browserx://... and similar pass through untouched.
       return clean;
     }
     if (fmt::StartsWith(clean, "/") || fmt::StartsWith(clean, "./") || fmt::StartsWith(clean, "~/")) {
@@ -401,4 +401,4 @@ bool HostMatchesPattern(std::string_view host, std::string_view pattern) {
 
 }  // namespace url
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
