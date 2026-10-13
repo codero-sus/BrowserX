@@ -35,6 +35,16 @@ enum class PageKind {
   kUnknown,  // anything else -> a helpful "no such page" listing
 };
 
+/// Project identity, in one place so the UI, the CLI and the packaged build can
+/// never disagree about who made this or where it lives.
+constexpr const char* kProjectAuthor = "codero-sus";
+constexpr const char* kProjectAuthorUrl = "https://github.com/codero-sus";
+constexpr const char* kProjectSite = "the-codero.web.app";
+constexpr const char* kProjectSiteUrl = "https://the-codero.web.app";
+constexpr const char* kProjectRepository = "github.com/codero-sus/MyBrowser";
+constexpr const char* kProjectRepositoryUrl = "https://github.com/codero-sus/MyBrowser";
+constexpr const char* kProjectLicence = "BSD-3-Clause";
+
 /// Parsed form of a browserx:// URL.
 struct InternalUrl {
   std::string scheme;   // always "browserx"
@@ -66,6 +76,14 @@ struct PageData {
   /// The host that was actually requested. Only used by the "no such page" view,
   /// so the user sees the address they typed instead of a generic message.
   std::string requested_host;
+
+  /// Credits shown in the footer and on the About page.
+  std::string author = kProjectAuthor;
+  std::string author_url = kProjectAuthorUrl;
+  std::string website = kProjectSite;
+  std::string website_url = kProjectSiteUrl;
+  std::string repository = kProjectRepository;
+  std::string repository_url = kProjectRepositoryUrl;
 };
 
 /// Splits a browserx:// URL. Returns false when the scheme is not "browserx".

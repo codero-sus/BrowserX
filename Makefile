@@ -135,6 +135,8 @@ DOCTOR_BIN     := $(OUT_DIR)/browserx-doctor
 help:
 	@echo ""
 	@echo "  BrowserX — build targets"
+	@echo "  by codero-sus · https://the-codero.web.app · BSD-3-Clause"
+	@echo "  https://github.com/codero-sus/MyBrowser  (credits: CREDITS.md)"
 	@echo "  ------------------------------------------------------------------"
 	@echo "  make deps            download + SHA-1 verify + extract pinned CEF"
 	@echo "  make deps-update     resolve newest stable CEF, re-pin, download"

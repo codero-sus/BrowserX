@@ -1,5 +1,7 @@
 # BrowserX
 
+**By [codero-sus](https://github.com/codero-sus) · website [the-codero.web.app](https://the-codero.web.app) · source [github.com/codero-sus/MyBrowser](https://github.com/codero-sus/MyBrowser)**
+
 An ULTRA-optimised Chromium browser with **five performance modes + Auto-Pilot**,
 in two editions that share one performance core:
 
@@ -125,6 +127,27 @@ preview/        clickable preview served by preview/serve.py
 mobile-edition/ Android app: Kotlin UI + JNI bridge to src/core
 PLAN.md         the build plan, the verified evidence, and the decision log
 ```
+
+## Credits
+
+**BrowserX — built by [codero-sus](https://github.com/codero-sus).**
+
+| | |
+|---|---|
+| GitHub | https://github.com/codero-sus |
+| Website | https://the-codero.web.app |
+| Repository | https://github.com/codero-sus/MyBrowser |
+
+It stands on other people's work: **[Chromium](https://www.chromium.org/)** (the
+engine) and the **[Chromium Embedded Framework](https://github.com/chromiumembedded/cef)**
+(embedding it in C++), both BSD-3-Clause; on Android the mobile edition drives the
+system `WebView`, which is Chromium too. Every switch in `src/core/chromium_catalog.cc`
+records the Chromium source file it was verified against — see
+[source.chromium.org](https://source.chromium.org/). The bundled runtime keeps its
+own licences; BrowserX claims no copyright over it. Full list: [CREDITS.md](CREDITS.md).
+
+The same credits are inside the product, not only in this file: `browserx://about`,
+the CLI (`--help` / `--version`) and the footer of every internal page.
 
 ## Honest status
 

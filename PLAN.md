@@ -1,5 +1,10 @@
 # BrowserX — Build Plan (C++ / CEF)
 
+> **BrowserX by [codero-sus](https://github.com/codero-sus)** ·
+> [the-codero.web.app](https://the-codero.web.app) ·
+> [github.com/codero-sus/MyBrowser](https://github.com/codero-sus/MyBrowser) ·
+> BSD-3-Clause. Credits for Chromium/CEF and licences: [CREDITS.md](CREDITS.md).
+
 > **Stack chosen by you:** C++ + CEF (Chromium Embedded Framework) — maximum performance, native memory control.
 > **Modes:** all 5 (ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO) + Auto-Pilot.
 > **Scope:** full browser (tabs, omnibox, history, bookmarks, downloads, shield, panels), extensions/sync deferred to v2.
