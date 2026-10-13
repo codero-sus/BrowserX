@@ -76,7 +76,7 @@ std::string VersionBanner() {
 #endif
   std::string banner = "BrowserX ";
   banner += BROWSERX_VERSION;
-  banner += " (";
+  banner += " by codero-sus <https://the-codero.web.app> (";
   banner += arch;
   banner += ", CEF/Chromium";
 #if defined(NDEBUG)
@@ -127,7 +127,15 @@ std::string CliUsage(const char* program) {
   text += "  --smoke-test             start and exit immediately (exit code is the result)\n";
   text += "  --help, --version\n\n";
   text += "Anything else starting with -- is passed to Chromium unchanged, e.g.\n";
-  text += "    " + name + " --enable-logging=stderr --v=1\n";
+  text += "    " + name + " --enable-logging=stderr --v=1\n\n";
+  text += "CREDITS\n";
+  text += "  BrowserX by codero-sus\n";
+  text += "    GitHub     https://github.com/codero-sus\n";
+  text += "    Website    https://the-codero.web.app\n";
+  text += "    Source     https://github.com/codero-sus/MyBrowser\n";
+  text += "    Licence    BSD-3-Clause (BrowserX); the bundled Chromium/CEF runtime\n";
+  text += "               stays under its own licences.\n";
+  text += "  Made with Chromium and the Chromium Embedded Framework. See CREDITS.md.\n";
   return text;
 }
 

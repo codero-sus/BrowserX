@@ -301,6 +301,11 @@ html, body {
 }
 .statusbar .spacer { flex: 1; }
 #status-mode { color: var(--accent); }
+.statusbar a { color: var(--text-muted); text-decoration: none; }
+.statusbar a:hover { color: var(--accent); text-decoration: underline; }
+
+a { color: var(--blue); }
+.card a:hover { text-decoration: underline; }
 
 .toast {
   position: fixed; bottom: 46px; left: 50%; transform: translateX(-50%);
