@@ -18,6 +18,7 @@
 
 #include "core/chromium_catalog.h"
 #include "core/format.h"
+#include "core/json.h"
 #include "core/log.h"
 #include "core/mode_engine.h"
 #include "core/report.h"
@@ -121,6 +122,50 @@ int main(int argc, char** argv) {
   }
 
   if (show_catalog) {
+    if (json) {
+      // Structured catalogue: the preview UI and the diagnostics panel read this
+      // to show where every switch was verified. Removed switches are included
+      // only when asked for, and always carry status "removed".
+      browserx::core::json::Value::Array entries;
+      for (const browserx::core::SwitchEntry& entry : browserx::core::AllSwitches()) {
+        const browserx::core::Provenance provenance = entry.provenance;
+        const bool removed = provenance == browserx::core::Provenance::kRemoved;
+        if (removed && !include_removed) continue;
+        browserx::core::json::Value::Object item;
+        item["name"] = browserx::core::json::Value(entry.id);
+        item["status"] = browserx::core::json::Value(browserx::core::ProvenanceLabel(provenance));
+        item["scope"] = browserx::core::json::Value(browserx::core::ScopeLabel(entry.scope));
+        item["risk"] = browserx::core::json::Value(browserx::core::RiskLabel(entry.risk));
+        item["provenance"] = browserx::core::json::Value(entry.source);
+        item["summary"] = browserx::core::json::Value(entry.summary);
+        item["requires_value"] = browserx::core::json::Value(entry.requires_value);
+        item["applicable"] = browserx::core::json::Value(browserx::core::IsApplicable(entry));
+        entries.emplace_back(item);
+      }
+      browserx::core::json::Value::Array features;
+      for (const browserx::core::FeatureEntry& entry : browserx::core::AllFeatures()) {
+        if (entry.provenance == browserx::core::Provenance::kRemoved && !include_removed) continue;
+        browserx::core::json::Value::Object item;
+        item["name"] = browserx::core::json::Value(entry.name);
+        item["status"] = browserx::core::json::Value(browserx::core::ProvenanceLabel(entry.provenance));
+        item["provenance"] = browserx::core::json::Value(entry.source);
+        item["summary"] = browserx::core::json::Value(entry.summary);
+        item["kind"] = browserx::core::json::Value("feature");
+        features.emplace_back(item);
+      }
+      const browserx::core::CatalogStats stats = browserx::core::GetCatalogStats();
+      browserx::core::json::Value::Object summary;
+      summary["switches_total"] = browserx::core::json::Value(static_cast<int64_t>(stats.switches_total));
+      summary["switches_verified"] = browserx::core::json::Value(static_cast<int64_t>(stats.switches_verified));
+      summary["switches_removed"] = browserx::core::json::Value(static_cast<int64_t>(stats.switches_removed));
+      summary["features_total"] = browserx::core::json::Value(static_cast<int64_t>(stats.features_total));
+      browserx::core::json::Value::Object output;
+      output["switches"] = browserx::core::json::Value(std::move(entries));
+      output["features"] = browserx::core::json::Value(std::move(features));
+      output["stats"] = browserx::core::json::Value(std::move(summary));
+      std::printf("%s\n", browserx::core::json::Serialize(browserx::core::json::Value(std::move(output)), 0).c_str());
+      return 0;
+    }
     std::printf("\n%s\n", browserx::core::RenderCatalogReport(include_removed).c_str());
     std::printf("  Evidence: https://source.chromium.org/search?q=<switch-name>&ss=chromium\n\n");
     return 0;

@@ -162,19 +162,19 @@ help:
 # -----------------------------------------------------------------------------
 .PHONY: deps
 deps:
-	@$(PYTHON) $(ROOT)/build/fetch_cef.py
+	@$(PYTHON) $(ROOT)/tools/fetch_cef.py
 
 .PHONY: deps-update
 deps-update:
-	@$(PYTHON) $(ROOT)/build/fetch_cef.py --update
+	@$(PYTHON) $(ROOT)/tools/fetch_cef.py --update
 
 .PHONY: deps-list
 deps-list:
-	@$(PYTHON) $(ROOT)/build/fetch_cef.py --list
+	@$(PYTHON) $(ROOT)/tools/fetch_cef.py --list
 
 .PHONY: headers
 headers:
-	@$(PYTHON) $(ROOT)/build/fetch_cef.py --headers-only
+	@$(PYTHON) $(ROOT)/tools/fetch_cef.py --headers-only
 
 # -----------------------------------------------------------------------------
 # Build
@@ -252,7 +252,7 @@ check-test-extra-purity:
 check-headers:
 	@if [ ! -f "$(CHECK_CEF_ROOT)/include/cef_app.h" ]; then \
 		echo "  → CEF headers missing; fetching them now"; \
-		$(PYTHON) $(ROOT)/build/fetch_cef.py --headers-only >/dev/null; \
+		$(PYTHON) $(ROOT)/tools/fetch_cef.py --headers-only >/dev/null; \
 	fi
 
 # The core library (and the app files the tests link) must stay free of CEF/UI
@@ -354,7 +354,7 @@ sandbox-setup:
 # -----------------------------------------------------------------------------
 .PHONY: package
 package: build
-	@bash $(ROOT)/build/package.sh
+	@bash $(ROOT)/tools/package.sh
 
 # -----------------------------------------------------------------------------
 # UI preview (clickable design preview; runs in any browser, no CEF needed)

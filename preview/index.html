@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrowserX — preview</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="titlebar">
+    <div class="brand">
+      <span class="logo">BX</span>
+      <span class="name">BrowserX</span>
+      <span class="tag">ULTRA powerful · low RAM · five modes</span>
+    </div>
+    <div class="titlebar-right">
+      <span class="pill" id="profile-pill">detecting machine…</span>
+      <span class="pill pill-live" id="data-pill">live core data</span>
+    </div>
+  </header>
+
+  <div class="tabstrip" id="tabstrip">
+    <button class="tab active" data-tab="modes"><span class="dot"></span>Modes<span class="x">×</span></button>
+    <button class="tab" data-tab="telemetry"><span class="dot"></span>Telemetry<span class="x">×</span></button>
+    <button class="tab sleeping" data-tab="catalog"><span class="dot"></span>Switch catalogue<span class="x">×</span></button>
+    <button class="tab" data-tab="about"><span class="dot"></span>About BrowserX<span class="x">×</span></button>
+    <button class="newtab" title="New tab">+</button>
+  </div>
+
+  <div class="toolbar">
+    <button class="nav" title="Back">‹</button>
+    <button class="nav" title="Forward">›</button>
+    <button class="nav" title="Reload">⟳</button>
+    <div class="omnibox" id="omnibox"><span class="lock">🔒</span><span id="omnibox-url">browserx://modes</span></div>
+    <button class="nav" title="Shield">🛡 <span id="shield-count">0</span></button>
+    <button class="nav" title="Menu">⋮</button>
+  </div>
+
+  <div class="modebar" id="modebar">
+    <span class="modebar-label">Mode</span>
+    <div class="chips" id="mode-chips"></div>
+    <div class="modebar-right">
+      <label class="switch" title="Auto-Pilot: switch modes for you based on battery, memory pressure and fullscreen gaming">
+        <input type="checkbox" id="autopilot" checked>
+        <span class="slider"></span>
+        <span class="switch-label">Auto-Pilot</span>
+      </label>
+      <select id="autopilot-mode" class="select" title="Auto-Pilot behaviour">
+        <option value="auto">auto</option>
+        <option value="ask">ask</option>
+        <option value="off">off</option>
+      </select>
+    </div>
+  </div>
+
+  <main class="content">
+
+    <section class="page" data-page="modes">
+      <div class="grid">
+        <article class="card card-wide">
+          <h2 id="mode-title">ULTRA</h2>
+          <p class="muted" id="mode-rationale"></p>
+          <div class="kpis" id="mode-kpis"></div>
+        </article>
+
+        <article class="card card-wide">
+          <h2>Chromium switches this mode applies</h2>
+          <p class="muted">Every entry is checked against the Chromium source tree; the provenance column says where it was verified. Anything that does not exist upstream is refused, not shipped.</p>
+          <table class="table" id="switch-table">
+            <thead><tr><th>Switch</th><th>Value</th><th>Why</th><th>Provenance</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>Runtime policy</h2>
+          <p class="muted">Applied live, no restart needed.</p>
+          <div class="policy" id="policy-list"></div>
+        </article>
+
+        <article class="card">
+          <h2>Notes &amp; warnings</h2>
+          <div id="notes"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="page" data-page="telemetry" hidden>
+      <div class="grid">
+        <article class="card card-wide">
+          <h2>Memory pressure → what BrowserX does</h2>
+          <p class="muted">
+            The gauge uses the thresholds this mode really ships (<span id="threshold-text"></span>).
+            Drag the slider to see the escalation ladder the memory guard follows.
+          </p>
+          <div class="gauge-wrap">
+            <div class="gauge" id="gauge">
+              <div class="gauge-fill" id="gauge-fill"></div>
+              <div class="gauge-marker warn" id="gauge-warn"><span>warn</span></div>
+              <div class="gauge-marker discard" id="gauge-discard"><span>discard</span></div>
+            </div>
+            <input type="range" min="0" max="100" value="42" id="pressure" class="range">
+            <div class="gauge-readout">
+              <strong id="pressure-value">42%</strong>
+              <span id="pressure-level" class="badge">relaxed</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Live tabs</h2>
+          <p class="muted">Hidden tabs are destroyed, not hidden — the renderer process goes away and the tab returns from URL, title and scroll position.</p>
+          <ul class="tabs-list" id="tabs-list"></ul>
+        </article>
+
+        <article class="card">
+          <h2>Action log</h2>
+          <ul class="log" id="action-log"></ul>
+        </article>
+
+        <article class="card card-wide">
+          <h2>Auto-Pilot</h2>
+          <p class="muted">Evaluated in this order: fullscreen gaming → memory pressure → battery → plugged-in → idle. Manual mode choices get a 5-minute override window.</p>
+          <pre class="mono" id="autopilot-explain"></pre>
+        </article>
+      </div>
+    </section>
+
+    <section class="page" data-page="catalog" hidden>
+      <div class="grid">
+        <article class="card card-wide">
+          <h2>Verified Chromium switch catalogue</h2>
+          <p class="muted">
+            The whole point of BrowserX's optimisation is that a switch only ships if it was found
+            in the Chromium tree. This is the raw list the mode engine draws from — including the
+            ones marked <em>removed</em>, which are never applied.
+          </p>
+          <div class="catalog-controls">
+            <input type="search" id="catalog-search" class="omnibox" placeholder="filter switches…">
+            <span class="badge" id="catalog-count"></span>
+          </div>
+          <table class="table" id="catalog-table">
+            <thead><tr><th>Name</th><th>Status</th><th>Provenance</th><th>Summary</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </article>
+      </div>
+    </section>
+
+    <section class="page" data-page="about" hidden>
+      <div class="grid">
+        <article class="card card-wide">
+          <h2>About BrowserX</h2>
+          <p class="muted">
+            An ULTRA-optimised Chromium browser, C++20 on CEF, with five performance modes plus
+            Auto-Pilot and a tracker shield. This preview page is served by
+            <code>preview/serve.py</code> and reads the mode engine directly, so the numbers you
+            click through are the numbers the browser will apply.
+          </p>
+          <h3>Machine profile</h3>
+          <pre class="mono" id="profile-report">loading…</pre>
+          <h3>Two editions, one core</h3>
+          <p class="muted">
+            The desktop edition links CEF and draws native chrome. The mobile edition
+            (<code>mobile-edition/</code>) is an Android app whose Kotlin layer calls the same
+            <code>src/core</code> through a small JNI bridge, so a rule fixed here is fixed in both.
+          </p>
+        </article>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="statusbar">
+    <span id="status-left">ready</span>
+    <span class="spacer"></span>
+    <span id="status-cache"></span>
+    <span id="status-renderers"></span>
+    <span id="status-mode"></span>
+  </footer>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
