@@ -138,8 +138,11 @@ std::string RenderPlanJson(const ModePlan& plan, const SystemProfile& profile) {
   }
   out += "  ],\n";
 
+  // The UI panels (browserx://modes, the status bar, the preview) render this
+  // object directly, so every field the runtime policy exposes is emitted here.
+  const auto flag = [](bool value) { return std::string(value ? "true" : "false"); };
   out += "  \"runtime\": {\n";
-  out += "    \"background_throttling\": " + std::string(plan.runtime.background_throttling ? "true" : "false") + ",\n";
+  out += "    \"background_throttling\": " + flag(plan.runtime.background_throttling) + ",\n";
   out += "    \"target_fps\": " + std::to_string(static_cast<int>(plan.runtime.target_fps)) + ",\n";
   out += "    \"sleep_after_seconds\": " + std::to_string(plan.runtime.sleep_after_seconds) + ",\n";
   out += "    \"discard_after_seconds\": " + std::to_string(plan.runtime.discard_after_seconds) + ",\n";
@@ -147,11 +150,37 @@ std::string RenderPlanJson(const ModePlan& plan, const SystemProfile& profile) {
   out += "    \"discard_pressure\": " + std::to_string(plan.runtime.discard_pressure) + ",\n";
   out += "    \"cache_size_mb\": " + std::to_string(plan.runtime.cache_size_mb) + ",\n";
   out += "    \"metrics_interval_ms\": " + std::to_string(plan.runtime.metrics_interval_ms) + ",\n";
-  out += "    \"keep_display_awake\": " + std::string(plan.runtime.keep_display_awake ? "true" : "false") + ",\n";
-  out += "    \"bfcache\": " + std::string(plan.runtime.bfcache ? "true" : "false") + ",\n";
-  out += "    \"preconnect\": " + std::string(plan.runtime.preconnect ? "true" : "false") + ",\n";
-  out += "    \"show_perf_hud\": " + std::string(plan.runtime.show_perf_hud ? "true" : "false") + "\n";
+  out += "    \"keep_display_awake\": " + flag(plan.runtime.keep_display_awake) + ",\n";
+  out += "    \"always_on_top\": " + flag(plan.runtime.always_on_top) + ",\n";
+  out += "    \"bfcache\": " + flag(plan.runtime.bfcache) + ",\n";
+  out += "    \"preconnect\": " + flag(plan.runtime.preconnect) + ",\n";
+  out += "    \"code_cache\": " + flag(plan.runtime.code_cache) + ",\n";
+  out += "    \"reduce_motion\": " + flag(plan.runtime.reduce_motion) + ",\n";
+  out += "    \"block_trackers\": " + flag(plan.runtime.block_trackers) + ",\n";
+  out += "    \"block_third_party\": " + flag(plan.runtime.block_third_party) + ",\n";
+  out += "    \"block_images\": " + flag(plan.runtime.block_images) + ",\n";
+  out += "    \"block_media\": " + flag(plan.runtime.block_media) + ",\n";
+  out += "    \"block_fonts\": " + flag(plan.runtime.block_fonts) + ",\n";
+  out += "    \"lazy_new_tabs\": " + flag(plan.runtime.lazy_new_tabs) + ",\n";
+  out += "    \"show_perf_hud\": " + flag(plan.runtime.show_perf_hud) + ",\n";
+  out += "    \"show_status_counters\": " + flag(plan.runtime.show_status_counters) + "\n";
   out += "  },\n";
+
+  // Rationale + caveats: the internal pages show these next to the switches,
+  // and they are the honest part (what this mode does *not* do for you).
+  out += "  \"rationale\": \"" + JsonEscape(info.detail != nullptr ? info.detail : "") + "\",\n";
+  out += "  \"tagline\": \"" + JsonEscape(info.tagline != nullptr ? info.tagline : "") + "\",\n";
+  out += "  \"icon\": \"" + JsonEscape(info.icon != nullptr ? info.icon : "") + "\",\n";
+  out += "  \"notes\": [";
+  for (size_t i = 0; i < plan.notes.size(); ++i) {
+    out += (i == 0 ? "\n    \"" : ",\n    \"") + JsonEscape(plan.notes[i]) + "\"";
+  }
+  out += plan.notes.empty() ? "],\n" : "\n  ],\n";
+  out += "  \"warnings\": [";
+  for (size_t i = 0; i < plan.warnings.size(); ++i) {
+    out += (i == 0 ? "\n    \"" : ",\n    \"") + JsonEscape(plan.warnings[i]) + "\"";
+  }
+  out += plan.warnings.empty() ? "],\n" : "\n  ],\n";
 
   out += "  \"estimated_memory_budget_mb\": " + std::to_string(plan.estimated_memory_budget_mb) + ",\n";
   out += "  \"system\": {\"os\": \"" + JsonEscape(profile.os_name) + "\", \"ram_mb\": " +
