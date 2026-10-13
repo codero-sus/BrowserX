@@ -1,5 +1,12 @@
 # BrowserX — Mobile Edition (Android)
 
+> **BrowserX by [codero-sus](https://github.com/codero-sus)** ·
+> [the-codero.web.app](https://the-codero.web.app) ·
+> [source](https://github.com/codero-sus/MyBrowser) · BSD-3-Clause.
+> Built on Chromium (the system WebView) and sharing its core with the desktop
+> edition, which is built on [CEF](https://github.com/chromiumembedded/cef).
+> Credits: [../CREDITS.md](../CREDITS.md).
+
 A Chromium-powered browser for Android that shares the **exact same performance
 core** as the desktop edition. Not a re-implementation: the mode engine, the
 memory policy, the auto-pilot rules, the tracker shield and the omnibox parser
@@ -52,7 +59,7 @@ mobile-edition/
 │   │   ├── ModeController.kt    mode → WebView settings, Auto-Pilot ticker
 │   │   ├── TabController.kt     tabs, sleeping, session restore
 │   │   ├── ShieldEngine.kt      tracker shield via the shared blocklist
-│   │   └── MainActivity.kt      the UI: toolbar, chips, mode menu
+│   │   └── MainActivity.kt      the UI: toolbar, chips, mode menu, credits dialog
 │   └── jni/
 │       ├── CMakeLists.txt       compiles ../src/core/*.cc into the .so
 │       └── core_bridge.cc       the JNI surface

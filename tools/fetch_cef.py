@@ -196,6 +196,9 @@ def cef_root_for(version: str, entry: str, flavour: str) -> Path:
 def load_lock() -> dict:
     if not LOCK_FILE.is_file():
         return {
+            "//": "Pins the exact CEF binary distribution BrowserX builds against.",
+            "//author": "BrowserX by codero-sus - https://the-codero.web.app",
+            "//licence": "BSD-3-Clause (BrowserX); CEF/Chromium keep their own licences",
             "pin_mode": "track-stable",
             "platform_entry": platform_entry(),
             "version": "",
@@ -207,12 +210,14 @@ def load_lock() -> dict:
 
 
 def save_lock(lock: dict) -> None:
-    # Keep the human-facing comment keys first so the file stays readable.
+    """Writes the lock file, keeping every comment key (any "//" key) first and in
+    its original order, so re-pinning never silently deletes documentation such as
+    the author/credits lines."""
     ordered = {}
-    for key in ("//", "//usage", "//usage2", "//usage3"):
-        if key in lock:
-            ordered[key] = lock[key]
-    for key, value in lock.items():
+    for key, value in lock.items():          # comments first, in file order
+        if key.startswith("//"):
+            ordered[key] = value
+    for key, value in lock.items():          # then the machine-readable values
         if not key.startswith("//"):
             ordered[key] = value
     LOCK_FILE.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
@@ -570,6 +575,7 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
         root = candidates[-1]
         log(f"using extracted root: {root}")
 
+    previous_comments = {key: value for key, value in lock.items() if key.startswith("//")}
     lock.update(
         {
             "pin_mode": lock.get("pin_mode", "track-stable"),
@@ -581,6 +587,7 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     )
+    lock.update(previous_comments)  # never lose the docs on a re-pin; update wins
     save_lock(lock)
     log(f"lock file updated: {LOCK_FILE.name}")
     log("")

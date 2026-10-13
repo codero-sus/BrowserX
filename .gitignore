@@ -1,15 +1,37 @@
-node_modules/
-dist/
-out/
-build/
-release/
+# BrowserX — build products and local state only.
+# Anything that is part of the project (scripts, sources, headers, docs) is
+# tracked, including the CEF headers in .cef-headers/ so `make check` works
+# without a download.
+
+# Build output
+/out/
+/build/
+/release/
+*.o
+*.so
+*.a
+
+# Fetched CEF binary distribution (large, machine-specific; see cef.lock.json)
+/.cef-deps/
+
+# Local run state (profiles, caches, logs) — never the user's real profile dir
 *.log
-npm-debug.log*
+/profile/
+/tmp/
+
+# Python bytecode from the build scripts
+__pycache__/
+*.pyc
+
+# Android
+mobile-edition/.gradle/
+mobile-edition/build/
+mobile-edition/local.properties
+mobile-edition/.cxx/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
 .DS_Store
 Thumbs.db
-.tmp/
-tmp/
-coverage/
-*.tsbuildinfo
-.electron/
-.arena/

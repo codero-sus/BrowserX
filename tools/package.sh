@@ -117,6 +117,21 @@ if [[ ! -e /dev/shm ]] || [[ "$(df -m /dev/shm 2>/dev/null | awk 'NR==2 {print $
   export BROWSERX_EXTRA_FLAGS="${BROWSERX_EXTRA_FLAGS:-} --disable-dev-shm-usage"
 fi
 
+if [[ "${1:-}" == "--credits" ]]; then
+  cat <<'CREDITS'
+BrowserX — an ULTRA-optimised Chromium browser
+
+  author   codero-sus
+  website  https://the-codero.web.app
+  github   https://github.com/codero-sus
+  source   https://github.com/codero-sus/MyBrowser
+  licence  BSD-3-Clause (BrowserX); Chromium and CEF keep their own licences
+
+Built on Chromium and the Chromium Embedded Framework. See CREDITS.md.
+CREDITS
+  exit 0
+fi
+
 exec "${HERE}/BrowserX" \
   --resources-dir="${HERE}/Resources" \
   --locales-dir="${HERE}/locales" \
@@ -127,6 +142,10 @@ chmod 0755 "${TARGET}/browserx"
 # ------------------------------------------------------------------ metadata -
 {
   printf 'BrowserX %s\n' "${VERSION}"
+  printf 'author   : codero-sus <https://github.com/codero-sus>\n'
+  printf 'website  : https://the-codero.web.app\n'
+  printf 'source   : https://github.com/codero-sus/MyBrowser\n'
+  printf 'licence  : BSD-3-Clause (BrowserX); Chromium/CEF keep their own licences\n'
   printf 'packaged : %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'platform : %s\n' "${PLATFORM}"
   printf 'host     : %s\n' "$(uname -srm)"
@@ -142,6 +161,11 @@ BrowserX
 
 An ULTRA-optimised Chromium browser with five performance modes (ULTRA, GAME,
 HIGH PERFORMANCE, LOW RAM, ECO) and Auto-Pilot, built on CEF.
+
+    by codero-sus
+    website : https://the-codero.web.app
+    github  : https://github.com/codero-sus
+    source  : https://github.com/codero-sus/MyBrowser
 
 Run it
 ------
@@ -167,9 +191,20 @@ Requirements
 A 64-bit Linux with glibc 2.31+, GTK-3, NSS, ALSA and X11/Wayland libraries. The
 runtime is bundled; no build step and no separate CEF install is needed.
 
-Licences: BrowserX is BSD-3-Clause; the bundled Chromium/CEF runtime is under the
-licences listed in Resources/ (see also chromiumembedded/cef).
+Credits & licences
+------------------
+BrowserX is BSD-3-Clause (BrowserX by codero-sus, https://the-codero.web.app).
+It is built on Chromium and the Chromium Embedded Framework, both BSD-3-Clause;
+the bundled runtime keeps its own licences, which are listed in the payload and
+at https://github.com/chromiumembedded/cef. Full credits: CREDITS.md in the
+source tree. BrowserX claims no copyright over the bundled Chromium/CEF runtime.
 README
+
+step "copying the credits and licence"
+for doc in LICENSE CREDITS.md README.md; do
+  [[ -f "${ROOT}/${doc}" ]] && install -m 0644 "${ROOT}/${doc}" "${TARGET}/${doc}"
+done
+[[ -f "${TARGET}/LICENSE" ]] || die "LICENSE is missing from the source tree"
 
 step "writing a tarball"
 TARBALL="${DIST}/${PKG_NAME}.tar.gz"
