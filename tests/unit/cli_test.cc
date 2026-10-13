@@ -166,4 +166,15 @@ TEST(Cli, UsageTextDocumentsEveryRealOption) {
   }
 }
 
+TEST(Cli, UsageCreditsTheAuthorAndShipsTheLinks) {
+  const std::string usage = browserx::app::CliUsage("browserx");
+  EXPECT_TRUE(usage.find("codero-sus") != std::string::npos);
+  EXPECT_TRUE(usage.find("https://the-codero.web.app") != std::string::npos);
+  EXPECT_TRUE(usage.find("https://github.com/codero-sus/MyBrowser") != std::string::npos);
+  EXPECT_TRUE(usage.find("BSD-3-Clause") != std::string::npos);
+  // The banner is what `--version` prints; it must name the author too.
+  EXPECT_TRUE(browserx::app::VersionBanner().find("BrowserX") == 0);
+  EXPECT_TRUE(browserx::app::VersionBanner().find("codero-sus") != std::string::npos);
+}
+
 }  // namespace

@@ -23,4 +23,9 @@
     <string name="telemetry_line">%1$s · %2$d%% RAM</string>
     <string name="trim_memory_notice">Low memory: slept %1$d tab(s)</string>
     <string name="restored_sleeping">Restored session — %1$d tab(s) asleep</string>
+
+    <!-- Credits (see CREDITS.md in the repository root) -->
+    <string name="credits">Credits</string>
+    <string name="credits_title">BrowserX — credits</string>
+    <string name="credits_body">BrowserX by codero-sus\n\nWebsite  https://the-codero.web.app\nGitHub   https://github.com/codero-sus\nSource   https://github.com/codero-sus/MyBrowser\nLicence  BSD-3-Clause\n\nBuilt on Chromium and the Chromium Embedded Framework (BSD-3-Clause); this app drives the system WebView, which is Chromium too. The engine keeps its own licences.</string>
 </resources>

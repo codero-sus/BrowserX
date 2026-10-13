@@ -226,18 +226,64 @@ TEST(InternalPages, UnwiredPagesAdmitItHonestly) {
 }
 
 TEST(InternalPages, PagesAreSelfContained) {
-  // No external *resource* requests: an internal page must work offline and leak
-  // nothing. (Page data may legitimately contain URLs — session URLs are real
-  // content — so only resource references are checked.)
+  // No external *resource* is ever loaded: an internal page must work offline and
+  // leak nothing (no fonts, no CDN, no analytics). Credits are hyperlinks, which
+  // are inert until the user clicks one, so hrefs are allowed and everything that
+  // fetches on its own is not. Page data may also contain real URLs (session
+  // history), which is content, not a load.
   for (const std::string& host : AllInternalHosts()) {
     const std::string html = RenderPage(KindForHost(host), SampleData());
     EXPECT_FALSE(Contains(html, "<link"));
+    EXPECT_FALSE(Contains(html, "@import"));
+    EXPECT_FALSE(Contains(html, "<img"));
+    EXPECT_FALSE(Contains(html, "<iframe"));
     EXPECT_FALSE(Contains(html, "src=\"http"));
     EXPECT_FALSE(Contains(html, "src=\"//"));
-    EXPECT_FALSE(Contains(html, "href=\"http"));
-    EXPECT_FALSE(Contains(html, "@import"));
+    EXPECT_FALSE(Contains(html, "url(http"));
     EXPECT_TRUE(Contains(html, "<style>"));
   }
+}
+
+TEST(InternalPages, CreditsAppearOnEveryPageAndOnAbout) {
+  const PageData data = SampleData();
+  for (const std::string& host : AllInternalHosts()) {
+    const std::string html = RenderPage(KindForHost(host), data);
+    // The author is credited in the footer of every page the browser shows.
+    EXPECT_TRUE(Contains(html, "codero-sus"));
+    EXPECT_TRUE(Contains(html, "the-codero.web.app"));
+    EXPECT_TRUE(Contains(html, "github.com/codero-sus/MyBrowser"));
+  }
+
+  const std::string about = RenderPage(PageKind::kAbout, data);
+  EXPECT_TRUE(Contains(about, "Credits"));
+  EXPECT_TRUE(Contains(about, "https://github.com/codero-sus"));
+  EXPECT_TRUE(Contains(about, "https://the-codero.web.app"));
+  EXPECT_TRUE(Contains(about, "BSD-3-Clause"));
+  // Upstream is credited too: BrowserX would not exist without them.
+  EXPECT_TRUE(Contains(about, "chromium.org"));
+  EXPECT_TRUE(Contains(about, "chromiumembedded/cef"));
+  EXPECT_TRUE(Contains(about, "source.chromium.org"));
+
+  // Credit links must not be able to smuggle a script tag through the author name.
+  PageData hostile = SampleData();
+  hostile.author = "<img src=x onerror=alert(1)>";
+  hostile.website = "\"><script>alert(1)</script>";
+  const std::string escaped = RenderPage(PageKind::kAbout, hostile);
+  EXPECT_FALSE(Contains(escaped, "<img src=x"));
+  EXPECT_FALSE(Contains(escaped, "<script>alert"));
+  EXPECT_TRUE(Contains(escaped, "&lt;img src=x"));
+}
+
+TEST(InternalPages, IdentityConstantsMatchTheProduct) {
+  EXPECT_EQ(std::string(browserx::web::kProjectAuthor), std::string("codero-sus"));
+  EXPECT_EQ(std::string(browserx::web::kProjectSite), std::string("the-codero.web.app"));
+  EXPECT_EQ(std::string(browserx::web::kProjectSiteUrl), std::string("https://the-codero.web.app"));
+  EXPECT_EQ(std::string(browserx::web::kProjectRepositoryUrl),
+            std::string("https://github.com/codero-sus/MyBrowser"));
+  // Defaults are wired: a caller that fills nothing in still gets real credits.
+  const PageData defaults;
+  EXPECT_EQ(defaults.author, std::string(browserx::web::kProjectAuthor));
+  EXPECT_EQ(defaults.website, std::string(browserx::web::kProjectSite));
 }
 
 }  // namespace

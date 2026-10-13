@@ -522,6 +522,11 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
             notice(getString(R.string.cache_cleared))
             true
         }
+        menu.menu.addSeparator()
+        menu.menu.add(getString(R.string.credits)).setOnMenuItemClickListener {
+            showText(getString(R.string.credits_title), getString(R.string.credits_body))
+            true
+        }
         menu.show()
     }
 
