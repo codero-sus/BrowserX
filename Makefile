@@ -114,8 +114,11 @@ APP_OBJS       := $(patsubst $(ROOT)/%.cc,$(OBJ_DIR)/%.o,$(APP_SRCS))
 WRAPPER_OBJS   := $(patsubst $(ROOT)/%.cc,$(OBJ_DIR)/%.o,$(WRAPPER_SRCS))
 CHECK_OBJS     := $(patsubst $(ROOT)/%.cc,$(CHECK_OBJ_DIR)/%.o,$(APP_SRCS))
 # App-layer files that are deliberately CEF-free and therefore unit tested too.
+# Compiled by `make test` without CEF headers on the include path, so they must
+# stay CEF-free (check-test-extra-purity enforces it).
 TEST_EXTRA_SRCS := $(SRC_DIR)/app/cli.cc $(SRC_DIR)/app/app_paths.cc \
-                   $(SRC_DIR)/browser/session.cc $(SRC_DIR)/browser/tab_commands.cc
+                   $(SRC_DIR)/browser/session.cc $(SRC_DIR)/browser/tab_commands.cc \
+                   $(SRC_DIR)/web/internal_pages.cc
 TEST_OBJS      := $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(CORE_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_EXTRA_SRCS))
