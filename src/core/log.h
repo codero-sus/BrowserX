@@ -1,17 +1,17 @@
-// MyBrowser — leveled logging with an in-memory ring buffer.
+// BrowserX — leveled logging with an in-memory ring buffer.
 //
 // The ring buffer is what powers the in-app Diagnostics panel: the last N
 // entries are always available for display/export, even if stdout is closed.
 
-#ifndef MYBROWSER_CORE_LOG_H_
-#define MYBROWSER_CORE_LOG_H_
+#ifndef BROWSERX_CORE_LOG_H_
+#define BROWSERX_CORE_LOG_H_
 
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 enum class LogLevel : int { kTrace = 0, kDebug = 1, kInfo = 2, kWarn = 3, kError = 4, kOff = 5 };
@@ -75,6 +75,6 @@ void ErrorF(std::string_view category, const char* format, ...);
 }  // namespace log
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_LOG_H_
+#endif  // BROWSERX_CORE_LOG_H_

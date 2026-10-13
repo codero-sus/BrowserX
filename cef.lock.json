@@ -1,5 +1,5 @@
 {
-  "//": "Pins the exact CEF binary distribution MyBrowser builds against. Generated/maintained by build/fetch_cef.py.",
+  "//": "Pins the exact CEF binary distribution BrowserX builds against. Generated/maintained by build/fetch_cef.py.",
   "//usage": "make deps            -> download + verify + extract the pinned build",
   "//usage2": "make deps-update     -> resolve the newest stable build and re-pin this file",
   "//usage3": "make headers         -> download just the CEF headers (no binaries) for compile checks",

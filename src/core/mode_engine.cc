@@ -7,7 +7,7 @@
 #include "core/chromium_catalog.h"
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -417,7 +417,7 @@ void AddEcoProfile(ModePlan* plan, const EngineContext& context, const SystemPro
                    "Battery mode on a low-RAM machine: also enable Chromium's low-memory preset");
   }
   plan->notes.push_back(
-      "Background networking is suppressed by MyBrowser's request blocker (the Chrome-only "
+      "Background networking is suppressed by BrowserX's request blocker (the Chrome-only "
       "--disable-background-networking switch does not exist in the CEF content layer).");
   plan->notes.push_back("Frame rate is capped at 30 FPS and telemetry polls every 3 seconds.");
 }
@@ -528,8 +528,71 @@ void AddHighPerformanceProfile(ModePlan* plan, const EngineContext& context, con
       "Throttling is fully disabled: background tabs keep running at full speed, which is exactly "
       "what you want while plugged in.");
   plan->notes.push_back(
-      "Automatic tab discarding is off; MyBrowser only shows a warning when memory pressure gets "
+      "Automatic tab discarding is off; BrowserX only shows a warning when memory pressure gets "
       "critical.");
+}
+
+/// Caps that apply to *every* mode on a memory-tight device.
+///
+/// The per-mode profiles above are tuned for a desktop with 8-64 GB. A phone, a
+/// tablet or a 4 GB laptop that the OS itself flags as low-RAM (`isLowRamDevice`
+/// on Android, a low `MemTotal` elsewhere) cannot honour those numbers: four
+/// renderers plus a 512 MB HTTP cache is how you get a killed browser tab. So the
+/// mode still decides the *character* of the plan, and this step makes the
+/// absolute numbers survivable. LOW RAM already is the low-RAM answer and is left
+/// alone; the other modes keep their switches but lose their worst excesses.
+void ApplyLowRamDeviceCaps(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  const bool very_low = profile.IsVeryLowRam();  // <= 2 GB
+  const int max_renderers = very_low ? 2 : 3;
+  const int max_raster = very_low ? 1 : 2;
+  const int max_cache_mb = very_low ? 64 : 128;
+
+  const int renderers = context.overrides.renderer_process_limit.value_or(max_renderers);
+  const int capped_renderers = std::max(1, std::min(renderers, max_renderers));
+  if (!plan->boot.SetSwitchValue("renderer-process-limit", std::to_string(capped_renderers),
+                                 "Low-RAM device: at most " + std::to_string(capped_renderers) +
+                                     " renderers (each one costs 60-150 MB)")) {
+    plan->boot.Add("renderer-process-limit", std::to_string(capped_renderers),
+                   "Low-RAM device: at most " + std::to_string(capped_renderers) + " renderers");
+  }
+
+  const int raster = std::min(profile.RecommendedRasterThreads(), max_raster);
+  plan->boot.SetSwitchValue("num-raster-threads", std::to_string(std::max(1, raster)),
+                            "Raster threads capped for a low-RAM device");
+
+  const int cache = std::min(plan->runtime.cache_size_mb, max_cache_mb);
+  if (cache < plan->runtime.cache_size_mb) {
+    plan->runtime.cache_size_mb = cache;
+    plan->boot.SetSwitchValue("disk-cache-size",
+                              std::to_string(static_cast<long long>(cache) * kMb),
+                              "HTTP cache capped at " + std::to_string(cache) +
+                                  " MB on a low-RAM device");
+  }
+
+  // A memory-tight device must never keep a whole page resident for back/forward,
+  // and should hand memory back sooner than a workstation would.
+  if (plan->runtime.bfcache) {
+    plan->runtime.bfcache = false;
+    plan->boot.DisableFeature("BackForwardCache",
+                              "A memory-tight device must not keep whole pages resident for "
+                              "back/forward");
+    plan->boot.DisableFeature("BackForwardCacheMemoryControls",
+                              "No point bounding a cache that is switched off");
+  }
+  plan->runtime.sleep_after_seconds =
+      std::min(plan->runtime.sleep_after_seconds > 0 ? plan->runtime.sleep_after_seconds : 600, 600);
+  plan->runtime.discard_after_seconds =
+      std::min(plan->runtime.discard_after_seconds > 0 ? plan->runtime.discard_after_seconds : 1800,
+               1800);
+
+  plan->notes.push_back(
+      "Low-RAM device detected (" + std::to_string(profile.total_ram_mb) +
+      " MB" + (profile.low_ram_hint ? ", the OS reports low-memory hardware" : "") +
+      "): renderer count, raster threads, HTTP cache and tab-sleep timers are capped across every "
+      "mode.");
+  plan->warnings.push_back(
+      "This device is memory-constrained, so this mode is less aggressive than it would be on a "
+      "desktop. Use LOW RAM mode for the smallest possible footprint.");
 }
 
 void AddUltraProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
@@ -652,6 +715,12 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
     case Mode::kEco: AddEcoProfile(&plan, context, profile); break;
   }
 
+  // ---- absolute caps for memory-tight devices -----------------------------
+  // Applied after the mode profile so a mode can never talk itself out of them.
+  if (mode != Mode::kLowRam && (profile.low_ram_hint || profile.IsLowRam())) {
+    ApplyLowRamDeviceCaps(&plan, context, profile);
+  }
+
   // Keep the cache switch honest if anything changed the policy value.
   plan.boot.SetSwitchValue("disk-cache-size",
                            std::to_string(static_cast<long long>(policy.cache_size_mb) * kMb),
@@ -710,4 +779,4 @@ std::string DescribePlanOneLine(const ModePlan& plan) {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

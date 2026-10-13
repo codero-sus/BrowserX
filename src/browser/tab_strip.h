@@ -1,4 +1,4 @@
-// MyBrowser — the tab strip.
+// BrowserX — the tab strip.
 //
 // A native Views strip: one chip per tab (title button + close button) plus a
 // "+" button. The strip never decides anything itself - it reads the Session,
@@ -8,8 +8,8 @@
 // Sleeping tabs are real: their browser view is destroyed, which is where the
 // memory saving comes from; the chip stays so the tab can be woken again.
 
-#ifndef MYBROWSER_BROWSER_TAB_STRIP_H_
-#define MYBROWSER_BROWSER_TAB_STRIP_H_
+#ifndef BROWSERX_BROWSER_TAB_STRIP_H_
+#define BROWSERX_BROWSER_TAB_STRIP_H_
 
 #include <string>
 #include <vector>
@@ -24,7 +24,7 @@
 #include "browser/session.h"
 #include "browser/tab_commands.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 
 /// View ids. Tab ids are encoded so one delegate can tell "activate tab 7" from
@@ -103,6 +103,6 @@ class TabStrip : public CefPanelDelegate, public CefButtonDelegate {
 };
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_BROWSER_TAB_STRIP_H_
+#endif  // BROWSERX_BROWSER_TAB_STRIP_H_

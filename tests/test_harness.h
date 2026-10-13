@@ -1,4 +1,4 @@
-// MyBrowser — micro test harness (no third-party dependencies).
+// BrowserX — micro test harness (no third-party dependencies).
 //
 // Usage:
 //   #include "test_harness.h"
@@ -11,8 +11,8 @@
 // Failure reporting is done by a CheckResult temporary whose destructor writes
 // the message, which is what makes the trailing `<< "extra context"` work.
 
-#ifndef MYBROWSER_TESTS_TEST_HARNESS_H_
-#define MYBROWSER_TESTS_TEST_HARNESS_H_
+#ifndef BROWSERX_TESTS_TEST_HARNESS_H_
+#define BROWSERX_TESTS_TEST_HARNESS_H_
 
 #include <cstdio>
 #include <cstdlib>
@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace tests {
 
 struct TestCase {
@@ -147,41 +147,41 @@ inline void AssertTrue(const char* file, int line, const char* text, bool ok) {
 }
 
 }  // namespace tests
-}  // namespace mybrowser
+}  // namespace browserx
 
 // ---------------------------------------------------------------------------
 // Macros
 // ---------------------------------------------------------------------------
 #define TEST(suite, name)                                                             \
   static void suite##_##name##_Body();                                                \
-  static int suite##_##name##_Reg = ::mybrowser::tests::Register(                      \
+  static int suite##_##name##_Reg = ::browserx::tests::Register(                      \
       #suite, #name, __FILE__, __LINE__, suite##_##name##_Body);                       \
   static void suite##_##name##_Body()
 
 #define EXPECT_TRUE(cond)                                                             \
-  ::mybrowser::tests::Check(__FILE__, __LINE__, static_cast<bool>(cond),               \
+  ::browserx::tests::Check(__FILE__, __LINE__, static_cast<bool>(cond),               \
                             "EXPECT_TRUE(" #cond ") failed")
 
 #define EXPECT_FALSE(cond)                                                            \
-  ::mybrowser::tests::Check(__FILE__, __LINE__, !static_cast<bool>(cond),              \
+  ::browserx::tests::Check(__FILE__, __LINE__, !static_cast<bool>(cond),              \
                             "EXPECT_FALSE(" #cond ") failed")
 
 #define EXPECT_EQ(a, b)                                                               \
-  ::mybrowser::tests::CheckEq(__FILE__, __LINE__, #a, #b, (a), (b))
+  ::browserx::tests::CheckEq(__FILE__, __LINE__, #a, #b, (a), (b))
 
 #define EXPECT_NE(a, b)                                                               \
-  ::mybrowser::tests::CheckCmp(__FILE__, __LINE__, "NE", #a, #b, ((a) != (b)), (a), (b))
+  ::browserx::tests::CheckCmp(__FILE__, __LINE__, "NE", #a, #b, ((a) != (b)), (a), (b))
 #define EXPECT_LT(a, b)                                                               \
-  ::mybrowser::tests::CheckCmp(__FILE__, __LINE__, "LT", #a, #b, ((a) < (b)), (a), (b))
+  ::browserx::tests::CheckCmp(__FILE__, __LINE__, "LT", #a, #b, ((a) < (b)), (a), (b))
 #define EXPECT_LE(a, b)                                                               \
-  ::mybrowser::tests::CheckCmp(__FILE__, __LINE__, "LE", #a, #b, ((a) <= (b)), (a), (b))
+  ::browserx::tests::CheckCmp(__FILE__, __LINE__, "LE", #a, #b, ((a) <= (b)), (a), (b))
 #define EXPECT_GT(a, b)                                                               \
-  ::mybrowser::tests::CheckCmp(__FILE__, __LINE__, "GT", #a, #b, ((a) > (b)), (a), (b))
+  ::browserx::tests::CheckCmp(__FILE__, __LINE__, "GT", #a, #b, ((a) > (b)), (a), (b))
 #define EXPECT_GE(a, b)                                                               \
-  ::mybrowser::tests::CheckCmp(__FILE__, __LINE__, "GE", #a, #b, ((a) >= (b)), (a), (b))
+  ::browserx::tests::CheckCmp(__FILE__, __LINE__, "GE", #a, #b, ((a) >= (b)), (a), (b))
 
 #define EXPECT_NEAR(a, b, tol)                                                        \
-  ::mybrowser::tests::Check(__FILE__, __LINE__,                                       \
+  ::browserx::tests::Check(__FILE__, __LINE__,                                       \
                             (((a) - (b)) <= (tol) && ((b) - (a)) <= (tol)),           \
                             "EXPECT_NEAR(" #a ", " #b ", " #tol ") failed")
 
@@ -190,7 +190,7 @@ inline void AssertTrue(const char* file, int line, const char* text, bool ok) {
   do {                                                                                \
     std::ostringstream mb_oss_;                                                       \
     mb_oss_ << __FILE__ << ":" << __LINE__ << "  " << message;                        \
-    ::mybrowser::tests::ReportFailure(mb_oss_.str());                                 \
+    ::browserx::tests::ReportFailure(mb_oss_.str());                                 \
   } while (false)
 
 /// Fatal failure: aborts the current test.
@@ -198,19 +198,19 @@ inline void AssertTrue(const char* file, int line, const char* text, bool ok) {
   do {                                                                                \
     std::ostringstream mb_oss_;                                                       \
     mb_oss_ << __FILE__ << ":" << __LINE__ << "  " << message;                        \
-    ::mybrowser::tests::ReportFatal(mb_oss_.str());                                   \
+    ::browserx::tests::ReportFatal(mb_oss_.str());                                   \
   } while (false)
 
 /// Fatal assertion: use for preconditions that would crash the rest of the test.
 #define ASSERT_TRUE(cond)                                                             \
-  ::mybrowser::tests::AssertTrue(__FILE__, __LINE__, #cond, static_cast<bool>(cond))
+  ::browserx::tests::AssertTrue(__FILE__, __LINE__, #cond, static_cast<bool>(cond))
 
 /// Fatal assertion that also unwraps optionals/pointers:
 ///   auto value = Parse(text); ASSERT_TRUE_OR_RETURN(value); value->Get(..);
 #define ASSERT_TRUE_OR_RETURN(expr)                                                   \
   do {                                                                                \
-    if (!::mybrowser::tests::HasValue(expr)) {                                        \
-      ::mybrowser::tests::AssertTrue(__FILE__, __LINE__, "ASSERT_TRUE_OR_RETURN(" #expr ")", false); \
+    if (!::browserx::tests::HasValue(expr)) {                                        \
+      ::browserx::tests::AssertTrue(__FILE__, __LINE__, "ASSERT_TRUE_OR_RETURN(" #expr ")", false); \
       return;                                                                         \
     }                                                                                 \
   } while (false)
@@ -222,4 +222,4 @@ inline void AssertTrue(const char* file, int line, const char* text, bool ok) {
     return;                                                                           \
   } while (false)
 
-#endif  // MYBROWSER_TESTS_TEST_HARNESS_H_
+#endif  // BROWSERX_TESTS_TEST_HARNESS_H_

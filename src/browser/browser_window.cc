@@ -17,7 +17,7 @@
 #include "core/log.h"
 #include "core/url_utils.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace browser {
 namespace {
 
@@ -342,7 +342,7 @@ void BrowserWindow::Navigate(const std::string& input) {
   browser_->GetMainFrame()->LoadURL(resolved);
 }
 
-void BrowserWindow::OpenInternalPage(const std::string& path) { Navigate("mybrowser://" + path); }
+void BrowserWindow::OpenInternalPage(const std::string& path) { Navigate("browserx://" + path); }
 
 void BrowserWindow::OnToolbarCommand(int command_id) {
   if (shell_ == nullptr) return;
@@ -417,7 +417,7 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
       if (browser_.get() != nullptr) browser_->GetHost()->Print();
       return;
     case kIdFindInPage:
-      // CEF has no native find bar; mybrowser://find drives the same call through
+      // CEF has no native find bar; browserx://find drives the same call through
       // the page bridge, so the shortcut opens that page for the active tab.
       OpenInternalPage("find");
       return;
@@ -630,7 +630,7 @@ void BrowserWindow::ShowMainMenu(const CefPoint& screen_point) {
   model->AddItem(kIdPrint, "Print\tCtrl+P");
   model->AddItem(kIdDevTools, "Developer tools\tF12");
   model->AddSeparator();
-  model->AddItem(kIdQuit, "Quit MyBrowser\tCtrl+Q");
+  model->AddItem(kIdQuit, "Quit BrowserX\tCtrl+Q");
   menu_button_->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_TOPLEFT);
 }
 
@@ -707,7 +707,7 @@ void BrowserWindow::SyncActiveTab() {
   UpdateNavigationButtons();
   if (window_.get() != nullptr && window_->IsValid()) {
     const std::string label = tab->title.empty() ? tab->url : tab->title;
-    window_->SetTitle(label.empty() ? "MyBrowser" : label + " - MyBrowser");
+    window_->SetTitle(label.empty() ? "BrowserX" : label + " - BrowserX");
   }
 }
 
@@ -775,7 +775,7 @@ void BrowserWindow::FlashTabStatus(const std::string& text) { Flash(text); }
 
 std::string BrowserWindow::NewTabUrl() const {
   if (shell_ != nullptr && !shell_->home_page().empty()) return shell_->home_page();
-  return "mybrowser://newtab";
+  return "browserx://newtab";
 }
 
 // ---------------------------------------------------------------------------
@@ -783,7 +783,7 @@ std::string BrowserWindow::NewTabUrl() const {
 // ---------------------------------------------------------------------------
 void BrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   window_ = window;
-  window->SetTitle("MyBrowser");
+  window->SetTitle("BrowserX");
   CefRefPtr<CefPanel> root = CefPanel::CreatePanel(panel_delegate_);
   window->AddChildView(root);
   BuildChrome(window, root);
@@ -941,7 +941,7 @@ bool BrowserWindow::OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFr
                                   CefBrowserSettings& settings,
                                   CefRefPtr<CefDictionaryValue>& extra_info,
                                   bool* no_javascript_access) {
-  // Keep target=_blank / window.open() inside MyBrowser: a new window we control
+  // Keep target=_blank / window.open() inside BrowserX: a new window we control
   // inherits the mode policy (a raw OS popup would not).
   if (shell_ == nullptr) return false;
   const std::string url = target_url.ToString();
@@ -1064,9 +1064,9 @@ void BrowserWindow::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr
                                         CefRefPtr<CefContextMenuParams> params,
                                         CefRefPtr<CefMenuModel> model) {
   model->AddSeparator();
-  model->AddItem(kIdOpenTelemetry, "MyBrowser: telemetry");
-  model->AddItem(kIdOpenModes, "MyBrowser: performance mode");
-  model->AddItem(kIdToggleShield, "MyBrowser: toggle tracker shield");
+  model->AddItem(kIdOpenTelemetry, "BrowserX: telemetry");
+  model->AddItem(kIdOpenModes, "BrowserX: performance mode");
+  model->AddItem(kIdToggleShield, "BrowserX: toggle tracker shield");
 }
 
 bool BrowserWindow::OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
@@ -1084,4 +1084,4 @@ bool BrowserWindow::OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPt
 }
 
 }  // namespace browser
-}  // namespace mybrowser
+}  // namespace browserx

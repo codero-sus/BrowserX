@@ -4,7 +4,7 @@
 
 #include "core/format.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace {
 
@@ -123,4 +123,4 @@ AutoPilotDecision AutoPilot::Evaluate(const AutoPilotInput& input) {
 }
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx

@@ -1,16 +1,16 @@
-// MyBrowser — omnibox input parsing and URL helpers.
+// BrowserX — omnibox input parsing and URL helpers.
 //
 // Pure string logic, so every rule ("is this a URL or a search?") is unit
 // tested. Anything that touches the network or the UI lives elsewhere.
 
-#ifndef MYBROWSER_CORE_URL_UTILS_H_
-#define MYBROWSER_CORE_URL_UTILS_H_
+#ifndef BROWSERX_CORE_URL_UTILS_H_
+#define BROWSERX_CORE_URL_UTILS_H_
 
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 namespace url {
 
@@ -20,7 +20,7 @@ std::string EncodeQuery(std::string_view text, bool plus_for_space = true);
 std::string EncodePath(std::string_view text);
 
 /// True when the text already carries a scheme we understand
-/// (http, https, mybrowser, file, ftp, about, data, view-source, ...).
+/// (http, https, browserx, file, ftp, about, data, view-source, ...).
 bool HasScheme(std::string_view text);
 /// Extracts the scheme (lower-case, without "://"); empty when there is none.
 std::string SchemeOf(std::string_view url);
@@ -32,7 +32,7 @@ std::string RegistrableHostForDisplay(std::string_view host);
 int PortOf(std::string_view url);
 /// True for http/https (the only schemes the shield and modes affect).
 bool IsHttp(std::string_view url);
-/// True for MyBrowser's own pages.
+/// True for BrowserX's own pages.
 bool IsInternal(std::string_view url);
 /// True for about:, chrome:, devtools: pages that must not be blocked/restyled.
 bool IsPrivileged(std::string_view url);
@@ -72,6 +72,6 @@ bool HostMatchesPattern(std::string_view host, std::string_view pattern);
 
 }  // namespace url
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_URL_UTILS_H_
+#endif  // BROWSERX_CORE_URL_UTILS_H_

@@ -1,19 +1,19 @@
-// MyBrowser — memory pressure policy.
+// BrowserX — memory pressure policy.
 //
 // The policy is a pure state machine: you feed it a snapshot of the machine and
 // the tab list, and it tells you which action (if any) to take. All hysteresis,
 // cooldowns and thresholds live here so they are testable and so the UI can
 // explain exactly why the browser did something.
 
-#ifndef MYBROWSER_CORE_MEMORY_POLICY_H_
-#define MYBROWSER_CORE_MEMORY_POLICY_H_
+#ifndef BROWSERX_CORE_MEMORY_POLICY_H_
+#define BROWSERX_CORE_MEMORY_POLICY_H_
 
 #include <cstdint>
 #include <string>
 
 #include "core/mode_engine.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 struct MemorySnapshot {
@@ -92,6 +92,6 @@ class MemoryPolicy {
 };
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_MEMORY_POLICY_H_
+#endif  // BROWSERX_CORE_MEMORY_POLICY_H_

@@ -1,4 +1,4 @@
-// MyBrowser — command line.
+// BrowserX — command line.
 //
 // This file is deliberately CEF-free: it is compiled into the unit tests too
 // (`make test`), so the argument grammar is verified without Chromium.
@@ -9,8 +9,8 @@
 //     `make run RUN_ARGS="--enable-logging=stderr --v=1"` work.
 //   * A bare argument that is not a URL is treated as a search query.
 
-#ifndef MYBROWSER_APP_CLI_H_
-#define MYBROWSER_APP_CLI_H_
+#ifndef BROWSERX_APP_CLI_H_
+#define BROWSERX_APP_CLI_H_
 
 #include <optional>
 #include <string>
@@ -18,7 +18,7 @@
 
 #include "core/settings_schema.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 /// What main() should do after parsing.
@@ -91,6 +91,6 @@ std::string VersionBanner();
 bool IsChromiumSwitch(const std::string& name);
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_CLI_H_
+#endif  // BROWSERX_APP_CLI_H_

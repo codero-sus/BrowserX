@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 namespace {
 
@@ -38,7 +38,7 @@ bool InstanceLock::Acquire(const std::string& profile_dir, int* holder_pid) {
   path_ = JoinPath(profile_dir, "instance.lock");
 
 #if defined(_WIN32)
-  std::string name = "MyBrowser.Instance." + profile_dir;
+  std::string name = "BrowserX.Instance." + profile_dir;
   for (char& c : name) {
     if (c == '\\' || c == '/') c = '.';
   }
@@ -95,4 +95,4 @@ void InstanceLock::Release() {
 }
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx

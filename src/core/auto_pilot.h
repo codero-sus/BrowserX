@@ -1,4 +1,4 @@
-// MyBrowser — Auto-Pilot: automatic mode switching.
+// BrowserX — Auto-Pilot: automatic mode switching.
 //
 // Auto-Pilot watches a few signals (battery, memory pressure, fullscreen/game
 // activity) and proposes or performs a mode change. It is deliberately
@@ -10,8 +10,8 @@
 // The whole thing is a pure function of its inputs, so behaviour is tested
 // deterministically (see tests/unit/auto_pilot_test.cc).
 
-#ifndef MYBROWSER_CORE_AUTO_PILOT_H_
-#define MYBROWSER_CORE_AUTO_PILOT_H_
+#ifndef BROWSERX_CORE_AUTO_PILOT_H_
+#define BROWSERX_CORE_AUTO_PILOT_H_
 
 #include <string>
 #include <vector>
@@ -19,7 +19,7 @@
 #include "core/mode_engine.h"
 #include "core/settings_schema.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace core {
 
 struct AutoPilotInput {
@@ -79,6 +79,6 @@ class AutoPilot {
 };
 
 }  // namespace core
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_CORE_AUTO_PILOT_H_
+#endif  // BROWSERX_CORE_AUTO_PILOT_H_

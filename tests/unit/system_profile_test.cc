@@ -4,7 +4,7 @@
 
 #include "test_harness.h"
 
-using namespace mybrowser::core;
+using namespace browserx::core;
 
 TEST(SystemProfile, ParsesMemInfo) {
   const char* meminfo =

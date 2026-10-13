@@ -1,4 +1,4 @@
-// MyBrowser — settings persistence (settings.json in the profile).
+// BrowserX — settings persistence (settings.json in the profile).
 //
 // The store owns the in-memory Settings object and is responsible for:
 //   * loading them at start-up (falling back to defaults on any problem),
@@ -7,15 +7,15 @@
 //   * recording which switch plan was actually applied at launch, so the UI can
 //     tell the truth about "restart required".
 
-#ifndef MYBROWSER_APP_SETTINGS_STORE_H_
-#define MYBROWSER_APP_SETTINGS_STORE_H_
+#ifndef BROWSERX_APP_SETTINGS_STORE_H_
+#define BROWSERX_APP_SETTINGS_STORE_H_
 
 #include <string>
 #include <vector>
 
 #include "core/settings_schema.h"
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 class SettingsStore {
@@ -48,6 +48,6 @@ class SettingsStore {
 };
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_SETTINGS_STORE_H_
+#endif  // BROWSERX_APP_SETTINGS_STORE_H_

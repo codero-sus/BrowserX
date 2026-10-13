@@ -1,4 +1,4 @@
-// MyBrowser — profile and directory layout.
+// BrowserX — profile and directory layout.
 //
 //   <profile>/                 user data (settings, history, bookmarks, logs)
 //     settings.json
@@ -12,13 +12,13 @@
 // "profile") exists next to the executable, everything lives there instead of
 // in the user's home directory - handy for USB sticks and testing.
 
-#ifndef MYBROWSER_APP_APP_PATHS_H_
-#define MYBROWSER_APP_APP_PATHS_H_
+#ifndef BROWSERX_APP_APP_PATHS_H_
+#define BROWSERX_APP_APP_PATHS_H_
 
 #include <string>
 #include <vector>
 
-namespace mybrowser {
+namespace browserx {
 namespace app {
 
 struct Paths {
@@ -62,6 +62,6 @@ std::string FileName(const std::string& path);
 uint64_t FileSize(const std::string& path);
 
 }  // namespace app
-}  // namespace mybrowser
+}  // namespace browserx
 
-#endif  // MYBROWSER_APP_APP_PATHS_H_
+#endif  // BROWSERX_APP_APP_PATHS_H_

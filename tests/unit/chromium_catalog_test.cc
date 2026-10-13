@@ -1,4 +1,4 @@
-// Guards on the switch catalogue: these tests are what stop MyBrowser from
+// Guards on the switch catalogue: these tests are what stop BrowserX from
 // ever shipping a flag that does not exist in Chromium.
 
 #include "core/chromium_catalog.h"
@@ -8,7 +8,7 @@
 
 #include "test_harness.h"
 
-using namespace mybrowser::core;
+using namespace browserx::core;
 
 TEST(ChromiumCatalog, HasNoDuplicateEntries) {
   std::set<std::string> ids;
@@ -65,7 +65,7 @@ TEST(ChromiumCatalog, VerifiedSwitchesAreApplicableAndRemovedOnesAreNot) {
 
 TEST(ChromiumCatalog, KnownMythsAreMarkedRemoved) {
   // These four are the flags every "speed up Chrome" blog post recommends and
-  // that no longer exist. MyBrowser must never apply them.
+  // that no longer exist. BrowserX must never apply them.
   const char* myths[] = {"memory-pressure-off", "enable-quic", "enable-zero-copy",
                          "enable-oop-rasterization"};
   for (const char* myth : myths) {
