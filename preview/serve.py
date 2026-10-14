@@ -38,6 +38,12 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PREVIEW_DIR = Path(__file__).resolve().parent
 FLAGPLAN = REPO_ROOT / "out" / "browserx-flagplan"
+# The offline benchmark page. It lives in the Android edition's assets because that
+# edition cannot compile C++, and `make check` verifies it is byte-identical to what
+# BrowserX serves at browserx://bench - so serving it here is honest.
+BENCH_PAGE = (
+    REPO_ROOT / "mobile-edition" / "app" / "src" / "main" / "assets" / "bench.html"
+)
 DOCTOR = REPO_ROOT / "out" / "browserx-doctor"
 
 # The mode list is fetched from the binary, so this is only used before the first
@@ -105,6 +111,12 @@ class PreviewHandler(BaseHTTPRequestHandler):
         try:
             if route in ("/", "/index.html"):
                 self.serve_file(PREVIEW_DIR / "index.html")
+            elif route in ("/bench", "/bench.html"):
+                # The same file the browser serves at browserx://bench, generated from
+                # src/web/bench_page.cc by `make bench-page`. Serving it here means the
+                # comparison can be started from the preview: run it in this browser, then
+                # open the same file in BrowserX on the machine that has it.
+                self.serve_file(BENCH_PAGE)
             elif route.startswith("/api/"):
                 self.serve_api(route, parse_qs(parsed.query))
             else:
