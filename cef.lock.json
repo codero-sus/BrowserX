@@ -1,6 +1,6 @@
 {
   "//": "Pins the exact CEF binary distribution BrowserX builds against. Generated/maintained by tools/fetch_cef.py.",
-  "//author": "BrowserX by codero-sus - https://the-codero.web.app - https://github.com/codero-sus/MyBrowser",
+  "//author": "BrowserX by codero-sus - https://the-codero.web.app - https://github.com/codero-sus/BrowserX",
   "//usage": "make deps            -> download + verify + extract the pinned build",
   "//usage2": "make deps-update     -> resolve the newest stable build and re-pin this file",
   "//usage3": "make headers         -> download just the CEF headers (no binaries) for compile checks",

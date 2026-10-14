@@ -256,7 +256,7 @@ TEST(InternalPages, CreditsAppearOnEveryPageAndOnAbout) {
     // The author is credited in the footer of every page the browser shows.
     EXPECT_TRUE(Contains(html, "codero-sus"));
     EXPECT_TRUE(Contains(html, "the-codero.web.app"));
-    EXPECT_TRUE(Contains(html, "github.com/codero-sus/MyBrowser"));
+    EXPECT_TRUE(Contains(html, "github.com/codero-sus/BrowserX"));
   }
 
   const std::string about = RenderPage(PageKind::kAbout, data);
@@ -310,7 +310,7 @@ TEST(InternalPages, IdentityConstantsMatchTheProduct) {
   EXPECT_EQ(std::string(browserx::web::kProjectSite), std::string("the-codero.web.app"));
   EXPECT_EQ(std::string(browserx::web::kProjectSiteUrl), std::string("https://the-codero.web.app"));
   EXPECT_EQ(std::string(browserx::web::kProjectRepositoryUrl),
-            std::string("https://github.com/codero-sus/MyBrowser"));
+            std::string("https://github.com/codero-sus/BrowserX"));
   // Defaults are wired: a caller that fills nothing in still gets real credits.
   const PageData defaults;
   EXPECT_EQ(defaults.author, std::string(browserx::web::kProjectAuthor));

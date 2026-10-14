@@ -140,7 +140,7 @@ help:
 	@echo ""
 	@echo "  BrowserX — build targets"
 	@echo "  by codero-sus · https://the-codero.web.app · personal use only"
-	@echo "  https://github.com/codero-sus/MyBrowser  (LICENSE: personal, non-commercial,"
+	@echo "  https://github.com/codero-sus/BrowserX  (LICENSE: personal, non-commercial,"
 	@echo "  no modification, no redistribution - see CREDITS.md)"
 	@echo "  ------------------------------------------------------------------"
 	@echo "  make deps            download + SHA-1 verify + extract pinned CEF"
