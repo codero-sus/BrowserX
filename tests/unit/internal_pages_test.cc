@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/mode_engine.h"
 #include "test_harness.h"
 #include "web/internal_pages.h"
 
@@ -317,3 +318,19 @@ TEST(InternalPages, IdentityConstantsMatchTheProduct) {
 }
 
 }  // namespace
+
+TEST(InternalPages, EveryModeGetsAchipAndTheCliListsThemAll) {
+  // The modes page must show every mode the engine knows, including future ones:
+  // the chips are generated from AllModes(), not from a hardcoded list.
+  const std::string html = RenderPage(PageKind::kModes, SampleData());
+  for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
+    EXPECT_TRUE(Contains(html, std::string("data-set-mode=\"") + info.id + "\""))
+        << "mode chip missing: " << info.id;
+    EXPECT_TRUE(Contains(html, std::string("browserx://modes?set=") + info.id));
+  }
+  // The specialist modes are the point of this test: they must be reachable from
+  // the page without any extra wiring.
+  for (const char* id : {"super-internet", "download", "streaming"}) {
+    EXPECT_TRUE(Contains(html, std::string("data-set-mode=\"") + id + "\""));
+  }
+}

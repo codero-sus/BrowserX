@@ -8,6 +8,7 @@
 #include <set>
 
 #include "core/format.h"
+#include "core/mode_engine.h"
 #include "core/url_utils.h"
 
 namespace browserx {
@@ -66,9 +67,20 @@ void WriteOptionalDouble(json::Value::Object& out, const char* key,
   if (value.has_value()) out[key] = json::Value(*value);
 }
 
+/// Every mode id the engine actually defines.
+///
+/// This used to be a handwritten list, which silently dropped a per-mode override
+/// whenever a mode was added ("ignore unknown modes" below turns a typo into a
+/// no-op, so the list is the validation). It is derived from AllModes() now, and
+/// one extra id is accepted: "default", the override that applies when no mode was
+/// chosen explicitly.
 const std::set<std::string>& KnownModeIds() {
-  static const std::set<std::string> kIds = {"ultra", "gaming", "high-performance", "low-ram",
-                                             "eco"};
+  static const std::set<std::string> kIds = [] {
+    std::set<std::string> ids;
+    for (const ModeInfo& info : AllModes()) ids.insert(info.id);
+    ids.insert("default");
+    return ids;
+  }();
   return kIds;
 }
 

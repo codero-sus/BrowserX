@@ -6,7 +6,7 @@
 only · no modification · no redistribution or resale.** Source-available, not open
 source. The Chromium/CEF runtime it bundles keeps its own licences.
 
-An ULTRA-optimised Chromium browser with **five performance modes + Auto-Pilot**,
+An ULTRA-optimised Chromium browser with **eight performance modes + Auto-Pilot**,
 in two editions that share one performance core:
 
 | Edition | Engine | Front end | Directory |
@@ -28,7 +28,28 @@ tracker shield, omnibox parser. One place to fix a rule, one place to test it.
 | **HIGH PERFORMANCE** | throughput while plugged in | no layer-tree memory pressure, accelerated video decode/encode, speculative prefetch, bfcache, ≥1 GB HTTP cache, no tab discarding |
 | **LOW RAM** | smallest footprint | `--enable-low-end-device-mode`, ≤3 renderers, `--process-per-site`, 48 MB cache, Skia/MSE limits, tabs sleep after 1 min |
 | **ECO** | battery life | `--disable-v8-idle-tasks`, animations at 0.5×, 30 FPS target, reduced motion, 3 s telemetry, aggressive sleeping |
-| **AUTO-PILOT** | hands-free | watches battery level, memory pressure, fullscreen/gaming and idle time; `auto` switches, `ask` suggests, `off` never touches your mode |
+| **SUPER INTERNET** | network speed + lowest ping | every reachable network lever on: Happy Eyeballs v3, optimistic DNS for TCP and QUIC, TLS 1.3 0-RTT, HTTP/2 keep-alive, address-sort connect cache, connection prefetch, in-process network service; IPC flooding protection off, background throttling off, nothing sleeps, tracker blocking on (trackers are bandwidth), 500 ms telemetry |
+| **DOWNLOAD** | big transfers | **parallel range downloads** (`ParallelDownloading`), plus the connection levers above, the largest cache budget of any mode (≥2 GB), no tab sleep/discard, screen kept awake, bfcache given up to hand the RAM to transfer buffers |
+| **STREAMING** | smooth video + audio | hardware video decode/encode requested (with a warning if the machine has no decoder), autoplay without a click, fullscreen video overlays, uncapped frame rate, no sleep/discard, screen kept awake |
+| **AUTO-PILOT** | hands-free | watches battery level, memory pressure, fullscreen/gaming and idle time; `auto` switches, `ask` suggests, `off` never touches your mode. It never picks a specialist mode and never leaves one — except on a real memory emergency |
+
+### What SUPER INTERNET can and cannot do
+
+A browser cannot create bandwidth, and the page says so instead of pretending
+otherwise. What it *can* remove is everything between the socket and the screen:
+DNS waits (optimistic DNS starts the connection mid-resolve), IPv6 stalls (Happy
+Eyeballs v3 races both families), cold handshakes (0-RTT resumption, keep-alive,
+connection prefetch), queued IPCs (`--disable-ipc-flooding-protection`) and
+timers that throttle a background transfer. That is the fastest a browser is
+allowed to be — the limit above it is your link, your ISP and the server.
+
+Two honest footnotes, printed with the plan:
+
+* **QUIC/HTTP-3 is already on by default** in Chromium, so no mode can "force" it;
+  `--enable-quic` is catalogued as *removed* and never applied. What the mode does
+  is make QUIC connections *cheaper to establish*.
+* **Parallel range downloads need the server to honour byte ranges.** When it
+  does not, the download still completes — just on one connection, as before.
 
 Every switch is validated against the Chromium source tree and carries a
 provenance line — `make bench` prints the full plan, including which switches were

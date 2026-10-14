@@ -203,7 +203,7 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   shield_button_ = MakeToolbarButton(button_delegate_, kIdShield, "\xF0\x9F\x9B\xA1", "Tracker shield");
   mode_button_ = CefMenuButton::CreateMenuButton(menu_delegate_, "ULTRA");
   mode_button_->SetID(kIdMode);
-  mode_button_->SetTooltipText("Performance mode - click to switch (Ctrl+1..5)");
+  mode_button_->SetTooltipText("Performance mode - click to switch (Ctrl+1..8)");
   mode_button_->SetTextColor(CEF_BUTTON_STATE_NORMAL, kColorAccent);
   mode_button_->SetHorizontalAlignment(CEF_HORIZONTAL_ALIGNMENT_CENTER);
   menu_button_ = CefMenuButton::CreateMenuButton(menu_delegate_, "\xE2\x98\xB0");
@@ -310,6 +310,9 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   bind(kIdModeHighPerformance, '3', false, true, false);
   bind(kIdModeLowRam, '4', false, true, false);
   bind(kIdModeEco, '5', false, true, false);
+  bind(kIdModeSuperInternet, '6', false, true, false);
+  bind(kIdModeDownload, '7', false, true, false);
+  bind(kIdModeStreaming, '8', false, true, false);
 
   RefreshShieldIndicator();
   UpdateNavigationButtons();
@@ -452,6 +455,15 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
       return;
     case kIdModeEco:
       shell_->SetMode(core::Mode::kEco);
+      return;
+    case kIdModeSuperInternet:
+      shell_->SetMode(core::Mode::kSuperInternet);
+      return;
+    case kIdModeDownload:
+      shell_->SetMode(core::Mode::kDownload);
+      return;
+    case kIdModeStreaming:
+      shell_->SetMode(core::Mode::kStreaming);
       return;
     default:
       return;
@@ -597,6 +609,9 @@ void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
   model->AddItem(kIdModeHighPerformance, "HIGH PERFORMANCE - maximum throughput (Ctrl+3)");
   model->AddItem(kIdModeLowRam, "LOW RAM - smallest footprint (Ctrl+4)");
   model->AddItem(kIdModeEco, "ECO - longest battery life (Ctrl+5)");
+  model->AddItem(kIdModeSuperInternet, "SUPER INTERNET - max network speed (Ctrl+6)");
+  model->AddItem(kIdModeDownload, "DOWNLOAD - built for big transfers (Ctrl+7)");
+  model->AddItem(kIdModeStreaming, "STREAMING - smooth video and audio (Ctrl+8)");
   model->AddSeparator();
   model->AddItem(kIdAutoPilotCycle, "Auto-Pilot: off / ask / auto");
   mode_button_->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_TOPLEFT);

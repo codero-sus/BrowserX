@@ -4,6 +4,7 @@
 
 #include "core/settings_schema.h"
 
+#include "core/mode_engine.h"
 #include "test_harness.h"
 
 using namespace browserx::core;
@@ -105,6 +106,29 @@ TEST(SettingsSchema, IgnoresUnknownModesAndFields) {
   EXPECT_TRUE(settings.FromJson(value, &error)) << error;
   EXPECT_EQ(settings.per_mode.size(), 0u) << "unknown modes must be ignored";
   EXPECT_TRUE(settings.startup_mode == Mode::kUltra) << "invalid mode falls back to the default";
+}
+
+TEST(SettingsSchema, AcceptsAnOverrideForEveryModeTheEngineDefines) {
+  // Regression: the accepted-mode list was handwritten next to the engine, so a
+  // per-mode override for a newly added mode used to be dropped in silence (the
+  // "ignore unknown modes" rule turned a valid setting into a no-op).
+  auto value = Settings::Defaults().ToJson();
+  json::Value per_mode = value["per_mode"];
+  for (const ModeInfo& info : AllModes()) {
+    json::Value entry = json::Value::Object{};
+    entry["cache_size_mb"] = json::Value(192);
+    per_mode[info.id] = entry;
+  }
+  value["per_mode"] = per_mode;
+
+  Settings settings;
+  std::string error;
+  EXPECT_TRUE(settings.FromJson(value, &error)) << error;
+  EXPECT_EQ(settings.per_mode.size(), AllModes().size())
+      << "every mode id the engine defines must be accepted in per_mode";
+  EXPECT_EQ(settings.per_mode.at("super-internet").cache_size_mb.value_or(0), 192);
+  EXPECT_EQ(settings.per_mode.at("download").cache_size_mb.value_or(0), 192);
+  EXPECT_EQ(settings.per_mode.at("streaming").cache_size_mb.value_or(0), 192);
 }
 
 TEST(SettingsSchema, PerModeOverridesWinOverGlobal) {

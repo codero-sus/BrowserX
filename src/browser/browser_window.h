@@ -90,6 +90,9 @@ enum ChromeId {
   kIdModeHighPerformance,
   kIdModeLowRam,
   kIdModeEco,
+  kIdModeSuperInternet,
+  kIdModeDownload,
+  kIdModeStreaming,
   kIdAutoPilotCycle,
   // --- tab commands (handled by the TabStrip) ------------------------------
   kIdNewTab,

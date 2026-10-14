@@ -106,7 +106,17 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
     /** Android's own memory-pressure signal feeds the shared memory policy. */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+        // Specialist modes (SUPER INTERNET / DOWNLOAD / STREAMING) exist to keep a
+        // transfer or a stream alive, so the routine trim on RUNNING_LOW is skipped
+        // while one is active: a hidden tab that is mid-download must not be slept.
+        // Only a genuine emergency (RUNNING_CRITICAL) still trims, because a
+        // process the system kills finishes nothing at all.
+        val floor = if (Mode.specialists.contains(modes.mode)) {
+            TRIM_MEMORY_RUNNING_CRITICAL
+        } else {
+            TRIM_MEMORY_RUNNING_LOW
+        }
+        if (level >= floor) {
             modes.refreshPlan()
             val slept = tabs.sleepHiddenTabs(limit = 3, idleSeconds = 0)
             if (slept > 0) {
@@ -468,7 +478,7 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
     // -----------------------------------------------------------------------
     private fun showModeMenu() {
         val anchor = modeButton
-        val menu = PopupMenu(this, anchor)
+        val menu = PopupMenu(this, anchor)  // one item per mode, in core order
         for (mode in Mode.ordered) {
             val item = menu.menu.add("${mode.label} — ${mode.tagline}")
             item.isCheckable = true
