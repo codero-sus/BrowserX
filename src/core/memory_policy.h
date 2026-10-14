@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX — memory pressure policy.
 //
 // The policy is a pure state machine: you feed it a snapshot of the machine and

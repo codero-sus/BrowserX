@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX — settings persistence (settings.json in the profile).
 //
 // The store owns the in-memory Settings object and is responsible for:

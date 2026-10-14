@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX — the window: native CEF Views chrome + one browser view.
 //
 // Stage 3 ships a complete single-page window (toolbar, omnibox, mode button,

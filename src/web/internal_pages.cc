@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 #include "web/internal_pages.h"
 
 #include <algorithm>
@@ -443,7 +447,9 @@ std::string RenderAbout(const PageData& data) {
 
   out += "<div class=\"card\" id=\"credits\"><h2 style=\"margin-top:0\">Credits</h2>";
   out += "<p class=\"lede\" style=\"margin-bottom:10px\">BrowserX is made by <strong>" +
-         EscapeImpl(data.author) + "</strong>.</p>";
+         EscapeImpl(data.author) + "</strong> and is licensed for <strong>" +
+         EscapeImpl(kProjectLicenceTerms) + "</strong>. Please respect that: it is what keeps the "
+         "project alive.</p>";
   out += "<table><tbody>";
   out += "<tr><td>GitHub</td><td><a href=\"" + EscapeImpl(data.author_url) +
          "\" rel=\"noopener\">" + EscapeImpl(data.author_url) + "</a></td></tr>";
@@ -451,8 +457,11 @@ std::string RenderAbout(const PageData& data) {
          "\" rel=\"noopener\">" + EscapeImpl(data.website) + "</a></td></tr>";
   out += "<tr><td>Repository</td><td><a href=\"" + EscapeImpl(data.repository_url) +
          "\" rel=\"noopener\">" + EscapeImpl(data.repository) + "</a></td></tr>";
-  out += "<tr><td>Licence</td><td class=\"mono\">" + EscapeImpl(kProjectLicence) +
-         " (BrowserX), third-party licences for the Chromium/CEF runtime</td></tr>";
+  out += "<tr><td>Licence</td><td><a href=\"" + EscapeImpl(kProjectLicenceUrl) +
+         "\" rel=\"noopener\">" + EscapeImpl(kProjectLicence) + "</a><br>"
+         "<span class=\"note\">" + EscapeImpl(kProjectLicenceTerms) +
+         ". Source-available, not open source. The bundled Chromium/CEF runtime keeps its own "
+         "licences.</span></td></tr>";
   out += "</tbody></table>";
   out += "<h3>Built on</h3>";
   out += "<ul class=\"lede\" style=\"margin:0\">";

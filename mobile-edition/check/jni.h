@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 /* BrowserX mobile — minimal jni.h stand-in used to *syntax-check* the JNI bridge
  * on machines without an Android NDK (the desktop `make check` runs it).
  *
