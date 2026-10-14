@@ -45,11 +45,11 @@ constexpr const char* kProjectAuthor = "codero-sus";
 constexpr const char* kProjectAuthorUrl = "https://github.com/codero-sus";
 constexpr const char* kProjectSite = "the-codero.web.app";
 constexpr const char* kProjectSiteUrl = "https://the-codero.web.app";
-constexpr const char* kProjectRepository = "github.com/codero-sus/MyBrowser";
-constexpr const char* kProjectRepositoryUrl = "https://github.com/codero-sus/MyBrowser";
+constexpr const char* kProjectRepository = "github.com/codero-sus/BrowserX";
+constexpr const char* kProjectRepositoryUrl = "https://github.com/codero-sus/BrowserX";
 constexpr const char* kProjectLicence = "BrowserX Personal-Use License";
 constexpr const char* kProjectLicenceUrl =
-    "https://github.com/codero-sus/MyBrowser/blob/main/LICENSE";
+    "https://github.com/codero-sus/BrowserX/blob/main/LICENSE";
 /// The four restrictions, in one string so the CLI, the About page, the packaged
 /// build and the mobile app can never describe the licence differently.
 constexpr const char* kProjectLicenceTerms =
