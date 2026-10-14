@@ -118,3 +118,25 @@ TEST(Blocklist, CategoryLabelsExist) {
   EXPECT_EQ(std::string(BlockCategoryLabel(BlockCategory::kAds)), std::string("ads"));
   EXPECT_EQ(std::string(BlockCategoryLabel(BlockCategory::kCrypto)), std::string("crypto miners"));
 }
+
+TEST(Blocklist, AllowlistingASiteAlsoAllowsWhatThatSiteLoads) {
+  // A user who clicks "allow this site" means "stop blocking on the pages of this
+  // site". Matching only the request host made that a no-op in practice, because the
+  // requests a rule matches are third-party ones coming *from* the allowlisted page.
+  Blocklist list;
+  list.AddDefaults();
+  list.AllowlistHost("news.example");
+
+  EXPECT_TRUE(list.Decide("news.example", "www.google-analytics.com", "/collect",
+                          ResourceType::kScript) == BlockDecision::kAllowlisted);
+  // The allowlist is per site: another site's pages are still protected.
+  EXPECT_TRUE(list.Decide("other.example", "www.google-analytics.com", "/collect",
+                          ResourceType::kScript) == BlockDecision::kBlock);
+  // And the matched category still comes back for the statistics.
+  const BlockMatch match =
+      list.DecideDetailed("other.example", "www.google-analytics.com", "/collect",
+                          ResourceType::kScript);
+  EXPECT_TRUE(match.decision == BlockDecision::kBlock);
+  EXPECT_TRUE(match.category == BlockCategory::kAnalytics);
+  EXPECT_TRUE(match.matched_rule);
+}

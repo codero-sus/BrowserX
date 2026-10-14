@@ -321,6 +321,11 @@ const std::vector<FeatureEntry>& FeatureTable() {
       {"ConnectionKeepAliveForHttp2", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
        "Keep HTTP/2 sessions alive longer, so coming back to a site reuses the open socket "
        "instead of paying for a new connection."},
+      {"NetworkQualityEstimator", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Chromium's own connection-quality estimator: measures throughput and latency and adapts "
+       "timeouts, buffering and speculative work to what it finds. It is OFF by default upstream, "
+       "which is why a mode that forces an effective connection type must enable this too or the "
+       "forced value is never read. It only changes what Chromium assumes, never the link."},
       {"AddressSorterConnectCache", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
        "Remember which of a host's addresses connected successfully and try it first next time: "
        "faster reconnects on hosts with several A/AAAA records."},

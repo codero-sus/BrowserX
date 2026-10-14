@@ -45,6 +45,7 @@ DOCTOR = REPO_ROOT / "out" / "browserx-doctor"
 FALLBACK_MODES = [
     "ultra", "gaming", "high-performance", "low-ram", "eco",
     "super-internet", "download", "streaming",
+    "privacy", "data-saver", "weak-network", "low-latency", "reader", "benchmark", "kiosk",
 ]
 
 _build_lock = threading.Lock()
