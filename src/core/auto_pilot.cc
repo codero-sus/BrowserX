@@ -71,11 +71,19 @@ AutoPilotDecision AutoPilot::Evaluate(const AutoPilotInput& input) {
 
   const bool ask_only = policy_ == AutoPilotMode::kAsk;
 
+  // A specialist mode (SUPER INTERNET / DOWNLOAD / STREAMING) is an explicit
+  // request to push one subsystem: switching away would stop prioritising a
+  // transfer or start throttling a playing tab. Auto-Pilot therefore leaves it
+  // alone - except for the memory rule below, which is a genuine emergency and
+  // still applies.
+  const bool specialist = IsSpecialistMode(current_mode_);
+  const bool memory_emergency = input.memory_pressure >= kPressureHigh;
+
   // 1) A game running in fullscreen / pointer lock: the strongest signal there
   //    is. Even in "ask" mode we want to surface this quickly.
   const bool gaming = (input.fullscreen_page && (input.pointer_locked || input.gamepad_active)) ||
                       input.pointer_locked;
-  if (gaming && current_mode_ != Mode::kGaming && !CoolingDown("gaming")) {
+  if (gaming && !specialist && current_mode_ != Mode::kGaming && !CoolingDown("gaming")) {
     std::string reason = "A game appears to be running";
     if (input.pointer_locked) reason += " (pointer lock is active)";
     else if (input.gamepad_active) reason += " (gamepad activity detected)";
@@ -84,8 +92,7 @@ AutoPilotDecision AutoPilot::Evaluate(const AutoPilotInput& input) {
   }
 
   // 2) Memory pressure: escape to LOW RAM before the machine starts swapping.
-  if (input.memory_pressure >= kPressureHigh && current_mode_ != Mode::kLowRam &&
-      !CoolingDown("memory")) {
+  if (memory_emergency && current_mode_ != Mode::kLowRam && !CoolingDown("memory")) {
     return Propose(Mode::kLowRam, "memory",
                    "Memory pressure is " + fmt::FormatPercent(input.memory_pressure * 100.0) +
                        " — LOW RAM mode caps renderers and sleeps idle tabs",
@@ -93,7 +100,7 @@ AutoPilotDecision AutoPilot::Evaluate(const AutoPilotInput& input) {
   }
 
   // 3) Battery: keep the machine alive.
-  if (input.on_battery && input.battery_percent >= 0 &&
+  if (!specialist && input.on_battery && input.battery_percent >= 0 &&
       input.battery_percent <= kBatteryLowPercent && current_mode_ != Mode::kEco &&
       current_mode_ != Mode::kLowRam && !CoolingDown("battery")) {
     const bool very_low = input.battery_percent <= kBatteryVeryLowPercent;
@@ -114,8 +121,9 @@ AutoPilotDecision AutoPilot::Evaluate(const AutoPilotInput& input) {
                    ask_only);
   }
 
-  // 5) Long idle on battery: ECO to stop background work entirely.
-  if (input.on_battery && input.seconds_since_user_input >= kIdleForEco &&
+  // 5) Long idle on battery: ECO to stop background work entirely. Not while a
+  //    specialist mode is active - "idle" is exactly when a long transfer runs.
+  if (!specialist && input.on_battery && input.seconds_since_user_input >= kIdleForEco &&
       current_mode_ != Mode::kEco && !CoolingDown("idle")) {
     return Propose(Mode::kEco, "idle",
                    "No input for " + fmt::FormatDuration(input.seconds_since_user_input) +

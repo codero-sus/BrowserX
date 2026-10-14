@@ -111,6 +111,32 @@ const std::vector<ModeInfo>& AllModes() {
        "Caps the frame rate at 30, halves animation durations, asks sites for reduced motion, "
        "stops V8 idle work, avoids background networking and disk writes, and sleeps tabs "
        "quickly. Designed for laptops on battery and for background/always-on windows."},
+      {Mode::kSuperInternet, "super-internet", "SUPER INTERNET", "\xF0\x9F\x9A\x80",
+       "Every network throttle removed: fastest transfers and the lowest connection latency a "
+       "browser can ask for.",
+       "Opens connections before they are needed and keeps them alive (Happy Eyeballs, optimistic "
+       "DNS, TLS 1.3 early data, HTTP/2 keep-alive), removes the IPC rate limiter, prefetches "
+       "speculatively, and never unloads a tab - so a background transfer or upload is never "
+       "killed to free memory. Honest limit: a browser cannot create bandwidth. What this mode "
+       "buys you is Chromium staying out of the way; the ceiling stays your link, your router and "
+       "the server."},
+      {Mode::kDownload, "download", "DOWNLOAD", "\xF0\x9F\x93\xA5",
+       "Built for big transfers: parallel range requests, a huge cache, nothing unloaded or "
+       "throttled while a queue runs.",
+       "Enables Chromium's parallel range downloads so large files arrive over several "
+       "connections where the server supports it, keeps speculative connections and TLS 1.3 "
+       "early data on, gives the HTTP cache its largest budget, and disables background "
+       "throttling and tab unloading so a long transfer is never interrupted or deprioritised. "
+       "The display stays awake. Many servers cap per-connection speed - parallelism is exactly "
+       "the difference; a server that refuses range requests will not go faster."},
+      {Mode::kStreaming, "streaming", "STREAMING", "\xF0\x9F\x93\xBA",
+       "Smooth video and audio: hardware decode, uncapped frame rate, screen stays awake.",
+       "Requests hardware video decode and encode, removes the compositor frame cap, allows "
+       "playback without a click, prefers hardware overlays for fullscreen video and keeps the "
+       "display awake while the mode is active - the browser's only legitimate power lever for "
+       "watching something. Tabs are never unloaded or throttled, so a playing tab keeps its "
+       "buffer. If no working hardware decoder is detected, you get a warning instead of a "
+       "silent CPU hit."},
   };
   return kModes;
 }
@@ -192,23 +218,47 @@ void SwitchPlan::Add(std::string id, std::string value, std::string reason, bool
   }
 }
 
+/// Features are resolved last-write-wins.
+///
+/// A mode enables what it wants and a later stage (the low-RAM device caps, a
+/// user override) can countermand it. Without this, the same feature would end up
+/// in *both* --enable-features and --disable-features, and Chromium's parser would
+/// silently pick one while the plan showed a contradiction to the user.
 void SwitchPlan::EnableFeature(std::string name, std::string reason) {
-  PlannedSwitch entry;
-  entry.id = name;
-  entry.reason = std::move(reason);
-  entry.provenance = "feature";
-  feature_reasons_.push_back(std::move(entry));
-  enabled_features_.push_back(name);
+  SetFeatureState(name, std::move(reason), /*enabled=*/true);
 }
 
 void SwitchPlan::DisableFeature(std::string name, std::string reason) {
+  SetFeatureState(name, std::move(reason), /*enabled=*/false);
+}
+
+void SwitchPlan::SetFeatureState(const std::string& name, std::string reason, bool enabled) {
+  const auto drop = [&name](std::vector<std::string>* list) {
+    list->erase(std::remove(list->begin(), list->end(), name), list->end());
+  };
+  drop(&enabled_features_);
+  drop(&disabled_features_);
+
+  // Keep exactly one explanation entry per feature: the decision that stands.
+  feature_reasons_.erase(
+      std::remove_if(feature_reasons_.begin(), feature_reasons_.end(),
+                     [&name](const PlannedSwitch& entry) { return entry.id == name; }),
+      feature_reasons_.end());
+
   PlannedSwitch entry;
   entry.id = name;
   entry.reason = std::move(reason);
   entry.provenance = "feature";
   feature_reasons_.push_back(std::move(entry));
-  disabled_features_.push_back(name);
+
+  if (enabled) {
+    enabled_features_.push_back(name);
+  } else {
+    disabled_features_.push_back(name);
+  }
 }
+
+
 
 void SwitchPlan::EnableFeatureIf(bool condition, std::string name, std::string reason) {
   if (condition) EnableFeature(std::move(name), std::move(reason));
@@ -599,6 +649,111 @@ void ApplyLowRamDeviceCaps(ModePlan* plan, const EngineContext& context, const S
       "desktop. Use LOW RAM mode for the smallest possible footprint.");
 }
 
+void AddSuperInternetProfile(ModePlan* plan, const EngineContext& context,
+                             const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  // The IPC rate limiter exists to stop a hostile page flooding the browser
+  // process. Removing it is exactly what a saturated transfer wants.
+  plan->boot.Add("disable-ipc-flooding-protection", "",
+                 "No IPC rate limiting between renderers and the network path: request bursts are "
+                 "not delayed");
+
+  // Connections: start them earlier, race the address families, keep them alive.
+  plan->boot.EnableFeature("HappyEyeballsV3",
+                           "Try IPv6 and IPv4 in parallel and keep whichever answers first: no "
+                           "IPv6 stall, shorter connects");
+  plan->boot.EnableFeature("OptimisticDnsForTcp",
+                           "Start the TCP connection while DNS is still resolving (saves a round "
+                           "trip on cold loads)");
+  plan->boot.EnableFeature("OptimisticDnsForQuic",
+                           "The same for QUIC/HTTP-3 connections");
+  plan->boot.EnableFeature("EnableTLS13EarlyData",
+                           "TLS 1.3 0-RTT: returning to a site can skip the handshake round trip");
+  plan->boot.EnableFeature("ConnectionKeepAliveForHttp2",
+                           "Keep HTTP/2 sessions alive longer so returning to a site reuses the "
+                           "open socket");
+  plan->boot.EnableFeature("AddressSorterConnectCache",
+                           "Cache which address actually connected, and try it first next time");
+  plan->boot.EnableFeature("NetworkContextPrefetch",
+                           "Speculatively open connections so the first request does not pay for "
+                           "DNS + TCP + TLS");
+  plan->boot.EnableFeature("NetworkServiceInProcess2",
+                           "Run the network service in-process: one less IPC hop (and one less "
+                           "process) for every request");
+  if (plan->runtime.bfcache) {
+    plan->boot.EnableFeature("BackForwardCache",
+                             "Instant back/forward while the connection work continues");
+    plan->boot.EnableFeature("BackForwardCacheMemoryControls",
+                             "Bound that cache so it cannot grow without limit");
+  }
+
+  plan->notes.push_back(
+      "Honest limit: this mode removes every Chromium-side throttle it can. It cannot create "
+      "bandwidth, make a distant server faster, or beat the speed of light - the ceiling is your "
+      "link, your router and the server.");
+  plan->notes.push_back(
+      "QUIC / HTTP-3 is already enabled by default in Chromium and there is no supported switch to "
+      "force it (the old --enable-quic is catalogued as removed), so this mode does not pretend to.");
+  plan->notes.push_back(
+      "Tabs are never unloaded in this mode, so an upload or a background transfer is never "
+      "sacrificed to free memory. Prefetch and preconnect cost extra data on a metered connection.");
+}
+
+void AddDownloadProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  plan->boot.Add("disable-ipc-flooding-protection", "",
+                 "No IPC rate limiting: transferred data is not held back by the browser process");
+
+  plan->boot.EnableFeature("ParallelDownloading",
+                           "Split large downloads into parallel range requests instead of a single "
+                           "stream (works where the server supports ranges)");
+  plan->boot.EnableFeature("NetworkContextPrefetch",
+                           "Warm the connection for the next transfer instead of starting cold");
+  plan->boot.EnableFeature("EnableTLS13EarlyData",
+                           "TLS 1.3 0-RTT resumption: less handshake time per connection");
+  plan->boot.EnableFeature("ConnectionKeepAliveForHttp2",
+                           "Reuse the open HTTP/2 session for the next file in the queue");
+  plan->boot.EnableFeature("AddressSorterConnectCache",
+                           "Prefer the address that worked last time: faster reconnects");
+
+  plan->notes.push_back(
+      "Parallel range downloads are the one real browser-side download lever: many servers throttle "
+      "a single connection, so several connections add up. A server that refuses range requests, or "
+      "limits per IP, will not go faster - that part is not up to the browser.");
+  plan->notes.push_back(
+      "Nothing is unloaded or throttled while this mode runs, and the display is kept awake, so a "
+      "long queue is not interrupted by the session blanking. OS suspend/hibernate is outside the "
+      "browser's control.");
+}
+
+void AddStreamingProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  (void)context;
+  plan->boot.EnableFeature("AcceleratedVideoDecoder",
+                           "Decode video on the GPU: less CPU, fewer dropped frames");
+  plan->boot.EnableFeature("AcceleratedVideoEncoder",
+                           "Hardware encode too, for calls and screen sharing");
+  plan->boot.Add("autoplay-policy", "no-user-gesture-required",
+                 "Playback starts without a click (no 'sound is blocked' interruptions)");
+  plan->boot.Add("overlay-fullscreen-video", "",
+                 "Promote fullscreen video to a hardware overlay: smoother and cheaper");
+  plan->boot.EnableFeature("NetworkContextPrefetch",
+                           "Start the next segment's connection before it is requested");
+
+  if (!profile.has_accelerated_video) {
+    plan->warnings.push_back(
+        "No working hardware video decoder was detected on this machine, so playback will fall back "
+        "to software decoding and use noticeably more CPU.");
+  }
+  plan->notes.push_back(
+      "The display is kept awake while this mode is active. A browser cannot detect whether video "
+      "is actually playing, so this is a mode-level choice, not playback detection.");
+  plan->notes.push_back(
+      "Tabs are never unloaded or throttled, so a playing tab keeps its buffer and stays at full "
+      "frame rate in the background.");
+}
+
 void AddUltraProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
   const RuntimeOverrides& overrides = context.overrides;
 
@@ -688,6 +843,51 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
       policy.code_cache = false;  // saves disk writes and page-cache memory
       policy.lazy_new_tabs = true;
       break;
+    case Mode::kSuperInternet:
+      policy.background_throttling = false;  // a background transfer keeps full speed
+      policy.sleep_after_seconds = 0;        // never unload a tab that may be transferring
+      policy.discard_after_seconds = 0;
+      policy.warn_pressure = 0.90;
+      policy.discard_pressure = 0.95;
+      policy.cache_size_mb = std::max(1024, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 500;      // tight telemetry: watch the throughput move
+      policy.preconnect = true;
+      policy.bfcache = true;
+      policy.code_cache = true;
+      policy.block_trackers = true;          // trackers cost bandwidth before they cost anything
+      policy.lazy_new_tabs = false;          // start the transfer now, not when the tab is shown
+      break;
+    case Mode::kDownload:
+      policy.background_throttling = false;
+      policy.sleep_after_seconds = 0;
+      policy.discard_after_seconds = 0;
+      policy.warn_pressure = 0.92;
+      policy.discard_pressure = 0.97;
+      policy.cache_size_mb = std::max(2048, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 1000;
+      policy.preconnect = true;
+      policy.bfcache = false;                // RAM belongs to transfer buffers, not back/forward
+      policy.code_cache = true;
+      policy.keep_display_awake = true;
+      policy.block_trackers = true;
+      policy.lazy_new_tabs = false;
+      break;
+    case Mode::kStreaming:
+      policy.background_throttling = false;
+      policy.target_fps = 0.0;               // uncapped: match the display
+      policy.sleep_after_seconds = 0;
+      policy.discard_after_seconds = 0;
+      policy.warn_pressure = 0.88;
+      policy.discard_pressure = 0.95;
+      policy.cache_size_mb = std::max(1024, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 1000;
+      policy.preconnect = true;
+      policy.bfcache = false;
+      policy.code_cache = true;
+      policy.keep_display_awake = true;      // watching something means the screen stays on
+      policy.block_trackers = true;          // on video sites that is bandwidth and CPU saved
+      policy.lazy_new_tabs = false;
+      break;
     case Mode::kEco:
       policy.background_throttling = true;
       policy.target_fps = 30.0;
@@ -715,6 +915,9 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
     case Mode::kUltra: AddUltraProfile(&plan, context, profile); break;
     case Mode::kGaming: AddGamingProfile(&plan, context, profile); break;
     case Mode::kHighPerformance: AddHighPerformanceProfile(&plan, context, profile); break;
+    case Mode::kSuperInternet: AddSuperInternetProfile(&plan, context, profile); break;
+    case Mode::kDownload: AddDownloadProfile(&plan, context, profile); break;
+    case Mode::kStreaming: AddStreamingProfile(&plan, context, profile); break;
     case Mode::kLowRam: AddLowRamProfile(&plan, context, profile); break;
     case Mode::kEco: AddEcoProfile(&plan, context, profile); break;
   }
@@ -739,6 +942,9 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
     switch (mode) {
       case Mode::kLowRam: plan.estimated_memory_budget_mb = 640; break;
       case Mode::kEco: plan.estimated_memory_budget_mb = 900; break;
+      case Mode::kSuperInternet: plan.estimated_memory_budget_mb = 1800; break;
+      case Mode::kDownload: plan.estimated_memory_budget_mb = 2000; break;
+      case Mode::kStreaming: plan.estimated_memory_budget_mb = 1600; break;
       case Mode::kUltra: plan.estimated_memory_budget_mb = 1400; break;
       case Mode::kHighPerformance: plan.estimated_memory_budget_mb = 2200; break;
       case Mode::kGaming: plan.estimated_memory_budget_mb = 2600; break;
@@ -758,6 +964,10 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
     plan.notes.push_back("Some switches are applied only to child processes.");
   }
   return plan;
+}
+
+bool IsSpecialistMode(Mode mode) {
+  return mode == Mode::kSuperInternet || mode == Mode::kDownload || mode == Mode::kStreaming;
 }
 
 Mode DefaultModeFor(const SystemProfile& profile) {

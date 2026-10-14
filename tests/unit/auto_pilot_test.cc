@@ -168,3 +168,49 @@ TEST(AutoPilot, GamingBeatsMemoryPressure) {
   const AutoPilotDecision decision = pilot.Evaluate(input);
   EXPECT_TRUE(decision.target == Mode::kGaming);
 }
+
+TEST(AutoPilot, LeavesSpecialistModesAlone) {
+  // SUPER INTERNET / DOWNLOAD / STREAMING are the user saying "push this one
+  // subsystem". Auto-Pilot must not undo that because a game went fullscreen, the
+  // battery dropped or the machine went idle - it would kill the transfer or the
+  // playback the mode exists for.
+  AutoPilot pilot(Mode::kDownload, AutoPilotMode::kAuto);
+  AutoPilotInput input;
+  input.fullscreen_page = true;
+  input.pointer_locked = true;  // would normally trigger GAME
+  input.gamepad_active = true;
+  input.on_battery = true;
+  input.battery_percent = 8.0;  // would normally trigger ECO
+  input.open_tabs = 12;
+  input.seconds_since_user_input = 900;  // would normally trigger ECO on idle
+  input.memory_pressure = 0.5;
+
+  for (int tick = 0; tick < 40; ++tick) {
+    const AutoPilotDecision decision = pilot.Evaluate(input);
+    EXPECT_FALSE(decision.change) << "auto-pilot switched away from DOWNLOAD at tick " << tick;
+  }
+  EXPECT_TRUE(pilot.current_mode() == Mode::kDownload);
+}
+
+TEST(AutoPilot, StillEscapesASpecialistModeOnMemoryPressure) {
+  // A real memory emergency outranks the user's specialist choice: a browser that
+  // gets OOM-killed finishes no download at all.
+  AutoPilot pilot(Mode::kSuperInternet, AutoPilotMode::kAuto);
+  AutoPilotInput input;
+  input.memory_pressure = 0.97;
+  const AutoPilotDecision decision = pilot.Evaluate(input);
+  EXPECT_TRUE(decision.change);
+  EXPECT_TRUE(decision.target == Mode::kLowRam);
+}
+
+TEST(AutoPilot, NeverAutoSelectsASpecialistMode) {
+  AutoPilot pilot(Mode::kUltra, AutoPilotMode::kAuto);
+  AutoPilotInput input;
+  input.on_battery = true;
+  input.battery_percent = 15;
+  for (int tick = 0; tick < 60; ++tick) {
+    const AutoPilotDecision decision = pilot.Evaluate(input);
+    EXPECT_FALSE(IsSpecialistMode(decision.target))
+        << "auto-pilot must never pick a specialist mode on its own";
+  }
+}

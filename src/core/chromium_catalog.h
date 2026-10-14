@@ -18,6 +18,9 @@
 //
 // Verification method (see docs/FLAGS.md for the full report):
 //   * Chromium source files fetched from github.com/chromium/chromium (ref: main)
+//     — including net/base/features.cc, services/network/public/cpp/network_switches.cc
+//       and components/download/public/common/download_features.cc for the network and
+//       transfer modes
 //     and searched for the exact string literal, e.g. in
 //     base/base_switches.h, ui/gl/gl_switches.cc, gpu/config/gpu_switches.cc,
 //     cc/base/switches.cc, media/base/media_switches.cc,
@@ -49,7 +52,7 @@ namespace core {
 
 /// Date of the verification sweep. Update when re-verifying against a newer
 /// Chromium revision.
-inline constexpr const char* kCatalogVerifiedOn = "2026-10-12";
+inline constexpr const char* kCatalogVerifiedOn = "2026-10-14";
 inline constexpr const char* kCatalogChromiumRef = "main";
 
 enum class Provenance {

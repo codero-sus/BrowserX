@@ -42,7 +42,8 @@ void PrintUsage() {
   std::printf(
       "\n  browserx-flagplan — Chromium switch plan inspector\n\n"
       "  usage: browserx-flagplan [mode] [options]\n\n"
-      "    mode              ultra | gaming | high-performance | low-ram | eco\n"
+      "    mode              any mode id: ultra | gaming | high-performance | low-ram | eco |\n"
+      "                      super-internet | download | streaming\n"
       "    --all             print every mode (default when no mode is given)\n"
       "    --diff A B        compare the switch plans of two modes\n"
       "    --catalog         print the verified switch catalogue\n"

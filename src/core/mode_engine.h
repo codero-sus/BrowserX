@@ -32,7 +32,18 @@ enum class Mode {
   kHighPerformance, // maximum throughput (plugged in)
   kLowRam,          // smallest possible footprint
   kEco,             // battery life
+  // --- specialist modes: one subsystem pushed as far as a browser can take it ---
+  kSuperInternet,   // network throughput + connection latency
+  kDownload,        // bulk transfers, nothing unloaded mid-transfer
+  kStreaming,       // media playback: decode, no frame cap, screen awake
 };
+
+/// True for the modes that exist because the user asked for one specific job to
+/// be done as well as a browser can do it (network, transfers, media). Auto-Pilot
+/// will not switch away from these on its own: doing so would break the transfer
+/// or the playback the user selected the mode for. It still escapes to LOW RAM on
+/// a real memory emergency.
+bool IsSpecialistMode(Mode mode);
 
 struct ModeInfo {
   Mode mode;
@@ -95,6 +106,9 @@ class SwitchPlan {
  private:
   std::vector<PlannedSwitch> switches_;
   std::vector<PlannedSwitch> child_switches_;
+  /// Resolves one feature's state (last write wins) and keeps a single reason.
+  void SetFeatureState(const std::string& name, std::string reason, bool enabled);
+
   std::vector<std::string> enabled_features_;
   std::vector<std::string> disabled_features_;
   std::vector<PlannedSwitch> feature_reasons_;
