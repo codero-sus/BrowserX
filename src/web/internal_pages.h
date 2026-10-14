@@ -36,6 +36,7 @@ enum class PageKind {
   kBookmarks,
   kDownloads,
   kFind,
+  kBench,    // rendering/script benchmark (the measuring stick for speed claims)
   kUnknown,  // anything else -> a helpful "no such page" listing
 };
 

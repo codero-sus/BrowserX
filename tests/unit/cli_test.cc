@@ -159,6 +159,28 @@ TEST(Cli, PathsAndJoinHelpers) {
   EXPECT_TRUE(ParentDir("c.json").empty());
 }
 
+TEST(Cli, WriteBenchPageTakesAnOptionalFile) {
+  const LaunchOptions bare = Parse({"--write-bench-page"});
+  EXPECT_EQ(static_cast<int>(bare.action), static_cast<int>(CliAction::kWriteBenchPage));
+  EXPECT_TRUE(bare.bench_page_path.empty()) << "empty means the default file name";
+
+  const LaunchOptions joined = Parse({"--write-bench-page=/tmp/bench.html"});
+  EXPECT_EQ(static_cast<int>(joined.action), static_cast<int>(CliAction::kWriteBenchPage));
+  EXPECT_EQ(joined.bench_page_path, std::string("/tmp/bench.html"));
+
+  const LaunchOptions spaced = Parse({"--write-bench-page", "bench.html"});
+  EXPECT_EQ(spaced.bench_page_path, std::string("bench.html"));
+
+  // The next token belongs to the page only when it is not another option: a URL must
+  // still be understood as a URL.
+  const LaunchOptions with_url = Parse({"--write-bench-page", "example.com"});
+  EXPECT_EQ(with_url.bench_page_path, std::string("example.com"));
+
+  const LaunchOptions flag_next = Parse({"--write-bench-page", "--doctor"});
+  EXPECT_TRUE(flag_next.bench_page_path.empty());
+  EXPECT_EQ(static_cast<int>(flag_next.action), static_cast<int>(CliAction::kDoctor));
+}
+
 TEST(Cli, UsageTextDocumentsEveryRealOption) {
   const std::string usage = browserx::app::CliUsage("browserx");
   for (const char* needle : {"--mode", "--auto-pilot", "--advanced", "--lab", "--renderers",
@@ -166,7 +188,7 @@ TEST(Cli, UsageTextDocumentsEveryRealOption) {
                             "--cache-dir", "--downloads", "--frameless", "--no-sandbox",
                             "--headless", "--allow-multiple", "--tab", "--log-level",
                             "--flag-plan", "--print-profile", "--print-catalog", "--doctor",
-                            "--benchmark", "--smoke-test", "--help"}) {
+                            "--benchmark", "--smoke-test", "--write-bench-page", "--help"}) {
     EXPECT_TRUE(usage.find(needle) != std::string::npos);
   }
 }

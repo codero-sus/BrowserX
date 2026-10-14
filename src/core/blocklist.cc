@@ -5,6 +5,7 @@
 #include "core/blocklist.h"
 
 #include <algorithm>
+#include <string_view>
 
 #include "core/format.h"
 #include "core/url_utils.h"
@@ -108,23 +109,60 @@ const char* BlockCategoryLabel(BlockCategory category) {
 
 void Blocklist::AddRule(std::string pattern, BlockCategory category, bool third_party_only,
                         bool path_rule) {
+  AppendRule(std::move(pattern), category, third_party_only, path_rule);
+  RebuildIndex();
+}
+
+void Blocklist::AppendRule(std::string pattern, BlockCategory category, bool third_party_only,
+                           bool path_rule) {
   BlockRule rule;
-  rule.pattern = fmt::ToLower(std::move(pattern));
+  rule.pattern = fmt::ToLower(fmt::Trim(std::move(pattern)));
   rule.category = category;
   rule.third_party_only = third_party_only;
   rule.path_rule = path_rule;
   rules_.push_back(std::move(rule));
 }
 
+void Blocklist::RebuildIndex() {
+  suffix_index_.clear();
+  exact_index_.clear();
+  path_rule_indices_.clear();
+  other_rule_indices_.clear();
+
+  for (size_t i = 0; i < rules_.size(); ++i) {
+    const BlockRule& rule = rules_[i];
+    if (rule.path_rule) {
+      path_rule_indices_.push_back(i);
+      continue;
+    }
+    const std::string& pattern = rule.pattern;
+    if (pattern.empty()) continue;
+    if (pattern.front() == '=') {
+      exact_index_[pattern.substr(1)].push_back(i);
+    } else if (pattern.size() > 2 && pattern[0] == '*' && pattern[1] == '.') {
+      suffix_index_[pattern.substr(2)].push_back(i);
+    } else if (pattern.find('*') == std::string::npos) {
+      suffix_index_[pattern].push_back(i);
+    } else {
+      // A wildcard anywhere but the leading "*." is not something the index can
+      // answer, so it falls back to the linear scan.
+      other_rule_indices_.push_back(i);
+    }
+  }
+}
+
 void Blocklist::AddDefaults() {
   rules_.clear();
-  for (const char* host : kAdHosts) AddRule(host, BlockCategory::kAds);
-  for (const char* host : kAnalyticsHosts) AddRule(host, BlockCategory::kAnalytics);
-  for (const char* host : kSocialTrackers) AddRule(host, BlockCategory::kSocial);
-  for (const char* host : kCryptoMiners) AddRule(host, BlockCategory::kCrypto, /*third_party=*/false);
-  for (const char* host : kFingerprintHosts) AddRule(host, BlockCategory::kFingerprint);
+  // AppendRule, not AddRule: the index is built once below instead of 163 times.
+  for (const char* host : kAdHosts) AppendRule(host, BlockCategory::kAds);
+  for (const char* host : kAnalyticsHosts) AppendRule(host, BlockCategory::kAnalytics);
+  for (const char* host : kSocialTrackers) AppendRule(host, BlockCategory::kSocial);
+  for (const char* host : kCryptoMiners) {
+    AppendRule(host, BlockCategory::kCrypto, /*third_party=*/false);
+  }
+  for (const char* host : kFingerprintHosts) AppendRule(host, BlockCategory::kFingerprint);
   for (const PathRule& rule : kPathRules) {
-    AddRule(rule.fragment, rule.category, /*third_party_only=*/true, /*path_rule=*/true);
+    AppendRule(rule.fragment, rule.category, /*third_party_only=*/true, /*path_rule=*/true);
   }
   // Deduplicate (the curated lists intentionally have a couple of repeats).
   std::sort(rules_.begin(), rules_.end(), [](const BlockRule& a, const BlockRule& b) {
@@ -137,6 +175,11 @@ void Blocklist::AddDefaults() {
                                     a.path_rule == b.path_rule;
                            }),
                rules_.end());
+  // Rebuilt here as well as in AddRule(): this function reorders and drops rules
+  // *after* adding them, which leaves any index built during the loop pointing at the
+  // wrong entries. That is not a theoretical hazard - it silently disabled the shield
+  // and read past the end of the rule vector.
+  RebuildIndex();
 }
 
 void Blocklist::AllowlistHost(std::string host) {
@@ -193,18 +236,53 @@ BlockMatch Blocklist::DecideDetailed(std::string_view document_host,
     }
   }
 
-  const std::string host_and_path = request_host_text + std::string(request_path);
-  for (const BlockRule& rule : rules_) {
-    if (rule.third_party_only && (!third_party || same_host)) continue;
+  // Indexed lookup, and the semantics are deliberately identical to the linear scan
+  // it replaces: the *earliest* matching rule in insertion order wins, so a rule file
+  // still reads top-to-bottom. What changed is the cost - a host that matches nothing
+  // now costs one hash lookup per label instead of a pattern match against every rule.
+  size_t best = SIZE_MAX;
+  const auto consider = [&](size_t index) {
+    if (index >= rules_.size()) return;  // cannot happen: RebuildIndex() mirrors rules_
+    if (index >= best) return;           // an earlier rule already won
+    const BlockRule& rule = rules_[index];
+    if (rule.third_party_only && (!third_party || same_host)) return;
     const bool matches = rule.path_rule
-                             ? host_and_path.find(rule.pattern) != std::string::npos
+                             ? (!request_path.empty() &&
+                                (request_host_text + std::string(request_path))
+                                        .find(rule.pattern) != std::string::npos)
                              : url::HostMatchesPattern(request_host_text, rule.pattern);
-    if (matches) {
-      result.decision = BlockDecision::kBlock;
-      result.category = rule.category;
-      result.matched_rule = true;
-      return result;
+    if (matches) best = index;
+  };
+
+  // Every suffix of the request host, longest first, plus the whole host for "=exact".
+  const std::string_view host_view(request_host_text);
+  for (size_t start_at = 0; start_at < host_view.size();) {
+    const std::string_view suffix = host_view.substr(start_at);
+    const auto exact = exact_index_.find(suffix);
+    if (exact != exact_index_.end()) {
+      if (suffix.size() == host_view.size()) {
+        for (const size_t index : exact->second) consider(index);
+      }
     }
+    if (const auto found = suffix_index_.find(suffix); found != suffix_index_.end()) {
+      for (const size_t index : found->second) consider(index);
+    }
+    const size_t dot = host_view.find('.', start_at);
+    if (dot == std::string_view::npos) break;
+    start_at = dot + 1;
+  }
+
+  // Path rules are substring searches, so they stay a short list to walk - but only
+  // when the caller passed a path at all.
+  if (!request_path.empty()) {
+    for (const size_t index : path_rule_indices_) consider(index);
+  }
+  for (const size_t index : other_rule_indices_) consider(index);
+
+  if (best != SIZE_MAX) {
+    result.decision = BlockDecision::kBlock;
+    result.category = rules_[best].category;
+    result.matched_rule = true;
   }
   return result;
 }

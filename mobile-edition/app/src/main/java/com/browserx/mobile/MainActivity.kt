@@ -367,6 +367,28 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
         tabs.addTab(getString(R.string.new_tab_url)) { createWebView() }
     }
 
+    // Loads the same benchmark page the desktop edition serves at browserx://bench.
+    //
+    // The asset is generated from src/web/bench_page.cc by `make bench-page`, and
+    // `make check` fails if it ever drifts from what the browser serves - both editions
+    // must run the identical bytes, or the comparison they exist for is worthless.
+    // It is loaded as data (not file://) so the WebView needs no file-access settings,
+    // and it makes no network requests at all: the page is self-contained by design.
+    private fun openBenchmarkPage() {
+        val webView = tabs.active()?.webView
+        if (webView == null) {
+            notice(getString(R.string.benchmark_failed))
+            return
+        }
+        try {
+            val html = assets.open("bench.html").bufferedReader().use { it.readText() }
+            webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+        } catch (e: Exception) {
+            // A build without the asset (or a WebView that refuses the data load).
+            notice(getString(R.string.benchmark_failed))
+        }
+    }
+
     private fun restoreOrOpenStartPage() {
         val restored = tabs.restoredSession()
         if (restored != null) {
@@ -504,6 +526,10 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
         }
         menu.menu.add(getString(R.string.show_plan)).setOnMenuItemClickListener {
             showPlanDialog()
+            true
+        }
+        menu.menu.add(getString(R.string.benchmark)).setOnMenuItemClickListener {
+            openBenchmarkPage()
             true
         }
         menu.show()

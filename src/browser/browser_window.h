@@ -77,6 +77,7 @@ enum ChromeId {
   kIdOpenBookmarks,
   kIdOpenDownloads,
   kIdOpenModes,
+  kIdOpenBench,
   kIdDevTools,
   kIdFindInPage,
   kIdPrint,

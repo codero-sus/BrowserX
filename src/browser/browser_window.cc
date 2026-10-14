@@ -315,6 +315,9 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   bind(kIdModeSuperInternet, '6', false, true, false);
   bind(kIdModeDownload, '7', false, true, false);
   bind(kIdModeStreaming, '8', false, true, false);
+  // The benchmark page is the on-machine measuring stick, so it gets a key of its own -
+  // running the same file in another browser is the whole point of it.
+  bind(kIdOpenBench, 'B', true, true, false);
   // Only one more is worth a key: PRIVACY is the other mode people reach for in a
   // hurry. The remaining six live in the mode menu, browserx://modes and --mode=,
   // which is the honest place for fifteen options on a keyboard.
@@ -443,6 +446,7 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
     case kIdOpenSettings: OpenInternalPage("settings"); return;
     case kIdOpenTelemetry: OpenInternalPage("telemetry"); return;
     case kIdOpenModes: OpenInternalPage("modes"); return;
+    case kIdOpenBench: OpenInternalPage("bench"); return;
     case kIdOpenHistory: OpenInternalPage("history"); return;
     case kIdOpenBookmarks: OpenInternalPage("bookmarks"); return;
     case kIdOpenDownloads: OpenInternalPage("downloads"); return;
@@ -673,6 +677,7 @@ void BrowserWindow::ShowMainMenu(const CefPoint& screen_point) {
   model->AddSeparator();
   model->AddItem(kIdOpenModes, "Performance mode...");
   model->AddItem(kIdOpenTelemetry, "Live telemetry");
+  model->AddItem(kIdOpenBench, "Benchmark page (offline)\tCtrl+Shift+B");
   model->AddItem(kIdOpenSettings, "Settings");
   model->AddSeparator();
   model->AddItem(kIdOpenHistory, "History");
@@ -1130,6 +1135,7 @@ void BrowserWindow::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr
   model->AddSeparator();
   model->AddItem(kIdOpenTelemetry, "BrowserX: telemetry");
   model->AddItem(kIdOpenModes, "BrowserX: performance mode");
+  model->AddItem(kIdOpenBench, "BrowserX: benchmark page");
   model->AddItem(kIdToggleShield, "BrowserX: toggle tracker shield");
 }
 
@@ -1139,6 +1145,7 @@ bool BrowserWindow::OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPt
   switch (command_id) {
     case kIdOpenTelemetry:
     case kIdOpenModes:
+    case kIdOpenBench:
     case kIdToggleShield:
       OnToolbarCommand(command_id);
       return true;

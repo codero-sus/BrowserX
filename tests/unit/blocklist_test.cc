@@ -22,6 +22,70 @@ TEST(Blocklist, DefaultsAreLoadedAndDeduplicated) {
   EXPECT_LT(list.rule_count(), 200u) << "the shield stays curated, not a giant list";
 }
 
+// The lookup index reordered how rules are *found*, so these tests pin the semantics
+// that must not drift: which rule wins, where a host match may begin, and what a
+// freshly added rule does to a list that is already in use.
+TEST(Blocklist, RuleOrderStillDecidesTheCategory) {
+  Blocklist list;
+  list.AddRule("ads.example", BlockCategory::kAds);
+  list.AddRule("ads.example", BlockCategory::kAnalytics);
+  const BlockMatch match =
+      list.DecideDetailed("news.example", "ads.example", "/x.js", ResourceType::kScript);
+  EXPECT_TRUE(match.decision == BlockDecision::kBlock);
+  EXPECT_TRUE(match.category == BlockCategory::kAds) << "the first rule on the page wins";
+}
+
+TEST(Blocklist, HostMatchesOnlyAtLabelBoundaries) {
+  Blocklist list;
+  list.AddRule("example.com", BlockCategory::kAds);
+  EXPECT_TRUE(list.Decide("news.example", "example.com", "/a", ResourceType::kScript) ==
+              BlockDecision::kBlock);
+  EXPECT_TRUE(list.Decide("news.example", "cdn.example.com", "/a", ResourceType::kScript) ==
+              BlockDecision::kBlock);
+  // "notexample.com" ends with "example.com" as text but not as a domain.
+  EXPECT_TRUE(list.Decide("news.example", "notexample.com", "/a", ResourceType::kScript) ==
+              BlockDecision::kAllow);
+}
+
+TEST(Blocklist, WildcardAndExactPatternsBothStillWork) {
+  Blocklist list;
+  list.AddRule("*.wild.example", BlockCategory::kAds);
+  list.AddRule("=exact.example", BlockCategory::kAds);
+  EXPECT_TRUE(list.Decide("news.example", "a.wild.example", "/a", ResourceType::kScript) ==
+              BlockDecision::kBlock);
+  EXPECT_TRUE(list.Decide("news.example", "wild.example", "/a", ResourceType::kScript) ==
+              BlockDecision::kBlock) << "a leading *. also covers the bare host";
+  EXPECT_TRUE(list.Decide("news.example", "exact.example", "/a", ResourceType::kScript) ==
+              BlockDecision::kBlock);
+  EXPECT_TRUE(list.Decide("news.example", "sub.exact.example", "/a", ResourceType::kScript) ==
+              BlockDecision::kAllow) << "=exact.example must not cover subdomains";
+}
+
+TEST(Blocklist, ARuleAddedAfterUseIsHonouredImmediately) {
+  Blocklist list = MakeDefault();
+  const std::string host = "late-addition.example";
+  EXPECT_TRUE(list.Decide("news.example", host, "/a.js", ResourceType::kScript) ==
+              BlockDecision::kAllow);
+  list.AddRule(host, BlockCategory::kAds);
+  EXPECT_TRUE(list.Decide("news.example", host, "/a.js", ResourceType::kScript) ==
+              BlockDecision::kBlock) << "the index has to be rebuilt when the list changes";
+}
+
+TEST(Blocklist, PathRulesAreSlashAnchoredSoHostsNeedNoConcatenation) {
+  // The decision path matches path rules against the request path alone (which is why a
+  // request with no path cannot match one). That is only equivalent to matching
+  // host+path while every path rule starts with "/" - if one ever does not, this fails
+  // loudly instead of quietly letting ads through.
+  const Blocklist list = MakeDefault();
+  size_t path_rules = 0;
+  for (const BlockRule& rule : list.rules()) {
+    if (!rule.path_rule) continue;
+    ++path_rules;
+    EXPECT_TRUE(!rule.pattern.empty() && rule.pattern.front() == '/') << rule.pattern;
+  }
+  EXPECT_GT(path_rules, 0u) << "the default set is expected to carry path rules";
+}
+
 TEST(Blocklist, BlocksKnownAdAndTrackerHosts) {
   const Blocklist list = MakeDefault();
   EXPECT_TRUE(list.Decide("news.example", "ads.doubleclick.net", "/x.js", ResourceType::kScript) ==

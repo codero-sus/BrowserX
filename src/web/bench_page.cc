@@ -1,0 +1,297 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
+#include "web/bench_page.h"
+
+namespace browserx {
+namespace web {
+
+// The benchmark is a single self-contained document with no external requests, so the
+// exact same bytes can be opened in ANY browser (`--write-bench-page` writes it to a
+// file). That is the point: a comparison is only worth anything when both browsers ran
+// the same code, offline, with no network in the measurement.
+std::string BenchPageDocument() {
+  return R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Benchmark &mdash; BrowserX</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:24px; background:#0d1117; color:#e6edf3;
+         font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  p.sub { color:#8b949e; margin:0 0 20px; }
+  table { border-collapse:collapse; width:100%; max-width:760px; margin-bottom:18px; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid #21262d; }
+  th { color:#8b949e; font-weight:500; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  #score { font-size:40px; font-weight:600; margin:2px 0 2px; }
+  #verdict { color:#8b949e; margin-bottom:20px; }
+  button { background:#21262d; color:#e6edf3; border:1px solid #30363d;
+           border-radius:6px; padding:7px 13px; cursor:pointer; font:inherit; }
+  button:hover { background:#30363d; }
+  pre { background:#161b22; border:1px solid #21262d; border-radius:6px; padding:12px;
+        overflow:auto; max-width:760px; }
+  .warn { color:#d29922; }
+  canvas { border:1px solid #21262d; border-radius:6px; display:block; margin:10px 0; }
+  header.brand { display:flex; align-items:baseline; gap:10px; margin-bottom:2px; }
+  .logo { font-size:20px; font-weight:700; letter-spacing:.2px; }
+  .logo span { color:#58a6ff; }
+  .crumb { color:#8b949e; }
+  footer.credit { margin-top:26px; padding-top:14px; border-top:1px solid #21262d;
+                  color:#8b949e; font-size:12px; max-width:760px; }
+  footer.credit a { color:#8b949e; }
+</style>
+</head>
+<body>
+<!-- Same wordmark markup as the rest of the browser's pages, so this file is still
+     recognisably a BrowserX page when someone opens it in another browser. -->
+<header class="brand"><span class="logo">Browser<span>X</span></span>
+  <span class="crumb">Benchmark</span></header>
+<p class="sub">Rendering, canvas, script and layout throughput. No network is used:
+this page must score the same offline as online, and the same in any browser.<br>
+Run it with no other tabs competing for the CPU, one browser at a time.</p>
+
+<div id="score">&mdash;</div>
+<div id="verdict">Running&hellip;</div>
+
+<table id="results">
+  <thead><tr><th>Test</th><th class="n">Result</th><th class="n">ms</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<canvas id="gl" width="480" height="240"></canvas>
+<canvas id="c2d" width="480" height="240"></canvas>
+
+<p><button id="rerun">Run again</button> <button id="copy">Copy JSON</button></p>
+<pre id="json"></pre>
+
+<script>
+"use strict";
+/* Every test measures work the browser must actually do, and reports both the rate
+   (higher is better) and how long it took. Deliberately synchronous and frame-rate
+   independent: this must be comparable between browsers, not a measurement of how
+   fast a timer fires.
+   Rules this file holds itself to:
+     * each test runs its work exactly once - running it twice to time it would make
+       the page itself slower than the browser it is trying to measure;
+     * a test that cannot run is reported as skipped, never as a zero: a zero would
+       quietly pull the score down, and dropping the row would quietly pull it up;
+     * the score is withheld unless every test ran, so a page comparing a browser with
+       WebGL against one without cannot produce a number that looks comparable. */
+(function () {
+  var results = [];
+  var skipped = [];
+  var tbody = document.querySelector('#results tbody');
+
+  function row(name, display, ms) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + name + '</td><td class="n">' + display + '</td><td class="n">' +
+                   (ms === null ? '-' : ms.toFixed(1)) + '</td>';
+    tbody.appendChild(tr);
+  }
+
+  // Runs `fn` once. `fn` returns how many units of work it completed; the rate and the
+  // elapsed time both come from that single run.
+  function measure(name, unit, fn) {
+    var t0 = performance.now();
+    var units = fn();
+    var ms = performance.now() - t0;
+    var rate = ms > 0 ? units / ms * 1000 : 0;
+    results.push({ test: name, value: units, unit: unit, rate: rate, ms: +ms.toFixed(2) });
+    return { name: name, unit: unit, units: units, rate: rate, ms: ms };
+  }
+
+  // --- script ---------------------------------------------------------------
+  function scriptTest() {
+    var ops = 4000000;
+    return measure('script', 'ops/s', function () {
+      var acc = 0;
+      for (var i = 0; i < ops; i++) acc = (acc + i * 31) % 2147483647;
+      return acc === 0 ? ops : ops;
+    });
+  }
+
+  // --- layout / DOM ---------------------------------------------------------
+  function layoutTest() {
+    var rows = 1200;
+    return measure('layout', 'rows/s', function () {
+      var host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0;width:600px';
+      for (var i = 0; i < rows; i++) {
+        var d = document.createElement('div');
+        d.textContent = 'row ' + i + ' - ' + 'lorem ipsum dolor sit amet '.repeat(2);
+        host.appendChild(d);
+      }
+      document.body.appendChild(host);
+      host.getBoundingClientRect().height;   // forces the layout the rows asked for
+      document.body.removeChild(host);
+      return rows;
+    });
+  }
+
+  // --- canvas 2D ------------------------------------------------------------
+  function canvasTest() {
+    var frames = 60;
+    var c = document.querySelector('#c2d');
+    var ctx = c.getContext('2d');
+    // Same rule as WebGL: a test that cannot run is a skip, not a zero. A zero would
+    // pull the score down, and leaving the row out would pull it up.
+    if (!ctx) {
+      skipped.push('canvas 2D');
+      row('canvas 2D', 'no 2D context', null);
+      return null;
+    }
+    return measure('canvas 2D', 'fps', function () {
+      for (var f = 0; f < frames; f++) {
+        ctx.clearRect(0, 0, c.width, c.height);
+        for (var i = 0; i < 600; i++) {
+          ctx.fillStyle = 'hsl(' + ((i * 7) % 360) + ',70%,55%)';
+          ctx.fillRect((i * 13) % c.width, (i * 29) % c.height, 16, 16);
+          ctx.beginPath();
+          ctx.arc((i * 17) % c.width, (i * 23) % c.height, 6, 0, 6.283);
+          ctx.fill();
+        }
+      }
+      return frames;
+    });
+  }
+
+  // --- WebGL ----------------------------------------------------------------
+  function webglTest() {
+    var draws = 600;
+    var c = document.querySelector('#gl');
+    var gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) {
+      skipped.push('WebGL');
+      row('WebGL', 'no context (software rendering)', null);
+      return null;
+    }
+    var vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }');
+    gl.compileShader(vs);
+    var fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, 'precision mediump float; void main(){ gl_FragColor = vec4(0.2,0.7,0.4,1.0); }');
+    gl.compileShader(fs);
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog); gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.9,-0.9, 0.9,-0.9, 0,0.9]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.viewport(0, 0, c.width, c.height);
+
+    var result = measure('WebGL', 'draws/s', function () {
+      // 600 draws plus a synchronised read: the read is what stops the driver from
+      // queueing the work and reporting a time that never happened.
+      for (var i = 0; i < draws; i++) {
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      gl.finish();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+      return draws;
+    });
+    var renderer = null;
+    try { renderer = gl.getParameter(gl.RENDERER) || null; } catch (e) { renderer = null; }
+    return { result: result, renderer: renderer };
+  }
+
+  function format(name, r) {
+    if (name === 'script') return (r.rate / 1e6).toFixed(1) + ' M ops/s';
+    if (name === 'layout') return Math.round(r.rate) + ' rows/s';
+    if (name === 'canvas 2D') return Math.round(r.rate) + ' fps';
+    return Math.round(r.rate) + ' draws/s';
+  }
+
+  function run() {
+    tbody.innerHTML = '';
+    results = [];
+    skipped = [];
+    document.querySelector('#score').textContent = '\u2026';
+    document.querySelector('#verdict').textContent = 'Running\u2026';
+
+    var script = scriptTest();   row('script', format('script', script), script.ms);
+    var layout = layoutTest();   row('layout', format('layout', layout), layout.ms);
+    var canvas = canvasTest();
+    if (canvas !== null) row('canvas 2D', format('canvas 2D', canvas), canvas.ms);
+    var webgl = webglTest();
+    var renderer = null;
+    if (webgl !== null) {
+      row('WebGL', format('WebGL', webgl.result), webgl.result.ms);
+      renderer = webgl.renderer;
+    }
+
+    // One comparable number: the geometric mean of the rates, which is an *index*, not
+    // a physical quantity - it exists so a fast browser and a slow one can be told
+    // apart by one digit. Withheld when a test was skipped: partly-measured browsers
+    // must not be handed a number that looks like a full one.
+    var score = null;
+    if (skipped.length === 0) {
+      var product = 1;
+      for (var i = 0; i < results.length; i++) product *= results[i].rate;
+      if (product > 0) score = Math.round(Math.pow(product, 1 / results.length));
+    }
+
+    var scoreEl = document.querySelector('#score');
+    var verdictEl = document.querySelector('#verdict');
+    scoreEl.textContent = score === null ? 'n/a' : score.toLocaleString();
+    if (skipped.length !== 0) {
+      verdictEl.innerHTML = '<span class="warn">' + skipped.join(' and ') + ' could not run, so ' +
+        'the score is withheld \u2014 the tests that did run are above, and they are only ' +
+        'comparable against the same tests on the same machine.</span>';
+    } else {
+      verdictEl.textContent = 'Score = geometric mean of the four rates above (an index, higher is ' +
+        'better). Renderer: ' + (renderer || 'unknown');
+    }
+
+    document.querySelector('#json').textContent = JSON.stringify({
+      product: 'BrowserX bench',
+      score: score,
+      comparable: skipped.length === 0,
+      skipped: skipped,
+      renderer: renderer,
+      userAgent: navigator.userAgent,
+      hardwareConcurrency: navigator.hardwareConcurrency || null,
+      results: results
+    }, null, 2);
+  }
+
+  document.querySelector('#rerun').addEventListener('click', run);
+  document.querySelector('#copy').addEventListener('click', function () {
+    var button = this;
+    var text = document.querySelector('#json').textContent;
+    if (!navigator.clipboard) {
+      button.textContent = 'select the text below';
+      return;
+    }
+    navigator.clipboard.writeText(text).then(function () {
+      button.textContent = 'copied';
+      setTimeout(function () { button.textContent = 'Copy JSON'; }, 1500);
+    }, function () {
+      button.textContent = 'select the text below';
+    });
+  });
+  // Give the first paint a chance to happen, then measure.
+  requestAnimationFrame(function () { setTimeout(run, 50); });
+})();
+</script>
+<footer class="credit">
+  BrowserX &mdash; &copy; 2026 codero-sus. All rights reserved.<br>
+  BrowserX Personal-Use License: personal, non-commercial use only; no modification;
+  no redistribution or resale. Source-available, not open source &mdash; see LICENSE.<br>
+  the-codero.web.app &middot; github.com/codero-sus/BrowserX &middot;
+  the Chromium/CEF runtime keeps its own licences.
+</footer>
+</body>
+</html>
+)HTML";
+}
+
+}  // namespace web
+}  // namespace browserx
