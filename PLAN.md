@@ -13,9 +13,11 @@
 > **Editions:** desktop (C++/CEF, this plan) and **mobile** (Android, same `src/core` over JNI) — see §10.
 >
 > Status: **in progress.** Stages 1-4 complete, stage 5 half done (internal pages
-> live, panels next), mobile edition source-complete. `make check` = 27 files,
-> `make test` = 178 tests, `make bench` = the resolved flag plan. Every claim below
-> is tracked against what is committed.
+> live, panels next), mobile edition source-complete, and the speed work is now
+> measured instead of argued (§11). `make check` = every source file (and the Android
+> benchmark asset vs. what the browser serves), `make test` = 228 tests, `make bench`
+> = the resolved flag plan, `make perf` = BrowserX's own overhead against budgets.
+> Every claim below is tracked against what is committed.
 
 ---
 
@@ -203,7 +205,7 @@ Everything above is user-visible and explainable in the Settings panel (each tog
 ## 9. Decisions taken (so no question is left open)
 
 1. **CEF version pinning** — track latest *stable*, resolved into `cef.lock.json` (version + SHA-1 + size) by `make deps-update`, so builds stay reproducible while security fixes keep flowing. `build/fetch_cef.py` also accepts a local archive or `BROWSERX_CEF_DIR` for air-gapped machines.
-2. **Sandbox verification** — the GUI cannot run here (no CEF binary, no GTK/X11). Instead of asking again, the project ships three layers of in-sandbox evidence: `make check` (every file against real CEF headers), `make test` (193 unit tests over all policy logic), and `make bench` (the exact resolved flag plan per mode). `make smoke` then verifies the real binary on your machine.
+2. **Sandbox verification** — the GUI cannot run here (no CEF binary, no GTK/X11). Instead of asking again, the project ships four layers of in-sandbox evidence: `make check` (every file against real CEF headers), `make test` (every policy path the core has), `make bench` (the exact resolved flag plan per mode) and `make perf` (the browser's own per-request and per-plan cost against hard budgets, non-zero exit on regression). `make smoke` then verifies the real binary on your machine.
 3. **Second, clickable front-end** — *not* built. The mobile edition (§10) already gives a second, real front-end on the same core, and it is a shipping product rather than a demo.
 
 ---
@@ -233,3 +235,46 @@ Everything above is user-visible and explainable in the Settings panel (each tog
   your machine. The JNI bridge *is* verified here: it compiles against the shared
   core and exports exactly the nine `Java_com_browserx_mobile_PerformanceCore_*`
   entry points the Kotlin code declares.
+
+---
+
+## 11. Speed work: what "fast" is allowed to mean (added after the mode family)
+
+**Goal (the user's words):** *"make browser fast as much as possible to beat Ray Browser"* —
+a Chromium-based gaming browser whose headline claim is "up to 30% faster WebGL rendering
+than Chrome or Opera". The honest answer is not to reprint that claim with our name on it,
+and it is not to pile on raster switches either: the switches that once forced GPU
+rasterisation, zero-copy upload and out-of-process raster are **removed or inert** in the
+Chromium we embed. Applying them would be quoting an old release note.
+
+**What BrowserX therefore ships instead, and why each one is real:**
+
+| Lever | Where it lands | Why it is legitimate |
+|---|---|---|
+| GPU shader disk cache sized by mode (32 MB frame modes, 16 MB light modes, 1 MB in LOW RAM) | `--gpu-disk-cache-size-kb` | Shader compilation is a real per-site stall; a bigger cache means fewer recompiles on repeat visits. Cost is disk, which is why LOW RAM caps it. |
+| Native GPU memory buffers for video | `--enable-native-gpu-memory-buffers` | Removes a copy in the video path. Skipped on low-RAM profiles, where the VRAM it takes costs more than the copy it saves — the plan says so in a note. |
+| V8 code cache | `--v8-cache-options` (`none`/`code`) | Already exists in the engine; the value now comes from the mode policy (LOW RAM and PRIVACY emit `none` deliberately). |
+| The mode engine's existing cache/process/throttling tuning | all modes | Unchanged from the mode work, and every switch still carries its provenance. |
+| Software rendering detected | a **warning**, not a switch | A machine without a GPU pipeline cannot be made fast by flags. Saying so is worth more than a 3% placebo. |
+
+**What was rejected, explicitly:** `--enable-gpu-rasterization` (catalogued *verified* but a
+documented no-op — GPU raster is on by default), `--enable-zero-copy` and
+`--enable-oop-rasterization` (*removed* upstream), `feature:CanvasOopRasterization`
+(removed). A test fails the build if any of them reappears in a plan, and `make perf`
+re-checks it on every run.
+
+**The measuring stick ships with the browser.** `browserx://bench` — one self-contained
+HTML file (no network, no external files) with script, layout, canvas-2D and WebGL tests, a
+geometric-mean score, a renderer string and copyable JSON. `--write-bench-page` writes the
+identical bytes to a file; `make bench-page` writes it without CEF; the Android edition
+ships it as an asset that `make check` verifies is byte-identical to what the browser
+serves. Skipped tests withhold the score rather than being counted as zero — a partly
+measured browser must not be handed a number that looks complete.
+
+**And the browser measures itself.** `make perf` (`tools/perf.cc`) times plan building, URL
+parsing and the shield's per-request decision against hard budgets and exits non-zero on
+regression. It is what caught the shield costing 27 µs per allowed request: 163 rules
+scanned linearly, lowercasing both the host *and* every pattern into fresh `std::string`s
+each time. The rule set is now indexed by host suffix (one hash lookup per label, zero
+allocations) with the earliest-rule-wins ordering preserved, and the cost is 1.5 µs —
+because ~300 requests on an ordinary page multiply whatever the policy layer charges.

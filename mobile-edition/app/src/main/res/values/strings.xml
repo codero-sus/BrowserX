@@ -15,6 +15,8 @@
     <string name="clear_browsing_data">Clear caches</string>
     <string name="cache_cleared">Caches cleared</string>
     <string name="show_plan">Show performance plan…</string>
+    <string name="benchmark">Benchmark page (offline)</string>
+    <string name="benchmark_failed">The benchmark page is missing from this build (assets/bench.html)</string>
     <string name="plan_title">Performance plan</string>
     <string name="plan_mode_line">%1$s · %2$s</string>
     <string name="autopilot_prefix">Auto-Pilot: %1$s</string>
