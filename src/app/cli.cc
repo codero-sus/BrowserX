@@ -143,7 +143,7 @@ std::string CliUsage(const char* program) {
   text += "  BrowserX by codero-sus\n";
   text += "    GitHub     https://github.com/codero-sus\n";
   text += "    Website    https://the-codero.web.app\n";
-  text += "    Source     https://github.com/codero-sus/MyBrowser\n";
+  text += "    Source     https://github.com/codero-sus/BrowserX\n";
   text += "    Licence    BrowserX Personal-Use License - personal, non-commercial\n";
   text += "               use only; no modification; no redistribution or resale.\n";
   text += "               Source-available, not open source. See LICENSE. The bundled\n";

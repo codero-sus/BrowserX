@@ -175,7 +175,7 @@ TEST(Cli, UsageCreditsTheAuthorAndShipsTheLinks) {
   const std::string usage = browserx::app::CliUsage("browserx");
   EXPECT_TRUE(usage.find("codero-sus") != std::string::npos);
   EXPECT_TRUE(usage.find("https://the-codero.web.app") != std::string::npos);
-  EXPECT_TRUE(usage.find("https://github.com/codero-sus/MyBrowser") != std::string::npos);
+  EXPECT_TRUE(usage.find("https://github.com/codero-sus/BrowserX") != std::string::npos);
   // The licence is personal-use-only: the CLI must say so, in the same words the
   // About page and the packaged build use (kProjectLicenceTerms).
   EXPECT_TRUE(usage.find("BrowserX Personal-Use License") != std::string::npos);

@@ -8,7 +8,7 @@
 |---|---|
 | Author | codero-sus |
 | GitHub | [github.com/codero-sus](https://github.com/codero-sus) |
-| Repository | [github.com/codero-sus/MyBrowser](https://github.com/codero-sus/MyBrowser) |
+| Repository | [github.com/codero-sus/BrowserX](https://github.com/codero-sus/BrowserX) |
 | Website | [the-codero.web.app](https://the-codero.web.app) |
 | Licence | [BrowserX Personal-Use License](LICENSE) — personal, non-commercial use only; no modification; no redistribution or resale |
 

@@ -27,5 +27,5 @@
     <!-- Credits (see CREDITS.md in the repository root) -->
     <string name="credits">Credits</string>
     <string name="credits_title">BrowserX — credits</string>
-    <string name="credits_body">BrowserX by codero-sus\n\nWebsite  https://the-codero.web.app\nGitHub   https://github.com/codero-sus\nSource   https://github.com/codero-sus/MyBrowser\nLicence  BrowserX Personal-Use License\n         personal, non-commercial use only; no modification;\n         no redistribution or resale (source-available, not open source)\n\nBuilt on Chromium and the Chromium Embedded Framework (BSD-3-Clause); this app drives the system WebView, which is Chromium too. The engine keeps its own licences.</string>
+    <string name="credits_body">BrowserX by codero-sus\n\nWebsite  https://the-codero.web.app\nGitHub   https://github.com/codero-sus\nSource   https://github.com/codero-sus/BrowserX\nLicence  BrowserX Personal-Use License\n         personal, non-commercial use only; no modification;\n         no redistribution or resale (source-available, not open source)\n\nBuilt on Chromium and the Chromium Embedded Framework (BSD-3-Clause); this app drives the system WebView, which is Chromium too. The engine keeps its own licences.</string>
 </resources>

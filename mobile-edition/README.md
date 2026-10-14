@@ -2,7 +2,7 @@
 
 > **BrowserX by [codero-sus](https://github.com/codero-sus)** ·
 > [the-codero.web.app](https://the-codero.web.app) ·
-> [source](https://github.com/codero-sus/MyBrowser) ·
+> [source](https://github.com/codero-sus/BrowserX) ·
 > [BrowserX Personal-Use License](../LICENSE) (personal, non-commercial, no
 > modification, no redistribution — the bundled Chromium/CEF code keeps its own
 > licences).
