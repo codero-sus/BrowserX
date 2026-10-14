@@ -33,6 +33,7 @@ enum class CliAction {
   kPrintFlagPlan,  // print the switch plan for one/all modes and exit
   kPrintProfile,   // print the detected hardware profile and exit
   kPrintCatalog,   // print the Chromium switch catalogue and exit
+  kWriteBenchPage, // write the standalone benchmark page to a file and exit
   kListModes,
   kSmokeTest,      // headless start-up check (used by `make smoke`)
   kBenchmark,      // headless measurement run, prints telemetry and exits
@@ -71,6 +72,7 @@ struct LaunchOptions {
   std::string log_level;       // "trace"|"debug"|"info"|"warn"|"error"
   int benchmark_seconds = 8;   // --benchmark
   std::string flag_plan_modes;  // --flag-plan[=mode|all]
+  std::string bench_page_path;  // --write-bench-page[=file]; empty means the default name
 
   // What to open. Both are *raw* user input ("example.com", "how to cook rice");
   // CefHost::Initialize() resolves them with the configured search template.

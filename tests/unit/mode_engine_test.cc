@@ -8,6 +8,7 @@
 #include "core/mode_engine.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <set>
 #include <string>
 #include <vector>
@@ -746,5 +747,137 @@ TEST(ModeEngine, PrivacyRequestsTheSmallestCacheTheEngineAllows) {
     const ModePlan other = BuildPlan(info.mode, MakeContext(MakeProfile(16384, 8, 16)));
     EXPECT_GT(other.runtime.cache_size_mb, privacy.runtime.cache_size_mb)
         << info.id << " should cache more than PRIVACY does";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rendering speed: the GPU pipeline switches that no mode used to apply.
+//
+// Chromium decides for itself whether to rasterise on the GPU, and it gets that
+// wrong on hybrid laptops, older drivers and virtualised GPUs - which is
+// exactly where a "faster rendering" claim is won or lost. These tests pin
+// which modes force the pipeline and which must never (the memory-tight ones).
+// ---------------------------------------------------------------------------
+
+TEST(ModeEngine, FrameModesTakeTheRenderingWinsThatStillExist) {
+  SystemProfile profile = MakeProfile(16384, 8, 16);
+  profile.gpu_tier = GpuTier::kDiscrete;
+  EngineContext context = MakeContext(profile);
+
+  for (const Mode mode : {Mode::kGaming, Mode::kHighPerformance, Mode::kBenchmark}) {
+    const ModePlan plan = BuildPlan(mode, context);
+    const ModeInfo& info = GetModeInfo(mode);
+
+    // A bigger shader cache: returning to a WebGL page must not recompile shaders.
+    EXPECT_TRUE(plan.boot.Has("gpu-disk-cache-size-kb")) << info.id;
+    EXPECT_EQ(plan.boot.ValueOf("gpu-disk-cache-size-kb"), "32768") << info.id;
+    EXPECT_TRUE(plan.boot.Has("enable-native-gpu-memory-buffers")) << info.id;
+
+    // What must NOT be there: switches that no longer exist, or that do nothing on a
+    // modern Chromium. Planning them would be quoting an old release note as a feature.
+    for (const char* gone : {"enable-oop-rasterization", "enable-zero-copy",
+                             "enable-gpu-rasterization"}) {
+      EXPECT_FALSE(plan.boot.Has(gone)) << info.id << " must not plan --" << gone;
+    }
+    const std::vector<std::string>& features = plan.boot.enabled_features();
+    EXPECT_TRUE(std::find(features.begin(), features.end(), "CanvasOopRasterization") ==
+                features.end())
+        << info.id << ": that feature is removed upstream (it is the default now)";
+
+    // The plan has to explain the absence rather than let a reader think it forgot.
+    bool explained = false;
+    for (const std::string& note : plan.notes) {
+      if (note.find("already the default") != std::string::npos) explained = true;
+    }
+    EXPECT_TRUE(explained) << info.id << " should say why the old raster switches are absent";
+  }
+}
+
+TEST(ModeEngine, LightModesTakeOnlyTheDiskCheapRenderingWin) {
+  SystemProfile profile = MakeProfile(16384, 8, 16);
+  profile.gpu_tier = GpuTier::kDiscrete;
+  EngineContext context = MakeContext(profile);
+
+  for (const Mode mode : {Mode::kUltra, Mode::kStreaming, Mode::kLowLatency, Mode::kKiosk}) {
+    const ModePlan plan = BuildPlan(mode, context);
+    const ModeInfo& info = GetModeInfo(mode);
+    EXPECT_TRUE(plan.boot.Has("gpu-disk-cache-size-kb")) << info.id;
+    EXPECT_EQ(plan.boot.ValueOf("gpu-disk-cache-size-kb"), "16384") << info.id;
+    EXPECT_FALSE(plan.boot.Has("enable-native-gpu-memory-buffers"))
+        << info.id << " must not take VRAM it has no need for";
+  }
+}
+
+TEST(ModeEngine, MemoryFirstModesLeaveTheGpuPipelineAlone) {
+  SystemProfile profile = MakeProfile(4096, 2, 4);
+  profile.gpu_tier = GpuTier::kIntegrated;
+  EngineContext context = MakeContext(profile);
+
+  for (const Mode mode : {Mode::kLowRam, Mode::kEco, Mode::kPrivacy, Mode::kDataSaver,
+                          Mode::kWeakNetwork, Mode::kReader, Mode::kDownload,
+                          Mode::kSuperInternet}) {
+    const ModePlan plan = BuildPlan(mode, context);
+    const ModeInfo& info = GetModeInfo(mode);
+    // LOW RAM caps the shader cache (1 MB); it must never be given the *bigger* value
+    // the speed modes ask for.
+    if (plan.boot.Has("gpu-disk-cache-size-kb")) {
+      const int kb = std::atoi(plan.boot.ValueOf("gpu-disk-cache-size-kb").c_str());
+      EXPECT_LE(kb, 4096) << info.id << " should cap the shader cache, not grow it";
+    }
+    EXPECT_FALSE(plan.boot.Has("enable-native-gpu-memory-buffers")) << info.id;
+    EXPECT_FALSE(plan.boot.Has("enable-gpu-rasterization")) << info.id;
+  }
+}
+
+TEST(ModeEngine, SoftwareRenderingIsWarnedAboutNotHidden) {
+  // The real speed problem on a machine with no working GPU path: no switch fixes it,
+  // and a browser that says nothing leaves the user blaming the browser's flags.
+  SystemProfile profile = MakeProfile(8192, 4, 8);
+  profile.gpu_tier = GpuTier::kSoftware;
+  EngineContext context = MakeContext(profile);
+
+  for (const Mode mode : {Mode::kGaming, Mode::kUltra}) {
+    const ModePlan plan = BuildPlan(mode, context);
+    const ModeInfo& info = GetModeInfo(mode);
+    EXPECT_FALSE(plan.boot.Has("gpu-disk-cache-size-kb")) << info.id << " would be wasted";
+    bool warned = false;
+    for (const std::string& warning : plan.warnings) {
+      if (warning.find("software") != std::string::npos) warned = true;
+    }
+    EXPECT_TRUE(warned) << info.id << " must warn about software rendering";
+  }
+}
+
+TEST(ModeEngine, LowRamDeviceIsNotGivenNativeGpuBuffers) {
+  SystemProfile phone = MakeProfile(4096, 8, 8);
+  phone.low_ram_hint = true;
+  phone.gpu_tier = GpuTier::kIntegrated;
+  EngineContext context = MakeContext(phone);
+  const ModePlan plan = BuildPlan(Mode::kGaming, context);
+
+  EXPECT_TRUE(plan.boot.Has("gpu-disk-cache-size-kb"));
+  EXPECT_FALSE(plan.boot.Has("enable-native-gpu-memory-buffers"))
+      << "the copy it removes is cheaper than the VRAM it needs on a 4 GB device";
+}
+
+TEST(ModeEngine, CodeCachePolicyFinallyReachesASwitch) {
+  // `code_cache` existed in the policy and drove no switch at all: LOW RAM and ECO
+  // asked for fewer disk writes and nothing happened, every other mode asked for a
+  // fast repeat load and nothing happened either.
+  SystemProfile profile = MakeProfile(16384, 8, 16);
+  profile.gpu_tier = GpuTier::kDiscrete;
+  EngineContext context = MakeContext(profile);
+
+  for (const ModeInfo& info : AllModes()) {
+    const ModePlan plan = BuildPlan(info.mode, context);
+    EXPECT_TRUE(plan.boot.Has("v8-cache-options")) << info.id << " has no code-cache decision";
+    const std::string value = plan.boot.ValueOf("v8-cache-options");
+    // LOW RAM and PRIVACY asked for fewer disk writes; ECO keeps the cache on purpose,
+    // because re-parsing scripts is CPU work and CPU work is battery.
+    if (info.mode == Mode::kLowRam || info.mode == Mode::kPrivacy) {
+      EXPECT_EQ(value, "none") << info.id << " asked for fewer disk writes";
+    } else {
+      EXPECT_EQ(value, "code") << info.id << " should compile once and reuse";
+    }
   }
 }

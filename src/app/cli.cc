@@ -27,6 +27,7 @@ const char* const kOwnSwitches[] = {
     "downloads",    "frameless",        "headless",    "renderers", "cache-mb",
     "fps",          "gl",               "single-process", "log-level", "reset-settings",
     "allow-multiple", "new-window",     "flag-plan",   "print-profile", "print-catalog",
+    "write-bench-page",
     "list-modes",   "smoke-test",       "benchmark",   "doctor",   "help",
     "version",      "disable-gpu",      "tab",         "no-features-check",
 };
@@ -133,6 +134,8 @@ std::string CliUsage(const char* program) {
   text += "  --flag-plan[=mode|all]   resolved Chromium switches + why they are used\n";
   text += "  --print-profile          detected hardware and the mode we recommend\n";
   text += "  --print-catalog          every Chromium switch we know and its risk level\n";
+  text += "  --write-bench-page[=f]   write the offline benchmark page (default\n";
+  text += "                           browserx-bench.html) and exit\n";
   text += "  --doctor                 environment / capability report\n";
   text += "  --benchmark[=<sec>]      headless run that reports RAM and CPU cost\n";
   text += "  --smoke-test             start and exit immediately (exit code is the result)\n";
@@ -225,6 +228,16 @@ LaunchOptions ParseCli(int argc, const char* const* argv) {
     }
     if (name == "print-catalog") {
       options.action = CliAction::kPrintCatalog;
+      continue;
+    }
+    if (name == "write-bench-page") {
+      options.action = CliAction::kWriteBenchPage;
+      if (has_value) {
+        options.bench_page_path = value;
+      } else if (i + 1 < argc && argv[i + 1] != nullptr && argv[i + 1][0] != '-') {
+        options.bench_page_path = argv[i + 1];
+        ++i;
+      }
       continue;
     }
     if (name == "doctor") {

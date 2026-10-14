@@ -87,7 +87,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ### Status in this repository
 
 The desktop edition is built and tested by the Makefile in the repository root:
-`make check`, `make test` (158 unit tests, all passing) and `make bench`. The
+`make check`, `make test`, `make perf` and `make bench`. The
 mobile edition is **source-complete and reviewable but not compiled here**: this
 development sandbox has no Android SDK, no NDK and no network access to fetch
 them, and Android's Gradle plugin cannot be downloaded either. Everything the
@@ -152,3 +152,28 @@ maps onto Android behaviour:
 * **Software-decoded video** — STREAMING mode asks WebView for hardware playback
   and cannot force it; the desktop edition at least warns when no decoder is
   present.
+
+### The benchmark page on Android
+
+`app/src/main/assets/bench.html` is the *same* benchmark page the desktop edition serves
+at `browserx://bench` (menu: **Benchmark page (offline)**), byte for byte. It makes no
+network requests, so the identical file can be opened in this app, in the desktop edition
+and in any other browser on the same phone — that is the only way a score comparison means
+anything.
+
+It is **generated**, not written by hand:
+
+```bash
+make bench-page ARGS=mobile-edition/app/src/main/assets/bench.html   # refresh it
+make check                                                          # fails if it drifted
+```
+
+`make check` regenerates the page from `src/web/bench_page.cc` and compares it with the
+asset, so the two editions can never quietly run different benchmarks. The app loads it
+with `loadDataWithBaseURL` rather than a `file://` URL, which keeps WebView file access
+switched off.
+
+Honest limits on this edition: a test that the device cannot run (no WebGL context) is
+reported as skipped and the score is withheld, and the numbers are inherently
+phone-vs-phone — a mid-range phone will lose to the same phone's desktop sibling no matter
+which browser is installed. Compare like with like.

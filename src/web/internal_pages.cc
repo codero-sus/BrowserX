@@ -4,6 +4,8 @@
 
 #include "web/internal_pages.h"
 
+#include "web/bench_page.h"
+
 #include "core/mode_engine.h"
 
 #include <algorithm>
@@ -186,6 +188,7 @@ const std::vector<HostEntry>& HostTable() {
       {"bookmarks", PageKind::kBookmarks, "Bookmarks"},
       {"downloads", PageKind::kDownloads, "Downloads"},
       {"find", PageKind::kFind, "Find in page"},
+      {"bench", PageKind::kBench, "Benchmark"},
   };
   return table;
 }
@@ -276,6 +279,7 @@ std::string RenderNewTab(const PageData& data) {
   out += "<a class=\"chip\" href=\"browserx://telemetry\">Telemetry</a>";
   out += "<a class=\"chip\" href=\"browserx://catalog\">Switch catalogue</a>";
   out += "<a class=\"chip\" href=\"browserx://session\">Session</a>";
+  out += "<a class=\"chip\" href=\"browserx://bench\">Benchmark</a>";
   out += "<a class=\"chip\" href=\"browserx://about\">About</a>";
   out += "</div>\n";
   out += "<div class=\"card\"><h2 style=\"margin-top:0\">Current mode</h2>";
@@ -398,6 +402,7 @@ std::string RenderShortcuts(const PageData& data) {
       {"Ctrl+F", "Find in page"},       {"F5 / Ctrl+R", "Reload"},
       {"F11", "Fullscreen"},            {"Ctrl+Shift+I", "Developer tools"},
       {"Ctrl++ / Ctrl+-", "Zoom in / out"}, {"Ctrl+0", "Reset zoom"},
+      {"Ctrl+Shift+B", "Benchmark page (offline, same file in any browser)"},
       {"Ctrl+Shift+Q", "Close window"},
   };
   std::string out;
@@ -679,6 +684,10 @@ std::string RenderPage(PageKind kind, const PageData& data) {
     case PageKind::kSession: return Shell(kind, data, RenderSession(data));
     case PageKind::kAbout: return Shell(kind, data, RenderAbout(data));
     case PageKind::kFind: return Shell(kind, data, RenderFind(data));
+    // The benchmark is served as its own complete document, not wrapped in Shell():
+    // the same bytes have to work standalone in another browser, so it carries its own
+    // styling. --write-bench-page writes exactly this.
+    case PageKind::kBench: return BenchPageDocument();
     case PageKind::kHistory:
     case PageKind::kBookmarks:
     case PageKind::kDownloads: return Shell(kind, data, RenderNotWired(kind));

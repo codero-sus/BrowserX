@@ -236,8 +236,10 @@ const std::vector<SwitchEntry>& SwitchTable() {
        "Chromium's built-in FPS overlay (BrowserX ships its own richer HUD instead; provided for "
        "cross-checking measurements)."},
       {"v8-cache-options", true, "code", Provenance::kVerified, Scope::kBrowser, Risk::kAdvanced,
-       kSrcContentC, "Control V8 code caching (none/code/...). 'none' reduces disk writes; 'code' "
-       "speeds up repeat loads."},
+       kSrcContentC, "V8 code cache: 'none' reduces disk writes, 'code' makes a repeat visit skip "
+                     "parse and compile, 'default' leaves Chromium's own policy in place. All "
+                     "three values verified in the switch's own definition; modes that want a big "
+                     "cache emit 'code', the memory-tight ones emit 'none'."},
 
       // ---- diagnostics -------------------------------------------------------
       {"enable-logging", false, "", Provenance::kVerified, Scope::kAll, Risk::kSafe, kSrcContentC,
