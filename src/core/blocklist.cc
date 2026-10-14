@@ -155,12 +155,23 @@ void Blocklist::ClearAllowlist() { allowlist_.clear(); }
 
 BlockDecision Blocklist::Decide(std::string_view document_host, std::string_view request_host,
                                 std::string_view request_path, ResourceType type) const {
-  if (!enabled_) return BlockDecision::kDisabled;
+  return DecideDetailed(document_host, request_host, request_path, type).decision;
+}
+
+BlockMatch Blocklist::DecideDetailed(std::string_view document_host,
+                                     std::string_view request_host,
+                                     std::string_view request_path,
+                                     ResourceType type) const {
+  BlockMatch result;
+  if (!enabled_) {
+    result.decision = BlockDecision::kDisabled;
+    return result;
+  }
 
   // Never touch first-party document loads or BrowserX's own pages.
   const std::string request_host_text = fmt::ToLower(std::string(request_host));
-  if (request_host_text.empty()) return BlockDecision::kAllow;
-  if (type == ResourceType::kDocument && document_host.empty()) return BlockDecision::kAllow;
+  if (request_host_text.empty()) return result;
+  if (type == ResourceType::kDocument && document_host.empty()) return result;
 
   const std::string document_host_text = fmt::ToLower(std::string(document_host));
   const bool third_party =
@@ -168,8 +179,18 @@ BlockDecision Blocklist::Decide(std::string_view document_host, std::string_view
   // A request to the exact host of the page is first-party by definition.
   const bool same_host = !document_host_text.empty() && request_host_text == document_host_text;
 
+  // The allowlist is about the *sites the user browses*, so it is matched against
+  // the document host first: "allow news.example" has to stop the shield on the
+  // requests that site makes, which are exactly the ones a rule would block. The
+  // request host is matched as well, because a top-level navigation has no
+  // document host yet and the user expects the address they allowlisted to load.
   for (const std::string& allowed : allowlist_) {
-    if (url::HostMatchesPattern(request_host_text, allowed)) return BlockDecision::kAllowlisted;
+    const bool document_allowed =
+        !document_host_text.empty() && url::HostMatchesPattern(document_host_text, allowed);
+    if (document_allowed || url::HostMatchesPattern(request_host_text, allowed)) {
+      result.decision = BlockDecision::kAllowlisted;
+      return result;
+    }
   }
 
   const std::string host_and_path = request_host_text + std::string(request_path);
@@ -178,9 +199,14 @@ BlockDecision Blocklist::Decide(std::string_view document_host, std::string_view
     const bool matches = rule.path_rule
                              ? host_and_path.find(rule.pattern) != std::string::npos
                              : url::HostMatchesPattern(request_host_text, rule.pattern);
-    if (matches) return BlockDecision::kBlock;
+    if (matches) {
+      result.decision = BlockDecision::kBlock;
+      result.category = rule.category;
+      result.matched_rule = true;
+      return result;
+    }
   }
-  return BlockDecision::kAllow;
+  return result;
 }
 
 void Blocklist::NoteBlocked(BlockCategory category, uint64_t bytes_estimate) {

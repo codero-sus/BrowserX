@@ -97,7 +97,8 @@ class ModeController(
             Mode.GAME, Mode.HIGH_PERFORMANCE -> WebView.RENDERER_PRIORITY_IMPORTANT to false
             // The transfer/media modes must not have their renderer reclaimed while a
             // download or a stream is running, so they are pinned like GAME.
-            Mode.SUPER_INTERNET, Mode.DOWNLOAD, Mode.STREAMING ->
+            Mode.SUPER_INTERNET, Mode.DOWNLOAD, Mode.STREAMING,
+            Mode.LOW_LATENCY, Mode.KIOSK, Mode.BENCHMARK, Mode.DATA_SAVER ->
                 WebView.RENDERER_PRIORITY_IMPORTANT to false
             Mode.LOW_RAM -> WebView.RENDERER_PRIORITY_WAIVED to true
             else -> WebView.RENDERER_PRIORITY_BOUND to false
@@ -107,6 +108,10 @@ class ModeController(
         }
         if (plan.runtime.backgroundThrottling) {
             WebView.pauseTimersIfBackground() // no-op wrapper, see below
+        } else if (Mode.specialists.contains(mode)) {
+            // A specialist mode asked for no throttling; resume so a running transfer
+            // is not left paused by an earlier mode's call.
+            WebView.resumeTimersIfBackground()
         }
     }
 
@@ -115,14 +120,18 @@ class ModeController(
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         // Playback starts without a tap in the two modes where that is the point.
-        settings.mediaPlaybackRequiresUserGesture = mode != Mode.GAME && mode != Mode.STREAMING
+        settings.mediaPlaybackRequiresUserGesture =
+            mode != Mode.GAME && mode != Mode.STREAMING && mode != Mode.KIOSK
         settings.loadsImagesAutomatically = !plan.runtime.blockImages
         settings.blockNetworkImage = plan.runtime.blockImages
         settings.blockNetworkLoads = plan.runtime.blockThirdParty && mode == Mode.ECO
         settings.cacheMode = when {
+            // PRIVACY keeps nothing on the device, so it does not read a cache either.
+            mode == Mode.PRIVACY -> WebSettings.LOAD_NO_CACHE
             // The network modes want the cache to answer whenever it can, so a repeat
             // visit never pays for the network at all.
-            mode == Mode.SUPER_INTERNET || mode == Mode.DOWNLOAD ->
+            mode == Mode.SUPER_INTERNET || mode == Mode.DOWNLOAD ||
+                mode == Mode.DATA_SAVER || mode == Mode.WEAK_NETWORK || mode == Mode.READER ->
                 WebSettings.LOAD_CACHE_ELSE_NETWORK
             mode == Mode.LOW_RAM -> WebSettings.LOAD_CACHE_ELSE_NETWORK
             plan.runtime.backgroundThrottling -> WebSettings.LOAD_DEFAULT
@@ -149,6 +158,15 @@ class ModeController(
         // too. Instead, TabController.sleepHiddenTabs() destroys and restores the
         // WebViews of hidden tabs, which is the behaviour the core asks for.
     }
+
+    /**
+     * Symmetric placeholder, and honestly so: WebView exposes no per-tab timer
+     * freeze, so the modes that ask for "no throttling" (the specialists) express it
+     * where it is enforceable instead - the renderer priority pinned in
+     * [applyPlanToAllTabs], the [ModeController.onTrimMemory] floor in MainActivity,
+     * and never sleeping a tab whose policy says `sleepAfterSeconds == 0`.
+     */
+    private fun WebView.resumeTimersIfBackground() {}
 
     // -----------------------------------------------------------------------
     // Device profile

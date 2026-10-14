@@ -36,13 +36,31 @@ enum class Mode {
   kSuperInternet,   // network throughput + connection latency
   kDownload,        // bulk transfers, nothing unloaded mid-transfer
   kStreaming,       // media playback: decode, no frame cap, screen awake
+  kPrivacy,         // nothing left on disk; third parties cut back hard
+  kDataSaver,       // spend the least data on the page in front of you
+  kWeakNetwork,     // behave well on a slow link instead of waiting on it
+  kLowLatency,      // first byte and input response over raw throughput
+  kReader,          // long-form reading: text resident, motion and video stopped
+  kBenchmark,       // measurement: uncapped frame rate, counters, tight telemetry
+  kKiosk,           // unattended display: awake, on top, autoplay, never sleeps
 };
 
-/// True for the modes that exist because the user asked for one specific job to
-/// be done as well as a browser can do it (network, transfers, media). Auto-Pilot
-/// will not switch away from these on its own: doing so would break the transfer
-/// or the playback the user selected the mode for. It still escapes to LOW RAM on
-/// a real memory emergency.
+/// True for a mode chosen to serve a specific, ongoing job rather than to balance
+/// the machine (network, transfers, media, privacy, data, slow links, latency,
+/// reading, measurement, unattended display).
+///
+/// Auto-Pilot's job is the *general* modes (ULTRA / GAME / HIGH PERFORMANCE /
+/// LOW RAM / ECO): those are about how much speed and memory to spend right now,
+/// which is what battery level, memory pressure and idle time actually describe.
+/// A specialist mode says something Auto-Pilot cannot infer - "this page matters,
+/// spend the bandwidth", "do not let this download die", "I am reading this for
+/// the next hour", "measure this accurately", "this screen must stay awake" - so
+/// every rule that would switch away from one is suppressed. Leaving PRIVACY for
+/// ECO, for instance, would quietly re-enable the cookie and cache behaviour the
+/// user switched the mode on to avoid.
+///
+/// The single exception is a genuine memory emergency, which outranks everything:
+/// a browser that gets OOM-killed finishes nothing at all.
 bool IsSpecialistMode(Mode mode);
 
 struct ModeInfo {
@@ -87,7 +105,19 @@ class SwitchPlan {
   bool ChildEmpty() const;
   /// Updates the value/reason of an already-planned switch (used when a setting
   /// overrides a mode default, so reports never drift from reality).
+  /// Updates the value of a switch that is already planned. Returns false when no
+  /// such switch exists: a caller that means to *retune* something should notice
+  /// that there was nothing to retune.
   bool SetSwitchValue(const std::string& id, std::string value, std::string reason);
+
+  /// Ensures the switch ends up in the plan with this value: updates it when an
+  /// earlier stage added it, adds it otherwise.
+  ///
+  /// This exists because Add() never deduplicates - calling it for a switch that is
+  /// already planned produces two entries for the same flag, which is how a plan
+  /// starts contradicting itself. A mode profile that means "this flag must have
+  /// this value" needs this method, not Add() and not SetSwitchValue().
+  void SetSwitchValueOrAdd(std::string id, std::string value, std::string reason);
 
   const std::vector<PlannedSwitch>& switches() const { return switches_; }
   const std::vector<PlannedSwitch>& child_switches() const { return child_switches_; }

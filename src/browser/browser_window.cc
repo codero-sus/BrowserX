@@ -4,6 +4,8 @@
 
 #include "browser/browser_window.h"
 
+#include "browser/request_guard.h"
+
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -313,6 +315,10 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   bind(kIdModeSuperInternet, '6', false, true, false);
   bind(kIdModeDownload, '7', false, true, false);
   bind(kIdModeStreaming, '8', false, true, false);
+  // Only one more is worth a key: PRIVACY is the other mode people reach for in a
+  // hurry. The remaining six live in the mode menu, browserx://modes and --mode=,
+  // which is the honest place for fifteen options on a keyboard.
+  bind(kIdModePrivacy, '9', false, true, false);
 
   RefreshShieldIndicator();
   UpdateNavigationButtons();
@@ -465,6 +471,27 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
     case kIdModeStreaming:
       shell_->SetMode(core::Mode::kStreaming);
       return;
+    case kIdModePrivacy:
+      shell_->SetMode(core::Mode::kPrivacy);
+      return;
+    case kIdModeDataSaver:
+      shell_->SetMode(core::Mode::kDataSaver);
+      return;
+    case kIdModeWeakNetwork:
+      shell_->SetMode(core::Mode::kWeakNetwork);
+      return;
+    case kIdModeLowLatency:
+      shell_->SetMode(core::Mode::kLowLatency);
+      return;
+    case kIdModeReader:
+      shell_->SetMode(core::Mode::kReader);
+      return;
+    case kIdModeBenchmark:
+      shell_->SetMode(core::Mode::kBenchmark);
+      return;
+    case kIdModeKiosk:
+      shell_->SetMode(core::Mode::kKiosk);
+      return;
     default:
       return;
   }
@@ -612,6 +639,14 @@ void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
   model->AddItem(kIdModeSuperInternet, "SUPER INTERNET - max network speed (Ctrl+6)");
   model->AddItem(kIdModeDownload, "DOWNLOAD - built for big transfers (Ctrl+7)");
   model->AddItem(kIdModeStreaming, "STREAMING - smooth video and audio (Ctrl+8)");
+  model->AddSeparator();
+  model->AddItem(kIdModePrivacy, "PRIVACY - nothing left on disk (Ctrl+9)");
+  model->AddItem(kIdModeDataSaver, "DATA SAVER - spend the least data");
+  model->AddItem(kIdModeWeakNetwork, "WEAK NETWORK - for slow or crowded links");
+  model->AddItem(kIdModeLowLatency, "LOW LATENCY - first byte and input response");
+  model->AddItem(kIdModeReader, "READER - long-form reading");
+  model->AddItem(kIdModeBenchmark, "BENCHMARK - measure, do not browse");
+  model->AddItem(kIdModeKiosk, "KIOSK - unattended screen");
   model->AddSeparator();
   model->AddItem(kIdAutoPilotCycle, "Auto-Pilot: off / ask / auto");
   mode_button_->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_TOPLEFT);
@@ -1074,6 +1109,16 @@ bool BrowserWindow::OnBeforeBrowse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefF
                                   bool is_redirect) {
   if (shell_ != nullptr) shell_->NoteNavigationStarted(this, request->GetURL().ToString());
   return false;
+}
+
+CefRefPtr<CefResourceRequestHandler> BrowserWindow::GetResourceRequestHandler(
+    CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
+    bool is_navigation, bool is_download, const CefString& request_initiator,
+    bool& disable_default_handling) {
+  // Downloads are left alone: cancelling one here would silently break the DOWNLOAD
+  // mode's whole purpose, and a download is never a tracker subresource.
+  if (is_download) return nullptr;
+  return new RequestGuard(shell_);
 }
 
 // ---------------------------------------------------------------------------

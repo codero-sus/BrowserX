@@ -6,7 +6,7 @@
 only · no modification · no redistribution or resale.** Source-available, not open
 source. The Chromium/CEF runtime it bundles keeps its own licences.
 
-An ULTRA-optimised Chromium browser with **eight performance modes + Auto-Pilot**,
+An ULTRA-optimised Chromium browser with **fifteen performance modes + Auto-Pilot**,
 in two editions that share one performance core:
 
 | Edition | Engine | Front end | Directory |
@@ -21,6 +21,14 @@ tracker shield, omnibox parser. One place to fix a rule, one place to test it.
 
 ## The modes (the reason this browser exists)
 
+Fifteen modes in two groups. **Auto-Pilot manages the five general modes**, because
+those are about how much speed and memory to spend right now — which is exactly what
+battery level, memory pressure and idle time describe. The ten **specialist** modes
+say something Auto-Pilot cannot infer, so it steps back and leaves them alone (with
+one exception: a real memory emergency still escalates to LOW RAM).
+
+### General modes — Auto-Pilot's job
+
 | Mode | Optimised for | What it actually does |
 |---|---|---|
 | **ULTRA** (default) | everyday balance | background throttling on, idle tabs sleep after 30 min, bounded bfcache, adaptive renderer cap |
@@ -28,10 +36,34 @@ tracker shield, omnibox parser. One place to fix a rule, one place to test it.
 | **HIGH PERFORMANCE** | throughput while plugged in | no layer-tree memory pressure, accelerated video decode/encode, speculative prefetch, bfcache, ≥1 GB HTTP cache, no tab discarding |
 | **LOW RAM** | smallest footprint | `--enable-low-end-device-mode`, ≤3 renderers, `--process-per-site`, 48 MB cache, Skia/MSE limits, tabs sleep after 1 min |
 | **ECO** | battery life | `--disable-v8-idle-tasks`, animations at 0.5×, 30 FPS target, reduced motion, 3 s telemetry, aggressive sleeping |
+
+### Specialist modes — Auto-Pilot steps back
+
+| Mode | Optimised for | What it actually does |
+|---|---|---|
 | **SUPER INTERNET** | network speed + lowest ping | every reachable network lever on: Happy Eyeballs v3, optimistic DNS for TCP and QUIC, TLS 1.3 0-RTT, HTTP/2 keep-alive, address-sort connect cache, connection prefetch, in-process network service; IPC flooding protection off, background throttling off, nothing sleeps, tracker blocking on (trackers are bandwidth), 500 ms telemetry |
 | **DOWNLOAD** | big transfers | **parallel range downloads** (`ParallelDownloading`), plus the connection levers above, the largest cache budget of any mode (≥2 GB), no tab sleep/discard, screen kept awake, bfcache given up to hand the RAM to transfer buffers |
 | **STREAMING** | smooth video + audio | hardware video decode/encode requested (with a warning if the machine has no decoder), autoplay without a click, fullscreen video overlays, uncapped frame rate, no sleep/discard, screen kept awake |
+| **PRIVACY** (Ctrl+9) | leaving nothing behind | a few-MB disk cache, no GPU shader cache, no compiled-script cache, remote web fonts refused, third-party images/media/fonts cut before they are requested, no speculative connections, tabs slept sooner. The tracker shield is on in every mode; this one removes the third-party heavy resources it has no rule for. Honest limit: it hardens the profile you are in — it is **not** an incognito window |
+| **DATA SAVER** | spending the least data | images, media and web fonts cancelled *before the request is sent* (the request that never happens is the only one that really saves), remote fonts refused, big cache so a revisit is nearly free, speculative preconnecting off because prefetch spends data on pages you may never open |
+| **WEAK NETWORK** | slow, crowded or metered links | enables Chromium's network quality estimator (off by default) and tells it the link is slow, so the engine stops queueing work it will only have to time out; optimistic DNS and the address cache to skip round trips; images and third-party heavy resources dropped; large cache because on a slow link the cache is the fastest server you have |
+| **LOW LATENCY** | the first byte, not the last | in-process network service (one IPC hop fewer per request), TLS 1.3 0-RTT, HTTP/2 keep-alive, address sorting, Happy Eyeballs v3, IPC flooding protection off, audio priority raised for calls. **Prefetch is deliberately off** here: it competes for the connection with the request you are waiting for |
+| **READER** | long-form reading | back/forward cache plus a large HTTP cache so an article returns instantly, tabs slept late rather than early (an article you are part-way through is not idle), reduced motion, scrolling and animation work cut, and media never requested — which on a news site is most of the page weight |
+| **BENCHMARK** | measuring, not browsing | vsync off, compositor frame cap removed, Chromium's own FPS counter on, GPU benchmarking hints, 250 ms telemetry, memory thresholds raised so nothing trims mid-run. Honest limit: it is a diagnostic mode — the numbers do not describe ordinary browsing |
+| **KIOSK** | an unattended screen | display kept awake, window kept on top, autoplay without a click, fullscreen video overlays, page scrollbars hidden, background timer throttling off so a dashboard keeps updating while unfocused, no tab ever slept or discarded |
 | **AUTO-PILOT** | hands-free | watches battery level, memory pressure, fullscreen/gaming and idle time; `auto` switches, `ask` suggests, `off` never touches your mode. It never picks a specialist mode and never leaves one — except on a real memory emergency |
+
+### The shield is not a switch that changes an icon
+
+Every request the browser makes passes a single guard (`core/request_guard.cc`,
+enforced in CEF by `src/browser/request_guard.cc`). It applies the shield's rule set
+first and the mode's resource policy second, and **cancels** the request rather than
+downloading it and dropping it in the renderer — which is the difference between
+saving data and pretending to. Two absolutes are unit-tested: a top-level navigation
+is never blocked by a mode's policy, and third-party *scripts and stylesheets* are
+never cut by a mode (sites serve them from CDNs; blocking them breaks pages rather
+than saving anything). Allowlisting a site in `browserx://settings` now also covers
+the requests that site makes, which is what a user means by "allow this site".
 
 ### What SUPER INTERNET can and cannot do
 

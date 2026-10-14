@@ -93,6 +93,13 @@ enum ChromeId {
   kIdModeSuperInternet,
   kIdModeDownload,
   kIdModeStreaming,
+  kIdModePrivacy,
+  kIdModeDataSaver,
+  kIdModeWeakNetwork,
+  kIdModeLowLatency,
+  kIdModeReader,
+  kIdModeBenchmark,
+  kIdModeKiosk,
   kIdAutoPilotCycle,
   // --- tab commands (handled by the TabStrip) ------------------------------
   kIdNewTab,
@@ -315,6 +322,13 @@ class BrowserWindow : public CefWindowDelegate,
   // --- CefRequestHandler --------------------------------------------------
   bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                       CefRefPtr<CefRequest> request, bool user_gesture, bool is_redirect) override;
+  /// Hands every subresource to the request guard: the shield and the mode's
+  /// resource policy (DATA SAVER, PRIVACY, ...) are enforced here, before the
+  /// request reaches the network.
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+      CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
+      bool is_navigation, bool is_download, const CefString& request_initiator,
+      bool& disable_default_handling) override;
 
   // --- CefContextMenuHandler ----------------------------------------------
   void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,

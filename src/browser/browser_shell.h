@@ -31,6 +31,7 @@
 #include "core/auto_pilot.h"
 #include "core/blocklist.h"
 #include "core/memory_policy.h"
+#include "core/request_guard.h"
 
 namespace browserx {
 namespace browser {
@@ -69,6 +70,13 @@ class BrowserShellImpl : public BrowserShell {
   void ToggleShield() { shield_.SetEnabled(!shield_.enabled()); }
   int blocked_request_count() const { return static_cast<int>(shield_.blocked_total()); }
   const core::Blocklist& shield() const { return shield_; }
+  /// The resource policy of the mode running right now: the request guard reads it
+  /// on every load, so it must be the live policy, not the one captured at launch.
+  const core::RuntimePolicy& runtime_policy() const { return host_->plan().runtime; }
+  /// Called by the request guard when a request is cancelled, so the shield's
+  /// counters and the log describe what actually happened on the wire.
+  void NoteBlockedRequest(const core::RequestOutcome& outcome, const std::string& host,
+                          uint64_t estimated_bytes);
 
   // --- settings / appearance helpers used by the window --------------------
   const std::string& search_template() const;

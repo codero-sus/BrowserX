@@ -46,6 +46,14 @@ class ShieldEngine(private val context: Context) {
     var blockMedia = false
     var blockFonts = false
 
+    /**
+     * Third-party heavy resources only - images, media and fonts. Scripts and
+     * stylesheets are never cut by this flag, because most sites serve both from a
+     * CDN and blocking them breaks the page instead of saving anything. Mirrors
+     * `core::DecideRequest`.
+     */
+    var blockThirdParty = false
+
     private val allowlisted = mutableSetOf<String>()
     private val blockedByHost = mutableMapOf<String, Int>()
     private var blockedTotal = 0
@@ -87,8 +95,17 @@ class ShieldEngine(private val context: Context) {
         if (documentHost.isNotEmpty() && documentHost == requestHost) return null
 
         val thirdParty = documentHost.isNotEmpty() && !requestHost.endsWith(documentHost)
-        if (thirdParty && shouldBlockByType(requestType)) {
+
+        // The mode's resource policy, in the same order as core::DecideRequest:
+        // block_images/media/fonts stop every request of that type (a request that is
+        // never sent is the only one that really saves data), while block_third_party
+        // reaches third-party copies of the heavy types and nothing else.
+        if (shouldBlockByType(requestType)) {
             note(requestHost, requestType)
+            return emptyResponse()
+        }
+        if (blockThirdParty && thirdParty && isHeavyType(requestType)) {
+            note(requestHost, "$requestType (third party)")
             return emptyResponse()
         }
 
@@ -110,6 +127,10 @@ class ShieldEngine(private val context: Context) {
         "font" -> blockFonts
         else -> false
     }
+
+    /** The types a mode may cut when they come from somewhere else. */
+    private fun isHeavyType(requestType: String): Boolean =
+        requestType == "image" || requestType == "media" || requestType == "font"
 
     private fun note(host: String, category: String) {
         blockedTotal++

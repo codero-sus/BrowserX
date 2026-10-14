@@ -173,3 +173,15 @@ TEST(Url, HostPatternMatching) {
 }
 
 }  // namespace
+
+TEST(Url, PathExtractionForShieldPathRules) {
+  // The request guard hands this to the shield's path rules, so it must never
+  // include the host and must always be usable as a plain string.
+  EXPECT_EQ(browserx::core::url::PathOf("https://example.com/a/b?x=1"), std::string("/a/b?x=1"));
+  EXPECT_EQ(browserx::core::url::PathOf("https://example.com"), std::string("/"));
+  EXPECT_EQ(browserx::core::url::PathOf("https://example.com/"), std::string("/"));
+  EXPECT_EQ(browserx::core::url::PathOf("http://example.com/ad/track.gif#frag"),
+            std::string("/ad/track.gif"));
+  EXPECT_EQ(browserx::core::url::PathOf("not a url"), std::string("/"));
+  EXPECT_EQ(browserx::core::url::PathOf("https://example.com/promo/"), std::string("/promo/"));
+}

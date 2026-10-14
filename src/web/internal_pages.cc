@@ -394,7 +394,7 @@ std::string RenderShortcuts(const PageData& data) {
       {"Ctrl+Shift+T", "Reopen closed tab"}, {"Ctrl+Tab", "Next tab"},
       {"Ctrl+Shift+Tab", "Previous tab"}, {"Ctrl+Shift+D", "Duplicate tab"},
       {"Ctrl+Shift+P", "Pin / unpin tab"}, {"Ctrl+Shift+M", "Mute / unmute tab"},
-      {"Ctrl+1…8", "Switch mode (see browserx://modes)"}, {"Ctrl+L", "Focus the address bar"},
+      {"Ctrl+1…9", "Switch mode (see browserx://modes)"}, {"Ctrl+L", "Focus the address bar"},
       {"Ctrl+F", "Find in page"},       {"F5 / Ctrl+R", "Reload"},
       {"F11", "Fullscreen"},            {"Ctrl+Shift+I", "Developer tools"},
       {"Ctrl++ / Ctrl+-", "Zoom in / out"}, {"Ctrl+0", "Reset zoom"},
@@ -402,7 +402,7 @@ std::string RenderShortcuts(const PageData& data) {
   };
   std::string out;
   out += "<h1>Keyboard shortcuts</h1>\n<p class=\"lede\">Everything a browser needs, and mode "
-         "switching on Ctrl+1…8 so changing performance costs one keypress.</p>\n";
+         "switching on Ctrl+1…9 so changing performance costs one keypress.</p>\n";
   out += "<div class=\"card\"><table><thead><tr><th>Keys</th><th>Action</th></tr></thead><tbody>";
   for (const Row& row : rows) {
     out += "<tr><td><kbd>" + EscapeImpl(row.keys) + "</kbd></td><td>" + EscapeImpl(row.action) +
@@ -440,7 +440,7 @@ std::string RenderSession(const PageData& data) {
 std::string RenderAbout(const PageData& data) {
   std::string out;
   out += "<h1>About BrowserX</h1>\n<p class=\"lede\">An ULTRA-optimised Chromium browser in C++20 "
-         "on CEF, with eight performance modes, Auto-Pilot and a tracker shield. The mobile edition "
+         "on CEF, with fifteen performance modes, Auto-Pilot and a tracker shield. The mobile edition "
          "runs the same performance core behind an Android front end.</p>\n";
   out += "<div class=\"card\"><h2 style=\"margin-top:0\">Build</h2><table><tbody>";
   out += "<tr><td>Version</td><td class=\"mono\">" + EscapeImpl(data.version) + "</td></tr>";
