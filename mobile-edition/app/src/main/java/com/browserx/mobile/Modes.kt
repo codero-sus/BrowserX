@@ -24,7 +24,14 @@ enum class Mode(val id: String, val label: String, val tagline: String) {
     // does and for the honest limits stated with it.
     SUPER_INTERNET("super-internet", "SUPER INTERNET", "max network speed, lowest latency"),
     DOWNLOAD("download", "DOWNLOAD", "built for big transfers"),
-    STREAMING("streaming", "STREAMING", "smooth video and audio");
+    STREAMING("streaming", "STREAMING", "smooth video and audio"),
+    PRIVACY("privacy", "PRIVACY", "nothing left on disk"),
+    DATA_SAVER("data-saver", "DATA SAVER", "spend the least data"),
+    WEAK_NETWORK("weak-network", "WEAK NETWORK", "for slow links"),
+    LOW_LATENCY("low-latency", "LOW LATENCY", "first byte and input response"),
+    READER("reader", "READER", "long-form reading"),
+    BENCHMARK("benchmark", "BENCHMARK", "measure, do not browse"),
+    KIOSK("kiosk", "KIOSK", "unattended screen");
 
     companion object {
         fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: ULTRA
@@ -33,10 +40,22 @@ enum class Mode(val id: String, val label: String, val tagline: String) {
         val ordered: List<Mode> = listOf(
             ULTRA, GAME, HIGH_PERFORMANCE, LOW_RAM, ECO,
             SUPER_INTERNET, DOWNLOAD, STREAMING,
+            PRIVACY, DATA_SAVER, WEAK_NETWORK, LOW_LATENCY, READER, BENCHMARK, KIOSK,
         )
 
-        /** Modes Auto-Pilot will not switch away from on its own (see core). */
-        val specialists: Set<Mode> = setOf(SUPER_INTERNET, DOWNLOAD, STREAMING)
+        /**
+         * Modes Auto-Pilot will not switch away from on its own.
+         *
+         * Auto-Pilot manages the five general modes: those are about how much speed
+         * and memory to spend right now, which battery level and memory pressure
+         * describe. A specialist mode says something Auto-Pilot cannot infer, so it
+         * steps back - and still escapes to LOW RAM on a real memory emergency.
+         * Mirrors `core::IsSpecialistMode`.
+         */
+        val specialists: Set<Mode> = setOf(
+            SUPER_INTERNET, DOWNLOAD, STREAMING,
+            PRIVACY, DATA_SAVER, WEAK_NETWORK, LOW_LATENCY, READER, BENCHMARK, KIOSK,
+        )
     }
 }
 

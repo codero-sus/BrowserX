@@ -82,6 +82,14 @@ void BrowserShellImpl::OnContextInitialized() {
   ScheduleTick();
 }
 
+void BrowserShellImpl::NoteBlockedRequest(const core::RequestOutcome& outcome,
+                                          const std::string& host, uint64_t estimated_bytes) {
+  shield_.NoteBlocked(outcome.category, estimated_bytes);
+  // Debug level on purpose: a tracker-heavy page blocks hundreds of requests, and the
+  // counters - not the log - are the user-facing record of that.
+  core::log::Debug("guard", host + " - " + outcome.reason);
+}
+
 void BrowserShellImpl::ScheduleTick() {
   const core::RuntimePolicy& policy = host_->plan().runtime;
   int interval = tick_interval_override_ms_ > 0 ? tick_interval_override_ms_

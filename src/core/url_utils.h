@@ -34,6 +34,10 @@ std::string HostOf(std::string_view url);
 std::string RegistrableHostForDisplay(std::string_view host);
 /// Port (0 when absent/unparsable).
 int PortOf(std::string_view url);
+/// Path (and query) of a URL, without scheme/host/port; "/" when there is none.
+/// The shield matches path rules against this, so it never sees a host twice.
+std::string PathOf(std::string_view url);
+
 /// True for http/https (the only schemes the shield and modes affect).
 bool IsHttp(std::string_view url);
 /// True for BrowserX's own pages.

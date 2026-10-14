@@ -578,6 +578,7 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
         shield.blockImages = modes.plan.runtime.blockImages
         shield.blockMedia = modes.plan.runtime.blockMedia
         shield.blockFonts = modes.plan.runtime.blockFonts
+        shield.blockThirdParty = modes.plan.runtime.blockThirdParty
         shield.enabled = modes.plan.runtime.blockTrackers
         updateShieldButton()
     }
