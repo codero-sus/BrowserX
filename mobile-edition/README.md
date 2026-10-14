@@ -105,7 +105,7 @@ next step, and nothing in this directory pretends to be verified beyond that.
 
 ## Modes on mobile
 
-Same five modes and the same Auto-Pilot policy as the desktop edition; each one
+The same eight modes and the same Auto-Pilot policy as the desktop edition; each one
 maps onto Android behaviour:
 
 | Mode              | Android behaviour                                                                 |
@@ -115,6 +115,9 @@ maps onto Android behaviour:
 | **HIGH PERFORMANCE** | all background tabs kept alive, largest cache, prefetch on, no throttling      |
 | **LOW RAM**       | 1 background WebView, `WAIVED` + `true` (renderer dies when hidden), images blocked on metered networks, aggressive `onTrimMemory` trim |
 | **ECO**           | hidden tabs `pauseTimers()`, reduced animations, background network blocked, sleep after 10 min |
+| **SUPER INTERNET** | renderer priority `IMPORTANT` (a transfer must not be reclaimed), `LOAD_CACHE_ELSE_NETWORK` so repeat visits never hit the radio, no background timer throttling — Android's own connection stack (happy-eyeballs, connection reuse) already does what the desktop mode's Chromium features do |
+| **DOWNLOAD**      | renderer priority `IMPORTANT`, largest cache, `LOAD_CACHE_ELSE_NETWORK`, screen kept awake, no `onTrimMemory` trim of the active tab |
+| **STREAMING**     | autoplay without a gesture, renderer priority `IMPORTANT`, screen kept awake, no sleep/discard |
 | **AUTO-PILOT**    | switches on battery level, `onTrimMemory` severity, immersive/game detection, and charging state; `ask` shows a chip suggestion instead of switching |
 
 ## What is not here (and why)
@@ -125,3 +128,13 @@ maps onto Android behaviour:
   UI problem.
 * **A custom Chromium build** — see above; `WebView` wins on size, battery and
   update cadence.
+* **In-app downloads** — WebView needs a `DownloadListener` plus a
+  `DownloadManager`/SAF target before a mobile DOWNLOAD mode has anything to
+  speed up. Until that lands, DOWNLOAD mode on mobile only tunes the WebView it
+  already controls (renderer priority, cache mode, screen-on, trim policy), and
+  the honest reading of the mode here is "the page that *hands off* a download
+  gets the best chance of doing so quickly". This is stated rather than papered
+  over: no mobile surface claims to accelerate a transfer the app never performs.
+* **Software-decoded video** — STREAMING mode asks WebView for hardware playback
+  and cannot force it; the desktop edition at least warns when no decoder is
+  present.

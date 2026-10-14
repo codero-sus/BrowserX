@@ -5,7 +5,7 @@
 package com.browserx.mobile
 
 /**
- * The five performance modes plus Auto-Pilot.
+ * Every performance mode, plus Auto-Pilot.
  *
  * The [id] strings are the contract with the shared C++ core
  * (`src/core/mode_engine.cc`): they are what gets passed to JNI, what is written
@@ -17,13 +17,26 @@ enum class Mode(val id: String, val label: String, val tagline: String) {
     GAME("gaming", "GAME", "maximum frame rate"),
     HIGH_PERFORMANCE("high-performance", "HIGH PERFORMANCE", "maximum throughput"),
     LOW_RAM("low-ram", "LOW RAM", "smallest footprint"),
-    ECO("eco", "ECO", "longest battery life");
+    ECO("eco", "ECO", "longest battery life"),
+
+    // Specialist modes: one subsystem pushed as far as a browser can take it. The
+    // ids match the core exactly; see src/core/mode_engine.cc for what each one
+    // does and for the honest limits stated with it.
+    SUPER_INTERNET("super-internet", "SUPER INTERNET", "max network speed, lowest latency"),
+    DOWNLOAD("download", "DOWNLOAD", "built for big transfers"),
+    STREAMING("streaming", "STREAMING", "smooth video and audio");
 
     companion object {
         fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: ULTRA
 
         /** Same order as the core's AllModes(), used by the mode menu. */
-        val ordered: List<Mode> = listOf(ULTRA, GAME, HIGH_PERFORMANCE, LOW_RAM, ECO)
+        val ordered: List<Mode> = listOf(
+            ULTRA, GAME, HIGH_PERFORMANCE, LOW_RAM, ECO,
+            SUPER_INTERNET, DOWNLOAD, STREAMING,
+        )
+
+        /** Modes Auto-Pilot will not switch away from on its own (see core). */
+        val specialists: Set<Mode> = setOf(SUPER_INTERNET, DOWNLOAD, STREAMING)
     }
 }
 

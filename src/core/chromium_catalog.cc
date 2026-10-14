@@ -33,6 +33,9 @@ constexpr const char* kSrcDiskCache = "net/disk_cache/cache_util.cc";
 constexpr const char* kSrcContentFeat = "content/public/common/content_features.cc";
 constexpr const char* kSrcMediaFeat = "media/base/media_switches.cc";
 constexpr const char* kSrcNetFeat = "services/network/public/cpp/features.cc";
+constexpr const char* kSrcNetBaseFeat = "net/base/features.cc";
+constexpr const char* kSrcNetSwitches = "services/network/public/cpp/network_switches.cc";
+constexpr const char* kSrcDownloadFeat = "components/download/public/common/download_features.cc";
 
 // ---------------------------------------------------------------------------
 // The catalogue.
@@ -85,6 +88,12 @@ const std::vector<SwitchEntry>& SwitchTable() {
       {"disable-backgrounding-occluded-windows", false, "", Provenance::kVerified, Scope::kAll,
        Risk::kSafe, kSrcContentC,
        "Never deprioritise windows that are covered by another window."},
+      {"force-effective-connection-type", true, "4G", Provenance::kVerified, Scope::kBrowser,
+       Risk::kAdvanced, kSrcNetSwitches,
+       "Force the Network Quality Estimator to report a fast connection, so Chromium never "
+       "degrades image quality, load priority or media buffering on a conservative estimate. "
+       "It cannot make the physical link faster, and it is inert unless the estimator is enabled "
+       "(it is off by default), so no mode applies it automatically."},
       {"disable-ipc-flooding-protection", false, "", Provenance::kVerified, Scope::kBrowser,
        Risk::kSafe, kSrcContentC,
        "Remove the IPC rate limiter: fewer dropped frames when a page floods the browser with "
@@ -298,6 +307,27 @@ const std::vector<FeatureEntry>& FeatureTable() {
       {"ProcessPerSiteMainFrameThreshold", Provenance::kVerified, Risk::kSafe, kSrcContentFeat,
        "Site-instance sharing threshold for main frames: tunes how aggressively same-site tabs share "
        "processes."},
+      // --- connection setup and transfer throughput (SUPER INTERNET / DOWNLOAD) ---
+      {"HappyEyeballsV3", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Race the IPv6 and IPv4 connection attempts in parallel and keep whichever answers first: "
+       "shorter connects on dual-stack networks, and no IPv6 stall."},
+      {"OptimisticDnsForTcp", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Start the TCP connection while DNS is still resolving: removes a whole round trip from "
+       "cold loads."},
+      {"OptimisticDnsForQuic", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "The same trick for QUIC/HTTP-3 connections: shorter setup for sites using HTTP-3."},
+      {"EnableTLS13EarlyData", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Allow TLS 1.3 0-RTT resumption: returning to a site can skip the handshake round trip."},
+      {"ConnectionKeepAliveForHttp2", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Keep HTTP/2 sessions alive longer, so coming back to a site reuses the open socket "
+       "instead of paying for a new connection."},
+      {"AddressSorterConnectCache", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
+       "Remember which of a host's addresses connected successfully and try it first next time: "
+       "faster reconnects on hosts with several A/AAAA records."},
+      {"ParallelDownloading", Provenance::kVerified, Risk::kSafe, kSrcDownloadFeat,
+       "Split large downloads into parallel range requests instead of one stream "
+       "(components/download). Many servers speed up massively; a few do not, and on builds whose "
+       "download backend does not consult this feature the download simply behaves as before."},
       {"ProcessPerSiteMainFrameSiteScalingFactor", Provenance::kVerified, Risk::kSafe, kSrcContentFeat,
        "Scales the per-site process sharing threshold with available memory."},
       {"ProcessPerSiteMainFrameTotalMemoryLimit", Provenance::kVerified, Risk::kSafe, kSrcContentFeat,

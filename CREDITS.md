@@ -12,10 +12,10 @@
 | Website | [the-codero.web.app](https://the-codero.web.app) |
 | Licence | [BrowserX Personal-Use License](LICENSE) — personal, non-commercial use only; no modification; no redistribution or resale |
 
-BrowserX — an ULTRA-optimised Chromium browser with five performance modes
-(ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO), Auto-Pilot and a tracker
-shield, in two editions (C++/CEF desktop, Android mobile) that share one
-performance core.
+BrowserX — an ULTRA-optimised Chromium browser with eight performance modes
+(ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO · SUPER INTERNET · DOWNLOAD ·
+STREAMING), Auto-Pilot and a tracker shield, in two editions (C++/CEF desktop,
+Android mobile) that share one performance core.
 
 **Licence, in plain words.** BrowserX is *source-available*, not open source.
 You may read the code and run the browser for your own personal, non-commercial

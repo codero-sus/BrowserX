@@ -14,6 +14,7 @@
 #include "app/app_paths.h"
 #include "app/cli.h"
 #include "core/url_utils.h"
+#include "core/mode_engine.h"
 #include "test_harness.h"
 
 namespace {
@@ -189,3 +190,16 @@ TEST(Cli, UsageCreditsTheAuthorAndShipsTheLinks) {
 }
 
 }  // namespace
+
+TEST(Cli, HelpListsEveryModeFromTheEngine) {
+  // The mode list in --help is generated from AllModes(), so a new mode can never
+  // be missing from the documentation the user actually reads.
+  const std::string usage = browserx::app::CliUsage("browserx");
+  for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
+    EXPECT_TRUE(usage.find(info.id) != std::string::npos)
+        << "mode missing from --help: " << info.id;
+  }
+  EXPECT_TRUE(usage.find("super-internet") != std::string::npos);
+  EXPECT_TRUE(usage.find("download") != std::string::npos);
+  EXPECT_TRUE(usage.find("streaming") != std::string::npos);
+}
