@@ -35,6 +35,7 @@
 #include "core/mode_engine.h"
 #include "core/report.h"
 #include "core/system_profile.h"
+#include "web/bench_page.h"
 
 namespace browserx {
 namespace app {
@@ -93,6 +94,43 @@ browserx::core::ModePlan PlanForDiagnostics(const LaunchOptions& options,
   return browserx::core::BuildPlan(options.mode, context);
 }
 
+/// Writes the standalone benchmark page and prints how to use it.
+///
+/// The point of writing the file (rather than only serving browserx://bench) is that the
+/// exact same bytes can be opened in another browser: the comparison is only worth
+/// reading when both browsers ran the same code, offline, with no network involved.
+int WriteBenchPage(const LaunchOptions& options) {
+  const std::string path =
+      options.bench_page_path.empty() ? std::string("browserx-bench.html") : options.bench_page_path;
+  const std::string document = browserx::web::BenchPageDocument();
+
+  std::FILE* file = std::fopen(path.c_str(), "wb");
+  if (file == nullptr) {
+    std::fprintf(stderr, "could not write %s\n", path.c_str());
+    return 1;
+  }
+  const size_t written = std::fwrite(document.data(), 1, document.size(), file);
+  const int closed = std::fclose(file);
+  if (written != document.size() || closed != 0) {
+    std::fprintf(stderr, "could not write all of %s\n", path.c_str());
+    return 1;
+  }
+
+  std::printf("\n  wrote %s (%.1f KB, self-contained - no network, no external files)\n", path.c_str(),
+              static_cast<double>(document.size()) / 1024.0);
+  std::printf("\n  How to compare two browsers honestly:\n");
+  std::printf("    1. open this file in BrowserX and in the other browser\n");
+  std::printf("       (the page is also always available at browserx://bench)\n");
+  std::printf("    2. press Run in both, on the same machine, one at a time\n");
+  std::printf("    3. compare the score line and the per-test numbers\n");
+  std::printf("    4. make run RUN_ARGS=\"--mode=high-performance\"  does the same page with\n");
+  std::printf("       BrowserX tuned instead of default, which is the number worth quoting\n");
+  std::printf("\n  BrowserX by codero-sus - https://github.com/codero-sus/BrowserX\n");
+  std::printf("  BrowserX Personal-Use License: personal, non-commercial use only;\n");
+  std::printf("  no modification; no redistribution or resale. https://the-codero.web.app\n\n");
+  return 0;
+}
+
 int RunDiagnostics(const LaunchOptions& options, const browserx::app::Paths& paths) {
   const browserx::core::SystemProfile profile = browserx::core::DetectSystemProfile();
 
@@ -109,6 +147,8 @@ int RunDiagnostics(const LaunchOptions& options, const browserx::app::Paths& pat
       std::printf("%s", browserx::core::RenderCatalogReport(/*include_removed=*/false).c_str());
       return 0;
     }
+    case CliAction::kWriteBenchPage:
+      return WriteBenchPage(options);
     case CliAction::kPrintFlagPlan: {
       browserx::core::Settings settings = browserx::core::Settings::Defaults();
       settings.startup_mode = options.mode;

@@ -398,21 +398,50 @@ std::string StripTrackingParams(std::string_view url_text) {
 }
 
 bool HostMatchesPattern(std::string_view host, std::string_view pattern) {
-  const std::string lower_host = fmt::ToLower(fmt::Trim(host));
-  std::string pat = fmt::ToLower(fmt::Trim(pattern));
-  if (pat.empty() || lower_host.empty()) return false;
-  if (pat.front() == '=') return lower_host == pat.substr(1);
-  if (fmt::StartsWith(pat, "*.")) pat = pat.substr(2);
-  if (lower_host == pat) return true;
-  // Suffix match on a label boundary: "a.b.example.com" matches "example.com"
-  // but "notexample.com" does not.
-  if (lower_host.size() > pat.size() + 1) {
-    const size_t offset = lower_host.size() - pat.size();
-    if (lower_host[offset - 1] == '.' && lower_host.compare(offset, pat.size(), pat) == 0) {
-      return true;
+  // Allocation-free on purpose: the shield calls this once per rule for every
+  // resource request, and an earlier version lowercased *both* strings into new
+  // std::strings each time - 163 rules per request meant ~326 allocations on the
+  // request path. Trimming and lowercasing now happen in place on string_views.
+  const auto trim = [](std::string_view text) {
+    size_t begin = 0;
+    size_t finish = text.size();
+    while (begin < finish && (text[begin] == ' ' || text[begin] == '\t')) ++begin;
+    while (finish > begin && (text[finish - 1] == ' ' || text[finish - 1] == '\t' ||
+                              text[finish - 1] == '\r' || text[finish - 1] == '\n')) {
+      --finish;
     }
+    return text.substr(begin, finish - begin);
+  };
+  const auto lower_eq = [](std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+      const unsigned char ca = static_cast<unsigned char>(a[i]);
+      const unsigned char cb = static_cast<unsigned char>(b[i]);
+      const unsigned char la = (ca >= 'A' && ca <= 'Z') ? static_cast<unsigned char>(ca + 32) : ca;
+      const unsigned char lb = (cb >= 'A' && cb <= 'Z') ? static_cast<unsigned char>(cb + 32) : cb;
+      if (la != lb) return false;
+    }
+    return true;
+  };
+
+  host = trim(host);
+  pattern = trim(pattern);
+  if (host.empty() || pattern.empty()) return false;
+
+  bool exact_only = false;
+  if (pattern.front() == '=') {
+    exact_only = true;
+    pattern.remove_prefix(1);
+  } else if (pattern.size() > 2 && pattern[0] == '*' && pattern[1] == '.') {
+    pattern.remove_prefix(2);
   }
-  return false;
+  if (pattern.empty() || pattern.size() > host.size()) return false;
+  if (!lower_eq(host.substr(host.size() - pattern.size()), pattern)) return false;
+  if (exact_only) return host.size() == pattern.size();
+  if (host.size() == pattern.size()) return true;
+  // Suffix match has to land on a label boundary: "a.b.example.com" matches
+  // "example.com", but "notexample.com" does not.
+  return host[host.size() - pattern.size() - 1] == '.';
 }
 
 }  // namespace url

@@ -122,7 +122,7 @@ CHECK_OBJS     := $(patsubst $(ROOT)/%.cc,$(CHECK_OBJ_DIR)/%.o,$(APP_SRCS))
 # stay CEF-free (check-test-extra-purity enforces it).
 TEST_EXTRA_SRCS := $(SRC_DIR)/app/cli.cc $(SRC_DIR)/app/app_paths.cc \
                    $(SRC_DIR)/browser/session.cc $(SRC_DIR)/browser/tab_commands.cc \
-                   $(SRC_DIR)/web/internal_pages.cc
+                   $(SRC_DIR)/web/internal_pages.cc $(SRC_DIR)/web/bench_page.cc
 TEST_OBJS      := $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(CORE_SRCS)) \
                   $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_EXTRA_SRCS))
@@ -152,6 +152,8 @@ help:
 	@echo "  make check           compile-check every source file (strict)"
 	@echo "  make test            build + run unit tests (no CEF required)"
 	@echo "  make bench           print the resolved flag plan for all modes"
+	@echo "  make perf            measure BrowserX's own overhead against budgets"
+	@echo "  make bench-page      write the offline benchmark page (browserx://bench)"
 	@echo "  make doctor          environment + capability report"
 	@echo "  make run             build and launch BrowserX"
 	@echo "  make run-nosandbox   launch without the Chromium sandbox (dev)"
@@ -226,7 +228,12 @@ $(BIN): $(APP_OBJS) $(WRAPPER_LIB)
 debug:
 	@$(MAKE) --no-print-directory BUILD_TYPE=Debug build
 
--include $(shell find $(OBJ_DIR) -name '*.d' 2>/dev/null)
+# Header dependencies for both builds. The test objects live in their own directory and
+# used to be left out of this list: a header change (even one that changes a class
+# layout) would not rebuild the tests that include it, so the linker quietly mixed
+# objects built against two different versions of a class. That is not hypothetical - it
+# produced a crash-on-start test binary while the sources themselves were correct.
+-include $(shell find $(OBJ_DIR) $(TEST_OBJ_DIR) -name '*.d' 2>/dev/null)
 
 # -----------------------------------------------------------------------------
 # Compile checks — the "does it even compile" gate.
@@ -240,7 +247,7 @@ $(CHECK_OBJ_DIR)/%.o: $(ROOT)/%.cc
 		-fsyntax-only $(OPT_FLAGS:-O2=-O0) $(SAN_FLAGS) $(DEFINES) -I$(ROOT)/src -I$(CHECK_CEF_ROOT) $<
 
 .PHONY: check
-check: check-headers check-core-purity $(CHECK_OBJS)
+check: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
 	@echo ""
 	@echo "  ✔ compile check passed ($(words $(APP_SRCS)) source files)"
 	@if [ -z "$(HAVE_CEF_DIST)" ]; then \
@@ -318,6 +325,52 @@ bench: $(BENCH_BIN)
 .PHONY: doctor
 doctor: $(DOCTOR_BIN)
 	@$(DOCTOR_BIN) $(ARGS)
+
+BENCHPAGE_BIN  := $(OUT_DIR)/browserx-benchpage
+# The Android edition ships the same page as an asset (it cannot compile C++), so the
+# asset is generated from src/web/bench_page.cc and checked against it below.
+ANDROID_BENCH  := $(ROOT)/mobile-edition/app/src/main/assets/bench.html
+
+PERF_BIN       := $(OUT_DIR)/browserx-perf
+
+$(BENCHPAGE_BIN): $(TOOLS_DIR)/benchpage.cc $(SRC_DIR)/web/bench_page.cc
+	@mkdir -p $(OUT_DIR)
+	@echo "  CXX+LD tools/benchpage.cc"
+	@$(CXX) $(CXX_STD) -O2 -I$(ROOT)/src $^ -o $@
+
+$(PERF_BIN): $(TOOLS_DIR)/perf.cc $(CORE_SRCS)
+	@mkdir -p $(OUT_DIR)
+	@echo "  CXX+LD tools/perf.cc"
+	@$(CXX) $(CXX_STD) -O2 -pthread -I$(ROOT)/src $^ -o $@
+
+.PHONY: bench-page
+bench-page: $(BENCHPAGE_BIN)
+	@$(BENCHPAGE_BIN) $(if $(ARGS),$(ARGS),$(OUT_DIR)/browserx-bench.html)
+	@echo "  open that file in BrowserX and in any other browser to compare:"
+	@echo "  same bytes, no network, one browser at a time."
+
+# Keeps the Android asset and the served page identical. A copy that silently drifts is
+# worse than no copy: both editions would then claim to run "the same benchmark".
+.PHONY: check-bench-page
+check-bench-page: $(BENCHPAGE_BIN)
+	@$(BENCHPAGE_BIN) $(OUT_DIR)/bench-page-check.html > /dev/null
+	@if [ ! -f "$(ANDROID_BENCH)" ]; then \
+		echo "  !! the Android edition's benchmark asset is missing:"; \
+		echo "     $(ANDROID_BENCH)"; \
+		echo "     create it with: make bench-page ARGS=$(ANDROID_BENCH)"; exit 1; \
+	fi
+	@if ! cmp -s "$(ANDROID_BENCH)" "$(OUT_DIR)/bench-page-check.html"; then \
+		echo "  !! the Android benchmark asset differs from what the browser serves:"; \
+		echo "     $(ANDROID_BENCH)"; \
+		echo "     it is generated - refresh it with: make bench-page ARGS=$(ANDROID_BENCH)"; \
+		exit 1; \
+	fi
+	@rm -f $(OUT_DIR)/bench-page-check.html
+	@echo "  ok the Android benchmark asset is byte-identical to browserx://bench"
+
+.PHONY: perf
+perf: $(PERF_BIN)
+	@$(PERF_BIN) $(ARGS)
 
 # -----------------------------------------------------------------------------
 # Run

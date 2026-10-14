@@ -465,6 +465,71 @@ void AddSharedBaseline(const EngineContext& context, const SystemProfile& profil
                           : " (recommended for " + std::to_string(profile.total_ram_mb) + " MB RAM)"));
 }
 
+namespace {
+
+/// What a mode is allowed to do about GPU speed.
+///
+/// The important finding, and the reason this is small: **the rendering fast paths
+/// are already the default**. Chromium rasters on the GPU, uploads with zero-copy and
+/// rasterises out-of-process without being asked — the switches that used to force
+/// those (`--enable-oop-rasterization`, `--enable-zero-copy`, the
+/// CanvasOopRasterization feature) are catalogued as REMOVED, and
+/// `--enable-gpu-rasterization` is verified but documented as a no-op on modern
+/// builds. A browser advertising "30% faster rendering" on those flags is quoting a
+/// release note from years ago.
+///
+/// What is left is real, and it is what this function applies:
+///   * a bigger shader disk cache, so returning to a WebGL-heavy page does not pay to
+///     compile its shaders again (a compile is a stall you feel as a hitch),
+///   * native GPU memory buffers for video, one copy fewer per frame,
+///   * and, most valuable of all, telling the user when the machine is *software*
+///     rendering, because that - not any switch - is what makes a browser slow.
+enum class RenderingLevel {
+  /// Modes that trade work for memory or battery: LOW RAM, ECO, PRIVACY, DATA SAVER.
+  kOff,
+  /// A larger shader cache on disk; costs disk, not RAM.
+  kLight,
+  /// The above plus native GPU buffers for video and the full explanation.
+  kFull,
+};
+
+void AddRenderingSpeed(ModePlan* plan, const SystemProfile& profile, RenderingLevel level) {
+  // Software rendering is the one thing worth shouting about, in every mode that
+  // touches the GPU at all: with llvmpipe or SwiftShader "the GPU" is the CPU, and no
+  // switch, browser or claim can make frames cheap until that is fixed.
+  if (level != RenderingLevel::kOff && profile.gpu_tier == GpuTier::kSoftware) {
+    plan->warnings.push_back(
+        "This machine is rendering in software (llvmpipe/SwiftShader detected), which costs "
+        "several times more CPU per frame than any GPU path. No switch fixes that: check the "
+        "graphics driver and whether the browser is running inside a VM or a remote session.");
+    return;
+  }
+  if (level == RenderingLevel::kOff) return;
+
+  // Shader compiles are stalls: a bigger cache means a WebGL-heavy page you return to
+  // starts drawing instead of compiling. Disk only, so even a light mode can afford it.
+  const int shader_cache_mb = level == RenderingLevel::kFull ? 32 : 16;
+  plan->boot.SetSwitchValueOrAdd(
+      "gpu-disk-cache-size-kb", std::to_string(shader_cache_mb * 1024),
+      "Keep " + std::to_string(shader_cache_mb) +
+          " MB of compiled GPU shaders on disk: returning to a WebGL or canvas-heavy page "
+          "starts drawing instead of recompiling shaders");
+  if (level != RenderingLevel::kFull) return;
+
+  if (!profile.IsLowRam() && !profile.low_ram_hint) {
+    plan->boot.Add("enable-native-gpu-memory-buffers", "",
+                   "Hand video frames to the GPU as native buffers: one copy fewer per frame");
+  }
+  plan->notes.push_back(
+      "GPU rasterisation, zero-copy upload and out-of-process raster are NOT forced here "
+      "because they are already the default in the Chromium this browser embeds - the switches "
+      "that used to enable them were removed upstream. BrowserX does not list defaults as "
+      "features; what it adds is the shader cache, the video buffers above, and the "
+      "high-performance GPU request.");
+}
+
+}  // namespace
+
 void AddLowRamProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
   RuntimeOverrides overrides = context.overrides;
 
@@ -601,6 +666,7 @@ void AddWeakNetworkProfile(ModePlan* plan, const EngineContext& context,
 
 void AddLowLatencyProfile(ModePlan* plan, const EngineContext& context,
                           const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kLight);
   (void)context;
   (void)profile;
   plan->boot.Add("disable-ipc-flooding-protection", "",
@@ -650,6 +716,7 @@ void AddReaderProfile(ModePlan* plan, const EngineContext& context,
 
 void AddBenchmarkProfile(ModePlan* plan, const EngineContext& context,
                          const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kFull);
   (void)context;
   (void)profile;
   plan->boot.Add("disable-gpu-vsync", "",
@@ -672,6 +739,7 @@ void AddBenchmarkProfile(ModePlan* plan, const EngineContext& context,
 
 void AddKioskProfile(ModePlan* plan, const EngineContext& context,
                      const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kLight);
   (void)context;
   (void)profile;
   plan->boot.Add("hide-scrollbars", "",
@@ -692,7 +760,8 @@ void AddKioskProfile(ModePlan* plan, const EngineContext& context,
       "still sleep or blank the machine - that is a power setting outside BrowserX.");
 }
 
-void AddEcoProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+void AddEcoProfile(ModePlan* plan, const EngineContext& /*context*/,
+                   const SystemProfile& profile) {
 
   plan->boot.Add("disable-v8-idle-tasks", "",
                  "Stop V8 idle GC/optimisation tasks: fewer CPU wake-ups, direct battery saving");
@@ -718,6 +787,7 @@ void AddEcoProfile(ModePlan* plan, const EngineContext& context, const SystemPro
 }
 
 void AddGamingProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kFull);
   const RuntimeOverrides& overrides = context.overrides;
   const int threads = std::max(2, profile.cpu_physical);
 
@@ -787,6 +857,7 @@ void AddGamingProfile(ModePlan* plan, const EngineContext& context, const System
 }
 
 void AddHighPerformanceProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kFull);
   const RuntimeOverrides& overrides = context.overrides;
 
   plan->boot.Add("disable-layer-tree-host-memory-pressure", "",
@@ -970,6 +1041,7 @@ void AddDownloadProfile(ModePlan* plan, const EngineContext& context, const Syst
 }
 
 void AddStreamingProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kLight);
   (void)context;
   plan->boot.EnableFeature("AcceleratedVideoDecoder",
                            "Decode video on the GPU: less CPU, fewer dropped frames");
@@ -996,6 +1068,7 @@ void AddStreamingProfile(ModePlan* plan, const EngineContext& context, const Sys
 }
 
 void AddUltraProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
+  AddRenderingSpeed(plan, profile, RenderingLevel::kLight);
   const RuntimeOverrides& overrides = context.overrides;
 
   const int auto_limit = overrides.renderer_process_limit.value_or(profile.RecommendedRendererLimit());
@@ -1296,6 +1369,19 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
   if (mode != Mode::kLowRam && (profile.low_ram_hint || profile.IsLowRam())) {
     ApplyLowRamDeviceCaps(&plan, context, profile);
   }
+
+  // The V8 code cache, driven by the policy field that carried the intent all along.
+  // Without this the flag reached nothing: LOW RAM and ECO set code_cache = false and no
+  // switch followed, and every other mode asked for a fast repeat load without the switch
+  // that produces one. Verified values are "none", "code" and "default"
+  // (content/public/common/content_switches.cc, kV8CacheOptions).
+  plan.boot.SetSwitchValueOrAdd(
+      "v8-cache-options", policy.code_cache ? "code" : "none",
+      policy.code_cache
+          ? "Cache V8 code: a repeat visit skips parse and compile, which is most of the time a "
+            "returning page spends before it can run"
+          : "No V8 code cache: fewer disk writes and less page cache held, at the cost of "
+            "re-parsing scripts on a repeat visit");
 
   // Keep the cache switch honest if anything changed the policy value.
   plan.boot.SetSwitchValue("disk-cache-size",
