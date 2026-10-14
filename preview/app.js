@@ -358,7 +358,8 @@ function catalogRow(entry, prefix) {
 
 /* ------------------------------------------------------------------- wire */
 function wire() {
-  $$('.tab').forEach((tab) => {
+  // Only real page tabs: the benchmark tab is a link out to /bench and has no panel.
+  $$('.tab[data-tab]').forEach((tab) => {
     tab.addEventListener('click', () => selectPage(tab.dataset.tab));
   });
   $('#catalog-search').addEventListener('input', (event) => {

@@ -103,6 +103,9 @@ html, body {
 .tab:hover { background: #1a212b; color: var(--text); }
 .tab.active { background: var(--bg); color: var(--text); border-color: var(--line); }
 .tab.active .dot { background: var(--accent); }
+/* The benchmark tab is a link (it opens the real page), not a panel switch. */
+a.tab { text-decoration: none; }
+.bench-tab .x { color: var(--accent); }
 .tab.sleeping { opacity: .55; font-style: italic; }
 .tab.sleeping .dot { background: var(--amber); }
 .tab .x { opacity: .5; margin-left: 2px; }
