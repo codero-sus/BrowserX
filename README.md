@@ -1,6 +1,6 @@
 # BrowserX
 
-**By [codero-sus](https://github.com/codero-sus) · website [the-codero.web.app](https://the-codero.web.app) · source [github.com/codero-sus/MyBrowser](https://github.com/codero-sus/MyBrowser)**
+**By [codero-sus](https://github.com/codero-sus) · website [the-codero.web.app](https://the-codero.web.app) · source [github.com/codero-sus/BrowserX](https://github.com/codero-sus/BrowserX)**
 
 **Licence: [BrowserX Personal-Use License](LICENSE) — personal, non-commercial use
 only · no modification · no redistribution or resale.** Source-available, not open
@@ -161,7 +161,7 @@ PLAN.md         the build plan, the verified evidence, and the decision log
 |---|---|
 | GitHub | https://github.com/codero-sus |
 | Website | https://the-codero.web.app |
-| Repository | https://github.com/codero-sus/MyBrowser |
+| Repository | https://github.com/codero-sus/BrowserX |
 
 **Licence.** BrowserX is source-available under the
 [BrowserX Personal-Use License](LICENSE): you may read the source and run the

@@ -127,7 +127,7 @@ BrowserX — an ULTRA-optimised Chromium browser
   author   codero-sus
   website  https://the-codero.web.app
   github   https://github.com/codero-sus
-  source   https://github.com/codero-sus/MyBrowser
+  source   https://github.com/codero-sus/BrowserX
   licence  BrowserX Personal-Use License: personal, non-commercial use only;
            no modification, no redistribution or resale (see LICENSE)
 
@@ -148,7 +148,7 @@ chmod 0755 "${TARGET}/browserx"
   printf 'BrowserX %s\n' "${VERSION}"
   printf 'author   : codero-sus <https://github.com/codero-sus>\n'
   printf 'website  : https://the-codero.web.app\n'
-  printf 'source   : https://github.com/codero-sus/MyBrowser\n'
+  printf 'source   : https://github.com/codero-sus/BrowserX\n'
   printf 'licence  : BrowserX Personal-Use License - personal, non-commercial use only,\n'
   printf '           no modification, no redistribution or resale (see LICENSE)\n'
   printf 'packaged : %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -170,7 +170,7 @@ HIGH PERFORMANCE, LOW RAM, ECO) and Auto-Pilot, built on CEF.
     by codero-sus
     website : https://the-codero.web.app
     github  : https://github.com/codero-sus
-    source  : https://github.com/codero-sus/MyBrowser
+    source  : https://github.com/codero-sus/BrowserX
 
 Run it
 ------
