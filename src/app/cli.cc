@@ -98,7 +98,14 @@ std::string CliUsage(const char* program) {
   text += VersionBanner() + "\n\n";
   text += "usage: " + name + " [options] [url | search terms]\n\n";
   text += "MODES\n";
-  text += "  --mode=<id>          ultra (default) | gaming | high-performance | low-ram | eco\n";
+  // Generated from the engine so a new mode can never be missing from --help.
+  std::string mode_list;
+  for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
+    if (!mode_list.empty()) mode_list += " | ";
+    mode_list += info.id;
+    if (info.mode == browserx::core::Mode::kUltra) mode_list += " (default)";
+  }
+  text += "  --mode=<id>          " + mode_list + "\n";
   text += "  --auto-pilot=<how>   auto | ask | off      (default: ask)\n";
   text += "  --list-modes         describe every mode and exit\n\n";
   text += "OPTIMISATION GATES\n";

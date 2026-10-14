@@ -7,6 +7,7 @@
 
 #include "core/mode_engine.h"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
@@ -364,4 +365,175 @@ TEST(ModeEngine, NotesAndWarningsArePopulated) {
   EngineContext context = MakeContext(profile);
   const ModePlan plan = BuildPlan(Mode::kLowRam, context);
   EXPECT_GT(plan.notes.size(), 0u) << "the UI needs rationale text to show the user";
+}
+
+// ---------------------------------------------------------------------------
+// Specialist modes: SUPER INTERNET, DOWNLOAD, STREAMING.
+//
+// These are the modes where the honest line matters most: a browser cannot make
+// a link faster, so each test below checks that the mode removes the throttles it
+// really can reach, and that the plan tells the user where the ceiling is.
+// ---------------------------------------------------------------------------
+
+TEST(ModeEngine, SuperInternetMaximisesTheNetworkPath) {
+  const SystemProfile profile = MakeProfile(16384, 8, 16);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kSuperInternet, context);
+
+  // Every connection-latency lever that exists upstream, and nothing invented:
+  // --enable-quic is catalogued as removed, so it must NOT appear.
+  EXPECT_TRUE(plan.boot.Has("disable-ipc-flooding-protection"));
+  for (const char* feature : {"HappyEyeballsV3", "OptimisticDnsForTcp", "OptimisticDnsForQuic",
+                              "EnableTLS13EarlyData", "ConnectionKeepAliveForHttp2",
+                              "AddressSorterConnectCache", "NetworkContextPrefetch",
+                              "NetworkServiceInProcess2"}) {
+    EXPECT_TRUE(std::find(plan.boot.enabled_features().begin(), plan.boot.enabled_features().end(),
+                          feature) != plan.boot.enabled_features().end())
+        << feature << " should be enabled in SUPER INTERNET";
+  }
+  EXPECT_FALSE(plan.boot.Has("enable-quic")) << "enable-quic does not exist upstream any more";
+
+  // Runtime policy: nothing throttled, nothing unloaded, cache kept warm.
+  EXPECT_FALSE(plan.runtime.background_throttling);
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0) << "a transfer must not be unloaded";
+  EXPECT_EQ(plan.runtime.discard_after_seconds, 0);
+  EXPECT_GE(plan.runtime.cache_size_mb, 1024);
+  EXPECT_EQ(plan.runtime.metrics_interval_ms, 500) << "tight telemetry to watch throughput";
+  EXPECT_TRUE(plan.runtime.block_trackers) << "trackers cost bandwidth";
+  EXPECT_FALSE(plan.runtime.lazy_new_tabs) << "start the transfer now, not when the tab is shown";
+
+  // The plan must state the ceiling instead of implying magic.
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("cannot create bandwidth") != std::string::npos);
+  EXPECT_TRUE(notes.find("HTTP-3") != std::string::npos) << "should explain the QUIC situation";
+}
+
+TEST(ModeEngine, DownloadModeUsesParallelRangesAndNeverUnloads) {
+  const SystemProfile profile = MakeProfile(16384, 8, 16);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kDownload, context);
+
+  const std::vector<std::string>& features = plan.boot.enabled_features();
+  EXPECT_TRUE(std::find(features.begin(), features.end(), "ParallelDownloading") != features.end())
+      << "parallel range downloads are the one real browser-side download lever";
+  EXPECT_TRUE(plan.boot.Has("disable-ipc-flooding-protection"));
+
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0);
+  EXPECT_EQ(plan.runtime.discard_after_seconds, 0);
+  EXPECT_FALSE(plan.runtime.background_throttling);
+  EXPECT_GE(plan.runtime.cache_size_mb, 2048) << "largest cache budget of any mode";
+  EXPECT_TRUE(plan.runtime.keep_display_awake);
+  EXPECT_FALSE(plan.runtime.bfcache) << "RAM belongs to transfer buffers, not back/forward";
+}
+
+TEST(ModeEngine, StreamingModeKeepsPlaybackAndScreenAlive) {
+  SystemProfile profile = MakeProfile(8192, 4, 8);
+  profile.has_accelerated_video = true;
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kStreaming, context);
+
+  const std::vector<std::string>& features = plan.boot.enabled_features();
+  for (const char* feature : {"AcceleratedVideoDecoder", "AcceleratedVideoEncoder"}) {
+    EXPECT_TRUE(std::find(features.begin(), features.end(), feature) != features.end())
+        << feature << " should be requested by STREAMING";
+  }
+  EXPECT_TRUE(plan.boot.Has("autoplay-policy"));
+  EXPECT_TRUE(plan.boot.Has("overlay-fullscreen-video"));
+  EXPECT_TRUE(plan.runtime.keep_display_awake);
+  EXPECT_EQ(plan.runtime.target_fps, 0.0) << "match the display, do not cap it";
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0);
+  EXPECT_EQ(plan.runtime.discard_after_seconds, 0);
+  EXPECT_TRUE(plan.warnings.empty()) << "hardware decode is available on this profile";
+
+  // Without a hardware decoder the user must be told, not surprised by CPU load.
+  profile.has_accelerated_video = false;
+  EngineContext no_hw = MakeContext(profile);
+  const ModePlan software = BuildPlan(Mode::kStreaming, no_hw);
+  // ASSERT_TRUE expands to a void expression, so it cannot be streamed onto.
+  EXPECT_TRUE(software.warnings.size() > 0) << "no-decoder warning missing";
+  if (!software.warnings.empty()) {
+    EXPECT_TRUE(software.warnings.front().find("software decoding") != std::string::npos);
+  }
+}
+
+TEST(ModeEngine, SpecialistModesAreOptInOnly) {
+  EXPECT_TRUE(IsSpecialistMode(Mode::kSuperInternet));
+  EXPECT_TRUE(IsSpecialistMode(Mode::kDownload));
+  EXPECT_TRUE(IsSpecialistMode(Mode::kStreaming));
+  for (const Mode mode : {Mode::kUltra, Mode::kGaming, Mode::kHighPerformance, Mode::kLowRam,
+                          Mode::kEco}) {
+    EXPECT_FALSE(IsSpecialistMode(mode));
+  }
+
+  // DefaultModeFor() may recommend a general mode, never a specialist one: those
+  // are the user saying "do this one thing now".
+  for (uint64_t ram : {2048u, 4096u, 8192u, 32768u}) {
+    SystemProfile profile = MakeProfile(ram, 4, 8);
+    EXPECT_FALSE(IsSpecialistMode(DefaultModeFor(profile)));
+    profile.battery = BatteryState::kDischarging;
+    profile.battery_percent = 10;
+    EXPECT_FALSE(IsSpecialistMode(DefaultModeFor(profile)));
+    profile.battery = BatteryState::kNotPresent;
+    profile.gpu_tier = GpuTier::kDiscrete;
+    EXPECT_FALSE(IsSpecialistMode(DefaultModeFor(profile)));
+  }
+}
+
+TEST(ModeEngine, LowRamDeviceCapsApplyToSpecialistModesToo) {
+  // A 4 GB phone that the OS flags as low-memory cannot honour a 2 GB cache, even
+  // if the user picked DOWNLOAD. The caps are documented, not silent.
+  SystemProfile phone = MakeProfile(4096, 8, 8);
+  phone.low_ram_hint = true;
+  EngineContext context = MakeContext(phone);
+
+  for (const Mode mode : {Mode::kSuperInternet, Mode::kDownload, Mode::kStreaming}) {
+    const ModePlan plan = BuildPlan(mode, context);
+    EXPECT_LE(plan.runtime.cache_size_mb, 128) << "cache cap must survive a 4 GB device";
+    EXPECT_FALSE(plan.runtime.bfcache);
+    EXPECT_LE(plan.runtime.sleep_after_seconds, 600);
+    EXPECT_LE(plan.runtime.discard_after_seconds, 1800);
+    bool explained = false;
+    for (const std::string& warning : plan.warnings) {
+      if (warning.find("memory-constrained") != std::string::npos) explained = true;
+    }
+    EXPECT_TRUE(explained) << "the cap must be explained to the user";
+  }
+}
+
+TEST(ModeEngine, ModesStayDistinctAndParseable) {
+  // Every mode must be reachable by id and by number, and no two may share an id.
+  std::set<std::string> ids;
+  int index = 1;
+  for (const ModeInfo& info : AllModes()) {
+    ids.insert(info.id);
+    Mode parsed = Mode::kUltra;
+    EXPECT_TRUE(ParseMode(info.id, &parsed)) << "id " << info.id << " must parse";
+    EXPECT_TRUE(parsed == info.mode);
+    EXPECT_TRUE(ParseMode(std::to_string(index), &parsed)) << "numeric parse failed at " << index;
+    EXPECT_TRUE(parsed == info.mode);
+    ++index;
+  }
+  EXPECT_EQ(ids.size(), AllModes().size()) << "duplicate mode id";
+  EXPECT_EQ(AllModes().size(), 8u) << "modes were added or removed: update the docs and tests";
+}
+
+TEST(ModeEngine, ModeSlotsAreAStableContract) {
+  // The numeric alias (--mode=N, Ctrl+N) and the menu order are both derived from
+  // AllModes(). Inserting a mode in the middle therefore silently renumbers the
+  // keyboard shortcuts, so the slots are pinned here: the original five keep their
+  // numbers and new modes are appended.
+  const std::vector<ModeInfo>& modes = AllModes();
+  const Mode expected[] = {Mode::kUltra, Mode::kGaming, Mode::kHighPerformance, Mode::kLowRam,
+                           Mode::kEco, Mode::kSuperInternet, Mode::kDownload, Mode::kStreaming};
+  const char* expected_ids[] = {"ultra",       "gaming",    "high-performance", "low-ram",
+                                "eco",         "super-internet", "download",    "streaming"};
+  for (size_t i = 0; i < modes.size() && i < 8; ++i) {
+    EXPECT_TRUE(modes[i].mode == expected[i])
+        << "slot " << (i + 1) << " is " << modes[i].id << ", expected " << expected_ids[i];
+    EXPECT_EQ(std::string(modes[i].id), std::string(expected_ids[i]));
+    Mode parsed = Mode::kUltra;
+    EXPECT_TRUE(ParseMode(std::to_string(i + 1), &parsed));
+    EXPECT_TRUE(parsed == expected[i]) << "--mode=" << (i + 1) << " must stay " << expected_ids[i];
+  }
 }

@@ -42,7 +42,10 @@ DOCTOR = REPO_ROOT / "out" / "browserx-doctor"
 
 # The mode list is fetched from the binary, so this is only used before the first
 # successful run to give the API something honest to say.
-FALLBACK_MODES = ["ultra", "gaming", "high-performance", "low-ram", "eco"]
+FALLBACK_MODES = [
+    "ultra", "gaming", "high-performance", "low-ram", "eco",
+    "super-internet", "download", "streaming",
+]
 
 _build_lock = threading.Lock()
 

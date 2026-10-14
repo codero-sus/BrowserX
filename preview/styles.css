@@ -176,6 +176,14 @@ html, body {
   background: linear-gradient(135deg, rgba(210,153,34,.25), rgba(210,153,34,.05)); }
 .chip[data-mode="eco"][aria-pressed="true"] { border-color: #2ea043; color: #cdf5d3;
   background: linear-gradient(135deg, rgba(46,160,67,.25), rgba(46,160,67,.05)); }
+/* Specialist modes: one subsystem pushed to the limit. Cyan/teal family so they
+   read as "network and media", distinct from the green/blue/purple general modes. */
+.chip[data-mode="super-internet"][aria-pressed="true"] { border-color: #39d0d8; color: #d3fbff;
+  background: linear-gradient(135deg, rgba(57,208,216,.28), rgba(57,208,216,.05)); }
+.chip[data-mode="download"][aria-pressed="true"] { border-color: #1f9cbb; color: #cdeffa;
+  background: linear-gradient(135deg, rgba(31,156,187,.28), rgba(31,156,187,.05)); }
+.chip[data-mode="streaming"][aria-pressed="true"] { border-color: #f778ba; color: #ffdcef;
+  background: linear-gradient(135deg, rgba(247,120,186,.26), rgba(247,120,186,.05)); }
 .modebar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }

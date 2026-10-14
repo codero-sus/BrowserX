@@ -95,6 +95,10 @@ class ModeController(
         // keeps them bound so a tab switch never stalls behind a process start.
         val (priority, waived) = when (mode) {
             Mode.GAME, Mode.HIGH_PERFORMANCE -> WebView.RENDERER_PRIORITY_IMPORTANT to false
+            // The transfer/media modes must not have their renderer reclaimed while a
+            // download or a stream is running, so they are pinned like GAME.
+            Mode.SUPER_INTERNET, Mode.DOWNLOAD, Mode.STREAMING ->
+                WebView.RENDERER_PRIORITY_IMPORTANT to false
             Mode.LOW_RAM -> WebView.RENDERER_PRIORITY_WAIVED to true
             else -> WebView.RENDERER_PRIORITY_BOUND to false
         }
@@ -110,11 +114,16 @@ class ModeController(
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
-        settings.mediaPlaybackRequiresUserGesture = mode != Mode.GAME
+        // Playback starts without a tap in the two modes where that is the point.
+        settings.mediaPlaybackRequiresUserGesture = mode != Mode.GAME && mode != Mode.STREAMING
         settings.loadsImagesAutomatically = !plan.runtime.blockImages
         settings.blockNetworkImage = plan.runtime.blockImages
         settings.blockNetworkLoads = plan.runtime.blockThirdParty && mode == Mode.ECO
         settings.cacheMode = when {
+            // The network modes want the cache to answer whenever it can, so a repeat
+            // visit never pays for the network at all.
+            mode == Mode.SUPER_INTERNET || mode == Mode.DOWNLOAD ->
+                WebSettings.LOAD_CACHE_ELSE_NETWORK
             mode == Mode.LOW_RAM -> WebSettings.LOAD_CACHE_ELSE_NETWORK
             plan.runtime.backgroundThrottling -> WebSettings.LOAD_DEFAULT
             else -> WebSettings.LOAD_DEFAULT
