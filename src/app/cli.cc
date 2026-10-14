@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 #include "app/cli.h"
 
 #include <string>
@@ -133,8 +137,10 @@ std::string CliUsage(const char* program) {
   text += "    GitHub     https://github.com/codero-sus\n";
   text += "    Website    https://the-codero.web.app\n";
   text += "    Source     https://github.com/codero-sus/MyBrowser\n";
-  text += "    Licence    BSD-3-Clause (BrowserX); the bundled Chromium/CEF runtime\n";
-  text += "               stays under its own licences.\n";
+  text += "    Licence    BrowserX Personal-Use License - personal, non-commercial\n";
+  text += "               use only; no modification; no redistribution or resale.\n";
+  text += "               Source-available, not open source. See LICENSE. The bundled\n";
+  text += "               Chromium/CEF runtime stays under its own licences.\n";
   text += "  Made with Chromium and the Chromium Embedded Framework. See CREDITS.md.\n";
   return text;
 }

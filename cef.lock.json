@@ -4,7 +4,7 @@
   "//usage": "make deps            -> download + verify + extract the pinned build",
   "//usage2": "make deps-update     -> resolve the newest stable build and re-pin this file",
   "//usage3": "make headers         -> download just the CEF headers (no binaries) for compile checks",
-  "//licence": "BSD-3-Clause; the CEF/Chromium binaries pinned here keep their own upstream licences",
+  "//licence": "BrowserX is source-available (personal, non-commercial, no modification, no redistribution - see LICENSE); the CEF/Chromium binaries pinned here keep their own upstream licences",
   "pin_mode": "track-stable",
   "platform_entry": "linux64",
   "version": "",

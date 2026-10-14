@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
 """BrowserX — CEF acquisition.
 
 Downloads, verifies and extracts the Chromium Embedded Framework distribution the
@@ -198,7 +201,7 @@ def load_lock() -> dict:
         return {
             "//": "Pins the exact CEF binary distribution BrowserX builds against.",
             "//author": "BrowserX by codero-sus - https://the-codero.web.app",
-            "//licence": "BSD-3-Clause (BrowserX); CEF/Chromium keep their own licences",
+            "//licence": "BrowserX is source-available (personal, non-commercial, no modification, no redistribution - see LICENSE); CEF/Chromium keep their own licences",
             "pin_mode": "track-stable",
             "platform_entry": platform_entry(),
             "version": "",

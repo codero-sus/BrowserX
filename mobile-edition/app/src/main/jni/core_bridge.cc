@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX mobile — JNI bridge to the shared performance core.
 //
 // Every function below is a thin translation between Java types and the C++

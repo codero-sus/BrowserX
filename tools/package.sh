@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
 # BrowserX — assemble a distributable in out/dist/.
 #
 #   make package
@@ -125,7 +128,8 @@ BrowserX — an ULTRA-optimised Chromium browser
   website  https://the-codero.web.app
   github   https://github.com/codero-sus
   source   https://github.com/codero-sus/MyBrowser
-  licence  BSD-3-Clause (BrowserX); Chromium and CEF keep their own licences
+  licence  BrowserX Personal-Use License: personal, non-commercial use only;
+           no modification, no redistribution or resale (see LICENSE)
 
 Built on Chromium and the Chromium Embedded Framework. See CREDITS.md.
 CREDITS
@@ -145,7 +149,8 @@ chmod 0755 "${TARGET}/browserx"
   printf 'author   : codero-sus <https://github.com/codero-sus>\n'
   printf 'website  : https://the-codero.web.app\n'
   printf 'source   : https://github.com/codero-sus/MyBrowser\n'
-  printf 'licence  : BSD-3-Clause (BrowserX); Chromium/CEF keep their own licences\n'
+  printf 'licence  : BrowserX Personal-Use License - personal, non-commercial use only,\n'
+  printf '           no modification, no redistribution or resale (see LICENSE)\n'
   printf 'packaged : %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'platform : %s\n' "${PLATFORM}"
   printf 'host     : %s\n' "$(uname -srm)"
@@ -191,13 +196,17 @@ Requirements
 A 64-bit Linux with glibc 2.31+, GTK-3, NSS, ALSA and X11/Wayland libraries. The
 runtime is bundled; no build step and no separate CEF install is needed.
 
-Credits & licences
-------------------
-BrowserX is BSD-3-Clause (BrowserX by codero-sus, https://the-codero.web.app).
-It is built on Chromium and the Chromium Embedded Framework, both BSD-3-Clause;
-the bundled runtime keeps its own licences, which are listed in the payload and
-at https://github.com/chromiumembedded/cef. Full credits: CREDITS.md in the
-source tree. BrowserX claims no copyright over the bundled Chromium/CEF runtime.
+Credits & licence
+-----------------
+BrowserX by codero-sus - https://the-codero.web.app
+
+BrowserX is source-available under the BrowserX Personal-Use License (see the
+LICENSE file in this package): personal, non-commercial use only. No
+modification, no redistribution or resale. It is not an open-source licence.
+
+The bundled Chromium/CEF runtime is third-party software under its own licences,
+listed in the payload and at https://github.com/chromiumembedded/cef. BrowserX
+claims no copyright over it. Full credits: CREDITS.md in this package.
 README
 
 step "copying the credits and licence"

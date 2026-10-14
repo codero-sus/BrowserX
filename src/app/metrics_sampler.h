@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX — live telemetry: what this browser is costing you, right now.
 //
 // Beyond the process counts CEF gives us, the sampler walks /proc to add up the

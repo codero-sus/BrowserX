@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX internal pages — browserx://settings, telemetry, modes, history, …
 //
 // This file is deliberately CEF-free: it turns *data* (the mode plan, the session,
@@ -43,7 +47,13 @@ constexpr const char* kProjectSite = "the-codero.web.app";
 constexpr const char* kProjectSiteUrl = "https://the-codero.web.app";
 constexpr const char* kProjectRepository = "github.com/codero-sus/MyBrowser";
 constexpr const char* kProjectRepositoryUrl = "https://github.com/codero-sus/MyBrowser";
-constexpr const char* kProjectLicence = "BSD-3-Clause";
+constexpr const char* kProjectLicence = "BrowserX Personal-Use License";
+constexpr const char* kProjectLicenceUrl =
+    "https://github.com/codero-sus/MyBrowser/blob/main/LICENSE";
+/// The four restrictions, in one string so the CLI, the About page, the packaged
+/// build and the mobile app can never describe the licence differently.
+constexpr const char* kProjectLicenceTerms =
+    "personal, non-commercial use only; no modification; no redistribution or resale";
 
 /// Parsed form of a browserx:// URL.
 struct InternalUrl {

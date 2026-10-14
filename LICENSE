@@ -1,39 +1,169 @@
-BSD 3-Clause License
+# BrowserX Personal-Use License
 
-Copyright (c) 2026, codero-sus
-Website: https://the-codero.web.app
-GitHub:  https://github.com/codero-sus
-Project: https://github.com/codero-sus/MyBrowser  (BrowserX)
+**Version 1.0 — 2026**
+**Copyright (c) 2026 codero-sus. All rights reserved.**
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+| | |
+|---|---|
+| Author | codero-sus |
+| Website | https://the-codero.web.app |
+| GitHub | https://github.com/codero-sus |
+| Project | https://github.com/codero-sus/MyBrowser (BrowserX) |
+| Status | Source-available. **Not** open source. |
 
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+BrowserX is published as **source-available** software: you may read the source
+and run the browser for yourself, and nothing more. This licence is deliberately
+restrictive — it is not an open-source licence, it is not approved by the OSI,
+and it grants no rights beyond the ones written below.
 
 ---
 
-This licence covers BrowserX's own source code only. The Chromium/CEF runtime
-that `make deps` downloads and `make package` bundles is distributed under its
-own licences (BSD-3-Clause for CEF, BSD-3-Clause plus third-party licences for
-Chromium); see Resources/ in a packaged build and the CEF distribution's LICENSE
-file. BrowserX claims no copyright over it.
+## 1. Definitions
+
+**"The Software"** means the BrowserX source code, build scripts, documentation,
+assets and any binary built from them, in whole or in part.
+
+**"The Author"** means codero-sus, the copyright holder.
+
+**"Personal use"** means use by an individual, on devices they own or control,
+for their own private, non-commercial purposes.
+
+---
+
+## 2. What you MAY do
+
+Provided you comply with section 3, you may:
+
+1. **Read** the source code and learn from it.
+2. **Build** the Software and **run** it for your own personal use.
+3. **Keep personal copies**, including backups, on your own devices.
+4. **Report bugs**, request features and suggest improvements to the Author.
+
+That is the complete list. Everything else is prohibited unless the Author gives
+you written permission (section 4).
+
+---
+
+## 3. What you MAY NOT do
+
+1. **No commercial use.** You may not use the Software, or anything built from
+   it, in connection with any commercial activity. This includes (without
+   limitation): use by or on behalf of a company, employer or organisation; any
+   paid, ad-supported, subscription or monetised product or service; client or
+   contract work; internal business tooling; resale, rental or paid support; and
+   bundling the Software with anything that is sold.
+
+2. **No modification.** You may not modify, adapt, translate, patch, extend,
+   refactor, rebrand, repackage or otherwise create derivative works from the
+   Software. You may not remove, obscure or alter any copyright, credit, licence
+   or attribution notice.
+
+3. **No redistribution.** You may not publish, upload, post, mirror, share,
+   sublicense, sell, rent, lease, bundle or otherwise distribute the Software —
+   source code or binaries — in whole or in part, through any channel, including
+   public repositories, package registries, app stores, file-sharing sites, or
+   as part of another product. Publishing a link to the official repository is
+   allowed; copying its contents is not.
+
+4. **No circumvention, no transfer.** You may not work around these restrictions,
+   and you may not sublicense, assign or transfer any of the limited rights in
+   section 2 to anyone else. Third parties have no rights under this licence.
+
+---
+
+## 4. Permissions and requests
+
+Want to use BrowserX commercially, modify it, or publish something based on it?
+Ask. Requests go to the Author through the project's GitHub page or the website
+above. Written permission may be granted (with conditions, if appropriate);
+without written permission the answer is no.
+
+---
+
+## 5. Third-party components (not covered by this licence)
+
+BrowserX builds on other people's work, and that work keeps its own licence. This
+licence applies **only** to the original code written for BrowserX:
+
+| Component | Licence |
+|---|---|
+| [Chromium](https://www.chromium.org/) — the engine (Blink, V8, network stack) | BSD-3-Clause plus third-party licences |
+| [CEF — Chromium Embedded Framework](https://github.com/chromiumembedded/cef) | BSD-3-Clause |
+| Android platform and NDK interface headers (mobile edition) | Apache-2.0 |
+| CEF headers vendored in `.cef-headers/` (used for offline compile checks) | CEF's own BSD-3-Clause, notices left intact |
+
+Two consequences, stated plainly:
+
+* Nothing in this licence takes away a right that a third-party licence gives
+  you, and nothing in those licences gives you rights to BrowserX's original
+  code. See [CREDITS.md](CREDITS.md).
+* The **bundled Chromium/CEF runtime** that `make deps` downloads and
+  `make package` ships is that third-party software, under its own licences.
+  BrowserX claims no copyright over it.
+
+---
+
+## 6. Contributions
+
+If you send the Author a bug report, idea, patch or other feedback, you agree
+that the Author may use it freely and without obligation or compensation, and
+that anything incorporated becomes part of the Software under this same licence.
+You keep no rights over the Software as a result.
+
+---
+
+## 7. Termination
+
+Your rights under this licence end automatically if you breach any of its terms.
+On termination you must immediately stop using the Software and delete every copy
+you hold, in source and binary form. Sections 3, 5, 8, 9 and 10 survive
+termination.
+
+---
+
+## 8. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. THE AUTHOR DOES NOT WARRANT
+THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, SECURE, OR FIT FOR ANY
+PARTICULAR PURPOSE. YOU USE IT AT YOUR OWN RISK. NO SUPPORT, UPDATES OR
+MAINTENANCE ARE PROMISED.
+
+---
+
+## 9. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AUTHOR SHALL NOT BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY — WHETHER IN CONTRACT, TORT OR
+OTHERWISE — ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE,
+INCLUDING (WITHOUT LIMITATION) LOSS OF DATA, LOSS OF PROFITS, BUSINESS
+INTERRUPTION, DEVICE DAMAGE, OR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL
+OR PUNITIVE DAMAGES. WHERE LIABILITY CANNOT BE EXCLUDED, IT IS LIMITED TO THE
+AMOUNT YOU PAID FOR THE SOFTWARE, WHICH IS ZERO.
+
+---
+
+## 10. Reservation of rights
+
+All rights not expressly granted in section 2 are reserved by the Author. The
+Software is protected by copyright law and by international treaties. This
+licence grants you no ownership of the Software, and no rights to the name
+"BrowserX", its logo, or any other branding.
+
+---
+
+### A practical note
+
+This is a personal-use licence, not legal advice, and it has limits worth knowing:
+
+* If you obtained the source through a public host such as GitHub, that host's
+  own terms may allow you to **fork a public repository through their
+  interface**. That does not give you any right to *use*, modify or redistribute
+  the Software beyond this licence — a fork you cannot legally run, change or
+  publish is not a licence to do those things.
+* If what you actually want is a completely closed product, the reliable route is
+  a **private repository** with binaries published for users, since a public
+  repository is readable by anyone by design.
+* Third-party files in this repository are not yours to relicense and not the
+  Author's either — they keep the terms their owners gave them.

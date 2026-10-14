@@ -3,7 +3,9 @@
 > **BrowserX by [codero-sus](https://github.com/codero-sus)** ·
 > [the-codero.web.app](https://the-codero.web.app) ·
 > [github.com/codero-sus/MyBrowser](https://github.com/codero-sus/MyBrowser) ·
-> BSD-3-Clause. Credits for Chromium/CEF and licences: [CREDITS.md](CREDITS.md).
+> [BrowserX Personal-Use License](LICENSE) — personal, non-commercial use only,
+> no modification, no redistribution or resale. Source-available, not open source.
+> Credits for Chromium/CEF and their licences: [CREDITS.md](CREDITS.md).
 
 > **Stack chosen by you:** C++ + CEF (Chromium Embedded Framework) — maximum performance, native memory control.
 > **Modes:** all 5 (ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO) + Auto-Pilot.

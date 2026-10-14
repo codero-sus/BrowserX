@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // Mode-engine tests. The most important one is NoPlannedSwitchIsUnverified:
 // it makes it impossible for a mode to ever apply an unproven flag.
 

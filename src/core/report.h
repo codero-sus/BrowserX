@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // BrowserX — human and machine readable reports of a resolved plan.
 //
 // One implementation, three callers: the browser (`--flag-plan`, the Mode panel,
