@@ -137,6 +137,70 @@ const std::vector<ModeInfo>& AllModes() {
        "watching something. Tabs are never unloaded or throttled, so a playing tab keeps its "
        "buffer. If no working hardware decoder is detected, you get a warning instead of a "
        "silent CPU hit."},
+      {Mode::kPrivacy, "privacy", "PRIVACY", "\xF0\x9F\x95\xB5\xEF\xB8\x8F",
+       "Nothing is left behind: the shield runs at full strength, third-party heavy resources "
+       "are cut, and nothing is written to the disk cache.",
+       "Sets the HTTP cache to its floor (16 MB, the smallest the engine allows) so pages are "
+       "not kept on disk after you leave them, "
+       "stops the GPU shader cache from being written, refuses remote web fonts (a third-party "
+       "fetch on almost every site), and blocks third-party images, media and fonts before they "
+       "are requested. The tracker shield does the rest of the work. Honest limit: this mode "
+       "hardens the profile you are already in; it is not an incognito window, and it cannot "
+       "stop a site you log in to from knowing who you are."},
+      {Mode::kDataSaver, "data-saver", "DATA SAVER", "\xF0\x9F\x93\xB6",
+       "Spend the least data that still shows you the page: images, media and web fonts are "
+       "dropped before they are requested, and what does load is cached hard.",
+       "The biggest data lever a browser has is not requesting things. Images, video/audio and "
+       "web fonts are cancelled before they leave the machine, third-party versions of the same "
+       "are cut too, remote fonts are refused, and speculative connections are switched off "
+       "because prefetching spends data on pages you may never open. What does load is cached "
+       "aggressively so a repeat visit costs almost nothing. Honest limit: a page whose text "
+       "sits inside an image will look empty - the shield allowlist is one click away when a "
+       "site matters enough."},
+      {Mode::kWeakNetwork, "weak-network", "WEAK NETWORK", "\xF0\x9F\x90\xA2",
+       "For a slow, crowded or metered link: fewer round trips, less requested, and Chromium "
+       "told the truth about the connection so it stops waiting on it.",
+       "Enables Chromium's network quality estimator and tells it the link is slow, so the "
+       "engine itself backs off instead of optimistically queueing work that will time out: "
+       "shorter timeouts, deferred speculative requests, smaller media buffers. Optimistic DNS "
+       "is on so short connections skip a round trip, images and third-party heavy resources are "
+       "dropped, and the cache is large because on a slow link the cache is the fastest server "
+       "you have. Honest limit: forcing the reported connection type changes what Chromium "
+       "assumes, not what the link can do - nothing here makes a slow connection faster."},
+      {Mode::kLowLatency, "low-latency", "LOW LATENCY", "\xE2\x8F\xB1",
+       "Built for the millisecond that matters: the first byte and the response to your input, "
+       "not the last kilobyte of a download.",
+       "Keeps connections warm and handshakes skipped (TLS early data, HTTP/2 keep-alive, "
+       "address sorting), runs the network service in-process so every request crosses one IPC "
+       "hop fewer, removes the IPC rate limiter, and raises audio priority so voice and video "
+       "calls do not crackle. Speculative prefetch is switched off here on purpose: it competes "
+       "for the connection with the thing you are actually waiting for. Telemetry runs at 250 ms "
+       "so the effect is visible while it happens."},
+      {Mode::kReader, "reader", "READER", "\xF0\x9F\x93\x96",
+       "Long-form reading: the page stays resident and legible for hours, while animation and "
+       "video noise are stopped.",
+       "Keeps the back/forward cache and a large HTTP cache so returning to an article is "
+       "instant, sleeps idle tabs late rather than early, and asks sites for reduced motion with "
+       "scrolling and animation work cut to the minimum that still feels native. Media is not "
+       "requested at all, which on a news site is most of the page weight. Honest limit: pages "
+       "that are mostly video are not readable in this mode - use STREAMING for those."},
+      {Mode::kBenchmark, "benchmark", "BENCHMARK", "\xF0\x9F\x93\x8A",
+       "A measurement mode: uncapped frame rate, Chromium's own FPS counter, GPU benchmarking "
+       "hints and 250 ms telemetry, so the numbers you compare are real.",
+       "Removes vsync and the compositor frame cap, turns on Chromium's FPS overlay and GPU "
+       "benchmarking hints, disables background throttling, and takes memory thresholds almost "
+       "out of the way so nothing trims mid-run. Honest limit: this is a diagnostic mode, not a "
+       "fast browsing mode - an uncapped frame rate burns power and says nothing about how the "
+       "browser behaves with everything switched back on."},
+      {Mode::kKiosk, "kiosk", "KIOSK", "\xF0\x9F\x96\xA5",
+       "An unattended screen: stays awake, stays in front, plays without a click, and never "
+       "unloads the tab it is showing.",
+       "Keeps the display awake and the window on top, allows media playback without a gesture, "
+       "prefers hardware overlays for fullscreen video, hides the page's scrollbars for a clean "
+       "signage look, and disables background timer throttling so a dashboard keeps updating "
+       "while it is not focused. No tab is ever slept or discarded while this mode is active. "
+       "Honest limit: this mode keeps the screen awake; it cannot stop the operating system from "
+       "sleeping the machine, which is a power setting outside the browser."},
   };
   return kModes;
 }
@@ -303,6 +367,15 @@ bool SwitchPlan::SetSwitchValue(const std::string& id, std::string value, std::s
   return false;
 }
 
+void SwitchPlan::SetSwitchValueOrAdd(std::string id, std::string value, std::string reason) {
+  // Note the deliberate copy: SetSwitchValue takes its reason by value, so passing
+  // std::move(reason) here would leave `reason` empty for the Add() fallback and the
+  // switch would enter the plan with no explanation - exactly what
+  // NoPlannedSwitchIsUnverified exists to catch.
+  if (SetSwitchValue(id, value, reason)) return;
+  Add(std::move(id), std::move(value), std::move(reason));
+}
+
 bool SwitchPlan::Empty() const {
   return switches_.empty() && child_switches_.empty() && enabled_features_.empty() &&
          disabled_features_.empty();
@@ -449,6 +522,174 @@ void AddLowRamProfile(ModePlan* plan, const EngineContext& context, const System
   plan->boot.EnableFeature(
       "BackForwardCacheMemoryControls",
       "If bfcache is re-enabled manually, keep its memory bounded");
+}
+
+void AddPrivacyProfile(ModePlan* plan, const EngineContext& context,
+                        const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  // The disk is the part of a browser that keeps records. Each switch below
+  // removes one; none of them is a speed claim, and the plan says so.
+  // The tiny cache budget comes from the policy (cache_size_mb), which is what drives
+  // the --disk-cache-size switch for every mode - one source of truth, not two.
+  plan->boot.Add("disable-gpu-shader-disk-cache", "",
+                 "Do not write compiled GPU shaders into the profile directory");
+  plan->boot.Add("disable-remote-fonts", "",
+                 "Refuse third-party web fonts: one less host that sees you on every page");
+  plan->notes.push_back(
+      "The tracker shield stays on and does most of the work here: it blocks ad, analytics and "
+      "fingerprinting hosts before their requests leave the browser. This mode adds the "
+      "third-party images, media and fonts the shield has no rule for.");
+  plan->notes.push_back(
+      "Honest limit: this hardens the profile you are already signed into. It is not an "
+      "incognito window - BrowserX does not create one - and a site you log in to still knows "
+      "who you are.");
+  plan->notes.push_back(
+      "Third-party scripts and stylesheets still load on purpose: most sites serve them from a "
+      "CDN, and blocking them breaks pages rather than protecting anyone.");
+}
+
+void AddDataSaverProfile(ModePlan* plan, const EngineContext& context,
+                         const SystemProfile& profile) {
+  (void)context;
+  plan->boot.Add("disable-remote-fonts", "",
+                 "Use system fonts instead of downloading web fonts");
+  // The large cache budget comes from the policy (cache_size_mb) like every other mode.
+  (void)profile;
+  plan->boot.EnableFeature("NetworkServiceInProcess2",
+                           "One less process on a data-tight device");
+  plan->notes.push_back(
+      "Images, media and web fonts are cancelled before the request is sent, which is where the "
+      "saving really is: a request that never happens costs no data and no radio time.");
+  plan->notes.push_back(
+      "Speculative preconnecting is off. It spends data on pages you may never open - a good "
+      "trade only when data is free.");
+  plan->notes.push_back(
+      "A page whose text is inside an image will look empty. The shield allowlist "
+      "(browserx://settings) turns one site back on without switching the mode off.");
+}
+
+void AddWeakNetworkProfile(ModePlan* plan, const EngineContext& context,
+                           const SystemProfile& profile) {
+  (void)context;
+  // Enabling the estimator is what makes the forced connection type mean anything:
+  // with the estimator off (Chromium's default) that switch would be inert, so this
+  // mode enables both and claims the indirect effect only.
+  plan->boot.EnableFeature("NetworkQualityEstimator",
+                           "Let Chromium measure the link and adapt to it");
+  plan->boot.SetSwitchValueOrAdd("force-effective-connection-type", "2G",
+                            "Tell Chromium the link is slow: shorter timeouts, deferred "
+                            "speculative work, smaller media buffers");
+  plan->boot.EnableFeature("OptimisticDnsForTcp",
+                           "Start connecting while DNS is still resolving: one round trip saved");
+  plan->boot.EnableFeature("OptimisticDnsForQuic", "The same for QUIC connections");
+  plan->boot.EnableFeature("AddressSorterConnectCache",
+                           "Remember which address worked: faster reconnects on a flaky link");
+  // Cache budget comes from the policy, as in every other mode.
+  (void)profile;
+  plan->notes.push_back(
+      "Forcing the effective connection type changes what Chromium *assumes*, not what the link "
+      "can do. The value is real but indirect: the engine stops queueing work it will only have "
+      "to time out, and that queueing is what makes a bad connection feel stuck.");
+  plan->notes.push_back(
+      "The network quality estimator is switched on by this mode because Chromium ships it off; "
+      "without it the forced type would never be read.");
+  plan->notes.push_back(
+      "Images are not requested and third-party heavy resources are cut, so every load carries "
+      "less. Nothing here makes the connection itself faster.");
+}
+
+void AddLowLatencyProfile(ModePlan* plan, const EngineContext& context,
+                          const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  plan->boot.Add("disable-ipc-flooding-protection", "",
+                 "No IPC rate limiting: a request burst reaches the network without delay");
+  plan->boot.Add("audio-process-high-priority", "",
+                 "Raise audio priority so voice and video calls do not crackle");
+  plan->boot.EnableFeature("NetworkServiceInProcess2",
+                           "One less IPC hop per request: the biggest latency lever here");
+  plan->boot.EnableFeature("ConnectionKeepAliveForHttp2",
+                           "Keep HTTP/2 sessions open so a revisit skips the handshake");
+  plan->boot.EnableFeature("EnableTLS13EarlyData",
+                           "TLS 1.3 0-RTT: a resumed connection can send data immediately");
+  plan->boot.EnableFeature("AddressSorterConnectCache",
+                           "Try the address that connected last time, first");
+  plan->boot.EnableFeature("HappyEyeballsV3",
+                           "Race IPv6 and IPv4 instead of waiting for one to fail");
+  plan->notes.push_back(
+      "Speculative prefetch is deliberately OFF here, unlike SUPER INTERNET: a prefetch "
+      "competes for the connection with the request you are actually waiting for, which is the "
+      "opposite of what an interactive session needs.");
+  plan->notes.push_back(
+      "This mode optimises the start of a request - DNS, connect, handshake, first byte. For "
+      "bulk throughput instead, use SUPER INTERNET or DOWNLOAD.");
+}
+
+void AddReaderProfile(ModePlan* plan, const EngineContext& context,
+                      const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  plan->boot.Add("force-prefers-reduced-motion", "",
+                 "Tell sites the reduced-motion preference: less animation work per page");
+  plan->boot.Add("disable-smooth-scrolling", "",
+                 "Scroll immediately instead of animating: text lands where you look");
+  plan->boot.SetSwitchValueOrAdd("cc-scroll-animation-duration-in-seconds", "0.08",
+                            "Shorten the remaining scroll animation to a minimum");
+  plan->boot.EnableFeature("BackForwardCache",
+                           "An article you came from returns instantly, from memory");
+  plan->boot.EnableFeatureIf(plan->runtime.bfcache, "BackForwardCacheMemoryControls",
+                             "Bound that cache so a long reading session cannot grow forever");
+  plan->notes.push_back(
+      "Media is not requested at all. On a news or blog page that is usually most of the bytes, "
+      "and it is also what stops an autoplaying video from interrupting a paragraph.");
+  plan->notes.push_back(
+      "Animation and scrolling are cut, but text, fonts and images are untouched: this is a "
+      "reading mode, not a text-only mode.");
+}
+
+void AddBenchmarkProfile(ModePlan* plan, const EngineContext& context,
+                         const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  plan->boot.Add("disable-gpu-vsync", "",
+                 "Do not synchronise with the display: required for an uncapped measurement");
+  plan->boot.Add("disable-frame-rate-limit", "",
+                 "Remove the compositor frame cap so the measured number is the real one");
+  plan->boot.Add("show-fps-counter", "",
+                 "Chromium's own frame-rate overlay, so the figure is not BrowserX's own");
+  plan->boot.Add("enable-gpu-benchmarking", "",
+                 "Enable the GPU benchmarking hints (lifts the WebGL performance caveat)");
+  plan->boot.EnableFeature("AcceleratedVideoDecoder",
+                           "Keep the normal decode path so the measurement is not skewed");
+  plan->notes.push_back(
+      "This is a diagnostic mode. An uncapped frame rate burns power and produces numbers that "
+      "do not describe ordinary browsing - compare runs of the same thing, not against ULTRA.");
+  plan->notes.push_back(
+      "Memory thresholds are raised for the duration so nothing is trimmed mid-run, which also "
+      "means this mode uses more RAM than the balance modes.");
+}
+
+void AddKioskProfile(ModePlan* plan, const EngineContext& context,
+                     const SystemProfile& profile) {
+  (void)context;
+  (void)profile;
+  plan->boot.Add("hide-scrollbars", "",
+                 "Hide page scrollbars for an unattended signage look");
+  plan->boot.Add("autoplay-policy", "no-user-gesture-required",
+                 "Media starts without a click: nobody is there to click");
+  plan->boot.Add("overlay-fullscreen-video", "",
+                 "Fullscreen video goes to a hardware overlay: smoother on a cheap device");
+  plan->boot.Add("disable-background-timer-throttling", "",
+                 "A dashboard keeps updating even when the window is not focused");
+  plan->boot.Add("disable-backgrounding-occluded-windows", "",
+                 "Do not deprioritise the window if something covers it");
+  plan->notes.push_back(
+      "The window is kept on top and the display awake while this mode is active, and no tab is "
+      "slept or discarded: the tab on screen is the entire job.");
+  plan->notes.push_back(
+      "Honest limit: the browser can keep its own window awake, but the operating system can "
+      "still sleep or blank the machine - that is a power setting outside BrowserX.");
 }
 
 void AddEcoProfile(ModePlan* plan, const EngineContext& context, const SystemProfile& profile) {
@@ -888,6 +1129,127 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
       policy.block_trackers = true;          // on video sites that is bandwidth and CPU saved
       policy.lazy_new_tabs = false;
       break;
+    case Mode::kPrivacy:
+      // Privacy, not speed: nothing is kept, and nobody else is asked for anything
+      // the page does not need. The shield does most of the work (it is on in
+      // every mode); what changes here is what touches the disk and third parties.
+      policy.background_throttling = true;
+      policy.sleep_after_seconds = 5 * 60;   // sleep tabs sooner: less resident = less to leak
+      policy.discard_after_seconds = 30 * 60;
+      policy.warn_pressure = 0.72;
+      policy.discard_pressure = 0.80;
+      // 8 MB is the request; the engine's sanity floor is 16 MB (a smaller cache
+      // starves the browser rather than protecting anything), and the plan reports
+      // whichever value actually applies.
+      policy.cache_size_mb = 8;
+      policy.metrics_interval_ms = 1000;
+      policy.preconnect = false;             // no connection the page did not ask for
+      policy.bfcache = false;                // pages resident in RAM are still your session
+      policy.code_cache = false;             // no compiled-script cache left in the profile
+      policy.block_trackers = true;
+      policy.block_third_party = true;       // images/media/fonts only; scripts still load
+      policy.reduce_motion = false;
+      policy.lazy_new_tabs = true;
+      break;
+    case Mode::kDataSaver:
+      policy.background_throttling = false;  // a background tab may be the one downloading
+      policy.sleep_after_seconds = 20 * 60;
+      policy.discard_after_seconds = 45 * 60;
+      policy.warn_pressure = 0.85;
+      policy.discard_pressure = 0.92;
+      policy.cache_size_mb = std::max(1024, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 1000;
+      policy.preconnect = false;             // prefetching spends data on pages you may not open
+      policy.bfcache = true;                 // a cached page costs nothing to go back to
+      policy.code_cache = true;
+      policy.block_images = true;            // the single biggest data saving there is
+      policy.block_media = true;
+      policy.block_fonts = true;
+      policy.block_third_party = true;
+      policy.block_trackers = true;
+      policy.lazy_new_tabs = true;
+      break;
+    case Mode::kWeakNetwork:
+      policy.background_throttling = true;
+      policy.sleep_after_seconds = 10 * 60;
+      policy.discard_after_seconds = 30 * 60;
+      policy.warn_pressure = 0.82;
+      policy.discard_pressure = 0.90;
+      policy.cache_size_mb = std::max(1024, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 1000;
+      policy.preconnect = false;             // speculative work is wasted on a bad link
+      policy.bfcache = true;
+      policy.code_cache = true;
+      policy.block_images = true;            // an image you never see is data you never pay for
+      policy.block_third_party = true;
+      policy.block_trackers = true;
+      policy.lazy_new_tabs = true;
+      break;
+    case Mode::kLowLatency:
+      policy.background_throttling = false;
+      policy.target_fps = 0.0;
+      policy.sleep_after_seconds = 0;        // never unload a tab you may be interacting with
+      policy.discard_after_seconds = 0;
+      policy.warn_pressure = 0.88;
+      policy.discard_pressure = 0.94;
+      policy.cache_size_mb = std::max(512, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 250;      // watch latency while it happens
+      policy.preconnect = false;             // see the profile note: prefetch competes here
+      policy.bfcache = true;                 // instant back is part of feeling quick
+      policy.code_cache = true;
+      policy.block_trackers = true;
+      policy.lazy_new_tabs = false;
+      break;
+    case Mode::kReader:
+      policy.background_throttling = true;
+      policy.sleep_after_seconds = 60 * 60;  // an article you are part-way through is not idle
+      policy.discard_after_seconds = 3 * 60 * 60;
+      policy.warn_pressure = 0.82;
+      policy.discard_pressure = 0.90;
+      policy.cache_size_mb = std::max(512, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 2000;     // nothing here is time-critical
+      policy.preconnect = true;
+      policy.bfcache = true;                 // going back to the article must be instant
+      policy.code_cache = true;
+      policy.block_media = true;             // autoplaying video mid-sentence is the enemy
+      policy.block_trackers = true;
+      policy.reduce_motion = true;
+      policy.lazy_new_tabs = true;
+      break;
+    case Mode::kBenchmark:
+      policy.background_throttling = false;
+      policy.target_fps = 0.0;               // measuring means not capping
+      policy.sleep_after_seconds = 0;
+      policy.discard_after_seconds = 0;      // a discarded tab would invalidate the run
+      policy.warn_pressure = 0.95;
+      policy.discard_pressure = 0.98;
+      policy.cache_size_mb = std::max(512, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 250;
+      policy.preconnect = true;
+      policy.bfcache = true;
+      policy.code_cache = true;
+      policy.show_perf_hud = true;           // the FPS HUD is the measurement surface
+      policy.block_trackers = true;          // tracker CPU cost would skew a measurement
+      policy.lazy_new_tabs = false;
+      break;
+    case Mode::kKiosk:
+      policy.background_throttling = false;
+      policy.target_fps = 0.0;
+      policy.sleep_after_seconds = 0;        // the tab on screen is the whole point
+      policy.discard_after_seconds = 0;
+      policy.warn_pressure = 0.90;
+      policy.discard_pressure = 0.96;
+      policy.cache_size_mb = std::max(512, profile.RecommendedCacheSizeMb());
+      policy.metrics_interval_ms = 5000;     // nobody is watching the counters
+      policy.preconnect = true;
+      policy.bfcache = false;
+      policy.code_cache = true;
+      policy.keep_display_awake = true;
+      policy.always_on_top = true;           // a kiosk that can be hidden is not a kiosk
+      policy.block_trackers = true;
+      policy.show_status_counters = false;   // signed-out display: no counters in view
+      policy.lazy_new_tabs = true;
+      break;
     case Mode::kEco:
       policy.background_throttling = true;
       policy.target_fps = 30.0;
@@ -918,6 +1280,13 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
     case Mode::kSuperInternet: AddSuperInternetProfile(&plan, context, profile); break;
     case Mode::kDownload: AddDownloadProfile(&plan, context, profile); break;
     case Mode::kStreaming: AddStreamingProfile(&plan, context, profile); break;
+    case Mode::kPrivacy: AddPrivacyProfile(&plan, context, profile); break;
+    case Mode::kDataSaver: AddDataSaverProfile(&plan, context, profile); break;
+    case Mode::kWeakNetwork: AddWeakNetworkProfile(&plan, context, profile); break;
+    case Mode::kLowLatency: AddLowLatencyProfile(&plan, context, profile); break;
+    case Mode::kReader: AddReaderProfile(&plan, context, profile); break;
+    case Mode::kBenchmark: AddBenchmarkProfile(&plan, context, profile); break;
+    case Mode::kKiosk: AddKioskProfile(&plan, context, profile); break;
     case Mode::kLowRam: AddLowRamProfile(&plan, context, profile); break;
     case Mode::kEco: AddEcoProfile(&plan, context, profile); break;
   }
@@ -945,6 +1314,13 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
       case Mode::kSuperInternet: plan.estimated_memory_budget_mb = 1800; break;
       case Mode::kDownload: plan.estimated_memory_budget_mb = 2000; break;
       case Mode::kStreaming: plan.estimated_memory_budget_mb = 1600; break;
+      case Mode::kPrivacy: plan.estimated_memory_budget_mb = 900; break;
+      case Mode::kDataSaver: plan.estimated_memory_budget_mb = 700; break;
+      case Mode::kWeakNetwork: plan.estimated_memory_budget_mb = 900; break;
+      case Mode::kLowLatency: plan.estimated_memory_budget_mb = 1700; break;
+      case Mode::kReader: plan.estimated_memory_budget_mb = 1500; break;
+      case Mode::kBenchmark: plan.estimated_memory_budget_mb = 1800; break;
+      case Mode::kKiosk: plan.estimated_memory_budget_mb = 1400; break;
       case Mode::kUltra: plan.estimated_memory_budget_mb = 1400; break;
       case Mode::kHighPerformance: plan.estimated_memory_budget_mb = 2200; break;
       case Mode::kGaming: plan.estimated_memory_budget_mb = 2600; break;
@@ -967,7 +1343,26 @@ ModePlan BuildPlan(Mode mode, const EngineContext& context) {
 }
 
 bool IsSpecialistMode(Mode mode) {
-  return mode == Mode::kSuperInternet || mode == Mode::kDownload || mode == Mode::kStreaming;
+  switch (mode) {
+    case Mode::kSuperInternet:
+    case Mode::kDownload:
+    case Mode::kStreaming:
+    case Mode::kPrivacy:
+    case Mode::kDataSaver:
+    case Mode::kWeakNetwork:
+    case Mode::kLowLatency:
+    case Mode::kReader:
+    case Mode::kBenchmark:
+    case Mode::kKiosk:
+      return true;
+    case Mode::kUltra:
+    case Mode::kGaming:
+    case Mode::kHighPerformance:
+    case Mode::kLowRam:
+    case Mode::kEco:
+      return false;
+  }
+  return false;  // unreachable: every enumerator is listed above
 }
 
 Mode DefaultModeFor(const SystemProfile& profile) {

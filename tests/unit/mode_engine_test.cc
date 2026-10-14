@@ -82,7 +82,12 @@ TEST(ModeEngine, ParseAndCycleModes) {
   EXPECT_TRUE(ParseMode("turbo", &mode));
   EXPECT_TRUE(mode == Mode::kHighPerformance);
   EXPECT_FALSE(ParseMode("nonsense", &mode));
-  EXPECT_FALSE(ParseMode("9", &mode));
+  // Slots are allocated for every mode, in AllModes() order (Ctrl+N / --mode=N).
+  EXPECT_TRUE(ParseMode("9", &mode));
+  EXPECT_TRUE(mode == Mode::kPrivacy);
+  EXPECT_TRUE(ParseMode("15", &mode));
+  EXPECT_TRUE(mode == Mode::kKiosk);
+  EXPECT_FALSE(ParseMode("16", &mode)) << "there is no 16th mode";
 
   // Cycling visits every mode exactly once before returning to the start.
   std::set<int> seen;
@@ -515,7 +520,7 @@ TEST(ModeEngine, ModesStayDistinctAndParseable) {
     ++index;
   }
   EXPECT_EQ(ids.size(), AllModes().size()) << "duplicate mode id";
-  EXPECT_EQ(AllModes().size(), 8u) << "modes were added or removed: update the docs and tests";
+  EXPECT_EQ(AllModes().size(), 15u) << "modes were added or removed: update the docs and tests";
 }
 
 TEST(ModeEngine, ModeSlotsAreAStableContract) {
@@ -524,16 +529,222 @@ TEST(ModeEngine, ModeSlotsAreAStableContract) {
   // keyboard shortcuts, so the slots are pinned here: the original five keep their
   // numbers and new modes are appended.
   const std::vector<ModeInfo>& modes = AllModes();
-  const Mode expected[] = {Mode::kUltra, Mode::kGaming, Mode::kHighPerformance, Mode::kLowRam,
-                           Mode::kEco, Mode::kSuperInternet, Mode::kDownload, Mode::kStreaming};
-  const char* expected_ids[] = {"ultra",       "gaming",    "high-performance", "low-ram",
-                                "eco",         "super-internet", "download",    "streaming"};
-  for (size_t i = 0; i < modes.size() && i < 8; ++i) {
+  const Mode expected[] = {Mode::kUltra,     Mode::kGaming,        Mode::kHighPerformance,
+                           Mode::kLowRam,    Mode::kEco,           Mode::kSuperInternet,
+                           Mode::kDownload,  Mode::kStreaming,     Mode::kPrivacy,
+                           Mode::kDataSaver, Mode::kWeakNetwork,   Mode::kLowLatency,
+                           Mode::kReader,    Mode::kBenchmark,     Mode::kKiosk};
+  const char* expected_ids[] = {"ultra",       "gaming",     "high-performance", "low-ram",
+                                "eco",         "super-internet", "download",    "streaming",
+                                "privacy",     "data-saver", "weak-network",     "low-latency",
+                                "reader",      "benchmark",  "kiosk"};
+  EXPECT_EQ(modes.size(), sizeof(expected) / sizeof(expected[0]))
+      << "a mode was added or removed: pin its slot here and in the docs";
+  for (size_t i = 0; i < modes.size() && i < 15; ++i) {
     EXPECT_TRUE(modes[i].mode == expected[i])
         << "slot " << (i + 1) << " is " << modes[i].id << ", expected " << expected_ids[i];
     EXPECT_EQ(std::string(modes[i].id), std::string(expected_ids[i]));
     Mode parsed = Mode::kUltra;
     EXPECT_TRUE(ParseMode(std::to_string(i + 1), &parsed));
     EXPECT_TRUE(parsed == expected[i]) << "--mode=" << (i + 1) << " must stay " << expected_ids[i];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The second family of specialist modes: PRIVACY, DATA SAVER, WEAK NETWORK,
+// LOW LATENCY, READER, BENCHMARK, KIOSK.
+//
+// Each of these exists because a user asked for one specific thing. The tests
+// check the thing is really there, and that the plan states its ceiling: these
+// modes are the easiest place in the product to overclaim, so the honest-limit
+// notes are part of the contract, not decoration.
+// ---------------------------------------------------------------------------
+
+TEST(ModeEngine, PrivacyModeLivesOnTheDiskNotInTheSpeedClaims) {
+  const SystemProfile profile = MakeProfile(16384, 8, 16);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kPrivacy, context);
+
+  // Never sold as speed: no vsync/frame-rate switches, no renderer count games.
+  EXPECT_FALSE(plan.boot.Has("disable-gpu-vsync"));
+  EXPECT_FALSE(plan.boot.Has("disable-frame-rate-limit"));
+
+  // The disk half of the promise.
+  EXPECT_TRUE(plan.boot.Has("disable-gpu-shader-disk-cache"));
+  EXPECT_TRUE(plan.boot.Has("disable-remote-fonts"));
+  EXPECT_TRUE(plan.boot.Has("disk-cache-size"));
+  EXPECT_LE(plan.runtime.cache_size_mb, 16) << "a disk cache is a record of where you have been";
+  EXPECT_FALSE(plan.runtime.bfcache);
+  EXPECT_FALSE(plan.runtime.code_cache);
+  EXPECT_FALSE(plan.runtime.preconnect) << "no connection the page did not ask for";
+  EXPECT_TRUE(plan.runtime.block_trackers);
+  EXPECT_TRUE(plan.runtime.block_third_party);
+
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("not an incognito window") != std::string::npos)
+      << "the mode must not let the user believe it is incognito";
+  EXPECT_TRUE(notes.find("scripts") != std::string::npos)
+      << "the third-party script trade-off must be stated";
+}
+
+TEST(ModeEngine, DataSaverStopsRequestsInsteadOfDroppingResponses) {
+  const SystemProfile profile = MakeProfile(8192, 4, 8);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kDataSaver, context);
+
+  EXPECT_TRUE(plan.runtime.block_images);
+  EXPECT_TRUE(plan.runtime.block_media);
+  EXPECT_TRUE(plan.runtime.block_fonts);
+  EXPECT_TRUE(plan.runtime.block_third_party);
+  EXPECT_TRUE(plan.boot.Has("disable-remote-fonts"));
+  EXPECT_FALSE(plan.runtime.preconnect) << "prefetch spends data on pages you may never open";
+  EXPECT_GE(plan.runtime.cache_size_mb, 1024) << "the cache is what makes a revisit cheap";
+  EXPECT_TRUE(plan.runtime.bfcache);
+
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("empty") != std::string::npos)
+      << "the user must be warned that image-only content will not render";
+}
+
+TEST(ModeEngine, WeakNetworkEnablesTheEstimatorBeforeForcingTheType) {
+  const SystemProfile profile = MakeProfile(8192, 4, 8);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kWeakNetwork, context);
+
+  // The order matters: with the estimator off (Chromium's default) the forced
+  // connection type is inert, so the mode must enable both or claim nothing.
+  const std::vector<std::string>& features = plan.boot.enabled_features();
+  EXPECT_TRUE(std::find(features.begin(), features.end(), "NetworkQualityEstimator") !=
+              features.end());
+  ASSERT_TRUE(plan.boot.Has("force-effective-connection-type"));
+  EXPECT_EQ(plan.boot.switches().empty(), false);
+
+  EXPECT_TRUE(plan.runtime.block_images);
+  EXPECT_TRUE(plan.runtime.block_third_party);
+  EXPECT_FALSE(plan.runtime.preconnect);
+
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("assumes") != std::string::npos)
+      << "forcing the reported type must be described as an assumption, not a speed-up";
+  EXPECT_TRUE(notes.find("faster") != std::string::npos);
+}
+
+TEST(ModeEngine, LowLatencyPrefersTheFirstByteOverPrefetching) {
+  const SystemProfile profile = MakeProfile(16384, 8, 16);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kLowLatency, context);
+
+  EXPECT_FALSE(plan.runtime.preconnect)
+      << "prefetch competes with the request the user is waiting for";
+  EXPECT_TRUE(plan.boot.Has("disable-ipc-flooding-protection"));
+  EXPECT_TRUE(plan.boot.Has("audio-process-high-priority"));
+  EXPECT_EQ(plan.runtime.metrics_interval_ms, 250);
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0);
+
+  const std::vector<std::string>& features = plan.boot.enabled_features();
+  for (const char* feature : {"NetworkServiceInProcess2", "ConnectionKeepAliveForHttp2",
+                              "EnableTLS13EarlyData", "AddressSorterConnectCache",
+                              "HappyEyeballsV3"}) {
+    EXPECT_TRUE(std::find(features.begin(), features.end(), feature) != features.end())
+        << feature << " belongs to LOW LATENCY";
+  }
+  EXPECT_TRUE(std::find(features.begin(), features.end(), "NetworkContextPrefetch") ==
+              features.end())
+      << "prefetch must not sneak in through the network feature set";
+}
+
+TEST(ModeEngine, ReaderKeepsTextAndDropsMotion) {
+  const SystemProfile profile = MakeProfile(8192, 4, 8);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kReader, context);
+
+  EXPECT_TRUE(plan.boot.Has("force-prefers-reduced-motion"));
+  EXPECT_TRUE(plan.boot.Has("disable-smooth-scrolling"));
+  EXPECT_TRUE(plan.boot.Has("cc-scroll-animation-duration-in-seconds"))
+      << "the plan must carry the shortened scroll animation, not only the runtime flag";
+  EXPECT_TRUE(plan.boot.Has("cc-scroll-animation-duration-in-seconds"))
+      << "the plan must carry the shortened scroll animation, not just the runtime flag";
+  EXPECT_TRUE(plan.runtime.reduce_motion);
+  EXPECT_TRUE(plan.runtime.block_media) << "an autoplaying video interrupts reading";
+  EXPECT_FALSE(plan.runtime.block_images) << "a reading mode still shows pictures";
+  EXPECT_FALSE(plan.runtime.block_fonts) << "and still uses the site's typography";
+  EXPECT_TRUE(plan.runtime.bfcache);
+  EXPECT_GE(plan.runtime.sleep_after_seconds, 3600)
+      << "an article part-way read is not an idle tab";
+}
+
+TEST(ModeEngine, BenchmarkIsHonestAboutBeingADiagnostic) {
+  const SystemProfile profile = MakeProfile(16384, 8, 16);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kBenchmark, context);
+
+  EXPECT_TRUE(plan.boot.Has("disable-gpu-vsync"));
+  EXPECT_TRUE(plan.boot.Has("disable-frame-rate-limit"));
+  EXPECT_TRUE(plan.boot.Has("show-fps-counter"));
+  EXPECT_TRUE(plan.boot.Has("enable-gpu-benchmarking"));
+  EXPECT_TRUE(plan.runtime.show_perf_hud);
+  EXPECT_EQ(plan.runtime.metrics_interval_ms, 250);
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0) << "a discarded tab invalidates the run";
+
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("diagnostic") != std::string::npos);
+  EXPECT_TRUE(notes.find("power") != std::string::npos);
+}
+
+TEST(ModeEngine, KioskKeepsTheScreenAndTheTabAlive) {
+  const SystemProfile profile = MakeProfile(8192, 4, 8);
+  EngineContext context = MakeContext(profile);
+  const ModePlan plan = BuildPlan(Mode::kKiosk, context);
+
+  EXPECT_TRUE(plan.runtime.keep_display_awake);
+  EXPECT_TRUE(plan.runtime.always_on_top);
+  EXPECT_EQ(plan.runtime.sleep_after_seconds, 0);
+  EXPECT_EQ(plan.runtime.discard_after_seconds, 0);
+  EXPECT_TRUE(plan.boot.Has("hide-scrollbars"));
+  EXPECT_TRUE(plan.boot.Has("autoplay-policy"));
+  EXPECT_TRUE(plan.boot.Has("disable-background-timer-throttling"));
+
+  std::string notes;
+  for (const std::string& note : plan.notes) notes += note + " ";
+  EXPECT_TRUE(notes.find("operating system") != std::string::npos)
+      << "the OS can still sleep the machine: say so instead of implying otherwise";
+}
+
+TEST(ModeEngine, EverySpecialistModeIsStickyAndOptIn) {
+  int specialists = 0;
+  for (const ModeInfo& info : AllModes()) {
+    const bool expected = info.mode != Mode::kUltra && info.mode != Mode::kGaming &&
+                          info.mode != Mode::kHighPerformance && info.mode != Mode::kLowRam &&
+                          info.mode != Mode::kEco;
+    EXPECT_EQ(IsSpecialistMode(info.mode), expected)
+        << info.id << " specialist classification changed";
+    if (expected) {
+      ++specialists;
+      // Every specialist mode must carry at least one note: the note is where the
+      // honest limit lives, and a mode without one has not thought about it.
+      const ModePlan plan = BuildPlan(info.mode, MakeContext(MakeProfile(8192, 4, 8)));
+      EXPECT_GT(plan.notes.size(), 0u) << info.id << " has no notes - where is its honest limit?";
+    }
+  }
+  EXPECT_EQ(specialists, 10) << "five general modes and ten specialists make fifteen";
+  EXPECT_EQ(AllModes().size(), 15u);
+}
+
+TEST(ModeEngine, PrivacyRequestsTheSmallestCacheTheEngineAllows) {
+  // 8 MB is the request; the engine clamps the cache to a 16 MB floor so a mode
+  // cannot starve the browser, and the plan must report the value that applies.
+  const ModePlan privacy = BuildPlan(Mode::kPrivacy, MakeContext(MakeProfile(16384, 8, 16)));
+  EXPECT_EQ(privacy.runtime.cache_size_mb, 16);
+
+  // Smaller than every other mode's budget on the same machine: that is the point.
+  for (const ModeInfo& info : AllModes()) {
+    if (info.mode == Mode::kPrivacy) continue;
+    const ModePlan other = BuildPlan(info.mode, MakeContext(MakeProfile(16384, 8, 16)));
+    EXPECT_GT(other.runtime.cache_size_mb, privacy.runtime.cache_size_mb)
+        << info.id << " should cache more than PRIVACY does";
   }
 }

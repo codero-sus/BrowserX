@@ -105,7 +105,7 @@ next step, and nothing in this directory pretends to be verified beyond that.
 
 ## Modes on mobile
 
-The same eight modes and the same Auto-Pilot policy as the desktop edition; each one
+The same fifteen modes and the same Auto-Pilot policy as the desktop edition; each one
 maps onto Android behaviour:
 
 | Mode              | Android behaviour                                                                 |
@@ -118,6 +118,13 @@ maps onto Android behaviour:
 | **SUPER INTERNET** | renderer priority `IMPORTANT` (a transfer must not be reclaimed), `LOAD_CACHE_ELSE_NETWORK` so repeat visits never hit the radio, no background timer throttling — Android's own connection stack (happy-eyeballs, connection reuse) already does what the desktop mode's Chromium features do |
 | **DOWNLOAD**      | renderer priority `IMPORTANT`, largest cache, `LOAD_CACHE_ELSE_NETWORK`, screen kept awake, no `onTrimMemory` trim of the active tab |
 | **STREAMING**     | autoplay without a gesture, renderer priority `IMPORTANT`, screen kept awake, no sleep/discard |
+| **PRIVACY**       | `LOAD_NO_CACHE` (WebView then keeps nothing on the device), third-party heavy resources cut, no `onTrimMemory` trim while it is active |
+| **DATA SAVER**    | `blockNetworkImage` + media/font blocking from the shared policy, `LOAD_CACHE_ELSE_NETWORK`, renderer priority `IMPORTANT` |
+| **WEAK NETWORK**  | the same resource cuts, `LOAD_CACHE_ELSE_NETWORK`, plus Android's own connection-quality handling (the desktop mode's Chromium estimator does not exist for WebView) |
+| **LOW LATENCY**   | renderer priority `IMPORTANT`, no sleep/discard, 250 ms telemetry; Android owns the connection stack, so the desktop's in-process-network lever has no equivalent here |
+| **READER**        | media blocked, reduced motion, `LOAD_CACHE_ELSE_NETWORK`, tabs slept late |
+| **BENCHMARK**     | renderer priority `IMPORTANT`, no sleep/discard, 250 ms telemetry, memory thresholds raised so nothing trims mid-run |
+| **KIOSK**         | screen kept awake, autoplay without a gesture, no sleep/discard, renderer pinned |
 | **AUTO-PILOT**    | switches on battery level, `onTrimMemory` severity, immersive/game detection, and charging state; `ask` shows a chip suggestion instead of switching |
 
 ## What is not here (and why)
@@ -128,6 +135,13 @@ maps onto Android behaviour:
   UI problem.
 * **A custom Chromium build** — see above; `WebView` wins on size, battery and
   update cadence.
+* **Chromium feature switches on mobile** — the desktop modes lean on Chromium
+  features (`NetworkQualityEstimator`, `OptimisticDnsForTcp`, in-process network
+  service, parallel range downloads). WebView does not expose feature switches, so
+  the mobile modes apply the *policy* half of the mode (resource blocking, cache,
+  timers, renderer lifetime, screen) and the plan says so: `nativeAvailable` and the
+  fallback notes keep that visible rather than letting a mode look identical on both
+  editions when it is not.
 * **In-app downloads** — WebView needs a `DownloadListener` plus a
   `DownloadManager`/SAF target before a mobile DOWNLOAD mode has anything to
   speed up. Until that lands, DOWNLOAD mode on mobile only tunes the WebView it

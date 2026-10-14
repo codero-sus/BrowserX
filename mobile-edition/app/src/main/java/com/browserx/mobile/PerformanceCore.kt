@@ -306,6 +306,61 @@ private object Fallback {
                 keepDisplayAwake = true, metricsIntervalMs = 1000,
                 cacheSizeMb = if (lowRam) 128 else 1024, lazyNewTabs = false, reduceMotion = false,
             )
+            Mode.PRIVACY -> RuntimePolicy(
+                backgroundThrottling = true, targetFps = 0.0, blockImages = false,
+                blockMedia = false, blockFonts = false, blockThirdParty = true,
+                blockTrackers = true, sleepAfterSeconds = 300, discardAfterSeconds = 1800,
+                warnPressure = 0.72, discardPressure = 0.80, keepDisplayAwake = false,
+                metricsIntervalMs = 1000, cacheSizeMb = 8, lazyNewTabs = true, reduceMotion = false,
+            )
+            Mode.DATA_SAVER -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = true,
+                blockMedia = true, blockFonts = true, blockThirdParty = true,
+                blockTrackers = true, sleepAfterSeconds = 1200, discardAfterSeconds = 2700,
+                warnPressure = 0.85, discardPressure = 0.92, keepDisplayAwake = false,
+                metricsIntervalMs = 1000, cacheSizeMb = if (lowRam) 128 else 1024,
+                lazyNewTabs = true, reduceMotion = false,
+            )
+            Mode.WEAK_NETWORK -> RuntimePolicy(
+                backgroundThrottling = true, targetFps = 0.0, blockImages = true,
+                blockMedia = false, blockFonts = false, blockThirdParty = true,
+                blockTrackers = true, sleepAfterSeconds = 600, discardAfterSeconds = 1800,
+                warnPressure = 0.82, discardPressure = 0.90, keepDisplayAwake = false,
+                metricsIntervalMs = 1000, cacheSizeMb = if (lowRam) 128 else 1024,
+                lazyNewTabs = true, reduceMotion = false,
+            )
+            Mode.LOW_LATENCY -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false,
+                blockMedia = false, blockFonts = false, blockThirdParty = false,
+                blockTrackers = true, sleepAfterSeconds = 0, discardAfterSeconds = 0,
+                warnPressure = 0.88, discardPressure = 0.94, keepDisplayAwake = false,
+                metricsIntervalMs = 250, cacheSizeMb = if (lowRam) 128 else 512,
+                lazyNewTabs = false, reduceMotion = false,
+            )
+            Mode.READER -> RuntimePolicy(
+                backgroundThrottling = true, targetFps = 0.0, blockImages = false,
+                blockMedia = true, blockFonts = false, blockThirdParty = false,
+                blockTrackers = true, sleepAfterSeconds = 3600, discardAfterSeconds = 10800,
+                warnPressure = 0.82, discardPressure = 0.90, keepDisplayAwake = false,
+                metricsIntervalMs = 2000, cacheSizeMb = if (lowRam) 128 else 512,
+                lazyNewTabs = true, reduceMotion = true,
+            )
+            Mode.BENCHMARK -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false,
+                blockMedia = false, blockFonts = false, blockThirdParty = false,
+                blockTrackers = true, sleepAfterSeconds = 0, discardAfterSeconds = 0,
+                warnPressure = 0.95, discardPressure = 0.98, keepDisplayAwake = false,
+                metricsIntervalMs = 250, cacheSizeMb = if (lowRam) 128 else 512,
+                lazyNewTabs = false, reduceMotion = false,
+            )
+            Mode.KIOSK -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false,
+                blockMedia = false, blockFonts = false, blockThirdParty = false,
+                blockTrackers = true, sleepAfterSeconds = 0, discardAfterSeconds = 0,
+                warnPressure = 0.90, discardPressure = 0.96, keepDisplayAwake = true,
+                metricsIntervalMs = 5000, cacheSizeMb = if (lowRam) 128 else 512,
+                lazyNewTabs = true, reduceMotion = false,
+            )
         }
         return ModePlan(
             mode = mode,
@@ -354,6 +409,13 @@ private object Fallback {
             Mode.SUPER_INTERNET -> 0.90 to 0.95
             Mode.DOWNLOAD -> 0.92 to 0.97
             Mode.STREAMING -> 0.88 to 0.95
+            Mode.PRIVACY -> 0.72 to 0.80
+            Mode.DATA_SAVER -> 0.85 to 0.92
+            Mode.WEAK_NETWORK -> 0.82 to 0.90
+            Mode.LOW_LATENCY -> 0.88 to 0.94
+            Mode.READER -> 0.82 to 0.90
+            Mode.BENCHMARK -> 0.95 to 0.98
+            Mode.KIOSK -> 0.90 to 0.96
             else -> 0.80 to 0.88
         }
         val (action, level) = when {

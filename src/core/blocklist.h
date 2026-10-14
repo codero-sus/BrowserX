@@ -47,6 +47,14 @@ enum class BlockDecision {
   kDisabled,     // shield off for this profile
 };
 
+/// A shield decision together with the rule that made it, so callers can report
+/// *which* category saved the bytes instead of just "something was blocked".
+struct BlockMatch {
+  BlockDecision decision = BlockDecision::kAllow;
+  BlockCategory category = BlockCategory::kAds;
+  bool matched_rule = false;
+};
+
 struct BlockRule {
   std::string pattern;        // host suffix, "*.host", "=exact.host" or "/path/fragment"
   BlockCategory category;
@@ -74,6 +82,10 @@ class Blocklist {
   /// The core decision. `document_host` may be empty (top-level navigation).
   BlockDecision Decide(std::string_view document_host, std::string_view request_host,
                        std::string_view request_path, ResourceType type) const;
+
+  /// Same rule set, but the matched rule's category comes back with the verdict.
+  BlockMatch DecideDetailed(std::string_view document_host, std::string_view request_host,
+                            std::string_view request_path, ResourceType type) const;
 
   const std::vector<BlockRule>& rules() const { return rules_; }
   size_t rule_count() const { return rules_.size(); }

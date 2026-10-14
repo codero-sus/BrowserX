@@ -181,6 +181,18 @@ int PortOf(std::string_view url_text) {
   return static_cast<int>(port);
 }
 
+std::string PathOf(std::string_view url) {
+  const size_t scheme = url.find("://");
+  if (scheme == std::string_view::npos) return std::string("/");
+  const size_t after_host = url.find('/', scheme + 3);
+  if (after_host == std::string_view::npos) return std::string("/");
+  const size_t end = url.find('#', after_host);
+  const std::string_view path = end == std::string_view::npos
+                                    ? url.substr(after_host)
+                                    : url.substr(after_host, end - after_host);
+  return path.empty() ? std::string("/") : std::string(path);
+}
+
 bool IsHttp(std::string_view url_text) {
   const std::string scheme = SchemeOf(url_text);
   return scheme == "http" || scheme == "https";
