@@ -2,7 +2,10 @@
 
 > **BrowserX by [codero-sus](https://github.com/codero-sus)** ·
 > [the-codero.web.app](https://the-codero.web.app) ·
-> [source](https://github.com/codero-sus/MyBrowser) · BSD-3-Clause.
+> [source](https://github.com/codero-sus/MyBrowser) ·
+> [BrowserX Personal-Use License](../LICENSE) (personal, non-commercial, no
+> modification, no redistribution — the bundled Chromium/CEF code keeps its own
+> licences).
 > Built on Chromium (the system WebView) and sharing its core with the desktop
 > edition, which is built on [CEF](https://github.com/chromiumembedded/cef).
 > Credits: [../CREDITS.md](../CREDITS.md).

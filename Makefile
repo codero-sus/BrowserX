@@ -1,3 +1,7 @@
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 # =============================================================================
 #  BrowserX — Makefile
 #  An ULTRA-optimised Chromium (CEF) browser with GAME / HIGH-PERFORMANCE /
@@ -135,8 +139,9 @@ DOCTOR_BIN     := $(OUT_DIR)/browserx-doctor
 help:
 	@echo ""
 	@echo "  BrowserX — build targets"
-	@echo "  by codero-sus · https://the-codero.web.app · BSD-3-Clause"
-	@echo "  https://github.com/codero-sus/MyBrowser  (credits: CREDITS.md)"
+	@echo "  by codero-sus · https://the-codero.web.app · personal use only"
+	@echo "  https://github.com/codero-sus/MyBrowser  (LICENSE: personal, non-commercial,"
+	@echo "  no modification, no redistribution - see CREDITS.md)"
 	@echo "  ------------------------------------------------------------------"
 	@echo "  make deps            download + SHA-1 verify + extract pinned CEF"
 	@echo "  make deps-update     resolve newest stable CEF, re-pin, download"

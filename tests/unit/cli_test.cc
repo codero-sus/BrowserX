@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // Unit tests for the command-line grammar (src/app/cli.cc + app_paths helpers).
 //
 // These run without CEF: the CLI is pure string logic, so `make test` verifies
@@ -171,7 +175,14 @@ TEST(Cli, UsageCreditsTheAuthorAndShipsTheLinks) {
   EXPECT_TRUE(usage.find("codero-sus") != std::string::npos);
   EXPECT_TRUE(usage.find("https://the-codero.web.app") != std::string::npos);
   EXPECT_TRUE(usage.find("https://github.com/codero-sus/MyBrowser") != std::string::npos);
-  EXPECT_TRUE(usage.find("BSD-3-Clause") != std::string::npos);
+  // The licence is personal-use-only: the CLI must say so, in the same words the
+  // About page and the packaged build use (kProjectLicenceTerms).
+  EXPECT_TRUE(usage.find("BrowserX Personal-Use License") != std::string::npos);
+  EXPECT_TRUE(usage.find("personal, non-commercial") != std::string::npos);
+  EXPECT_TRUE(usage.find("no modification") != std::string::npos);
+  EXPECT_TRUE(usage.find("no redistribution or resale") != std::string::npos);
+  EXPECT_TRUE(usage.find("not open source") != std::string::npos);
+  EXPECT_FALSE(usage.find("BSD-3-Clause") != std::string::npos);
   // The banner is what `--version` prints; it must name the author too.
   EXPECT_TRUE(browserx::app::VersionBanner().find("BrowserX") == 0);
   EXPECT_TRUE(browserx::app::VersionBanner().find("codero-sus") != std::string::npos);

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
 """BrowserX — interactive preview server.
 
 Serves a clickable mock of the BrowserX window whose *data is real*: every switch,

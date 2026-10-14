@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // Guards on the switch catalogue: these tests are what stop BrowserX from
 // ever shipping a flag that does not exist in Chromium.
 

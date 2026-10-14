@@ -1,3 +1,7 @@
+// BrowserX — (c) 2026 codero-sus. All rights reserved.
+// Personal, non-commercial use only. No modification, no redistribution or resale.
+// Source-available, not open source — see LICENSE. https://the-codero.web.app
+
 // Unit tests for the browserx:// internal pages.
 //
 // These matter more than they look: the internal pages are the only part of the
@@ -258,7 +262,13 @@ TEST(InternalPages, CreditsAppearOnEveryPageAndOnAbout) {
   EXPECT_TRUE(Contains(about, "Credits"));
   EXPECT_TRUE(Contains(about, "https://github.com/codero-sus"));
   EXPECT_TRUE(Contains(about, "https://the-codero.web.app"));
-  EXPECT_TRUE(Contains(about, "BSD-3-Clause"));
+  EXPECT_TRUE(Contains(about, "BrowserX Personal-Use License"));
+  EXPECT_TRUE(Contains(about, "personal, non-commercial use only"));
+  EXPECT_TRUE(Contains(about, "no modification"));
+  EXPECT_TRUE(Contains(about, "no redistribution or resale"));
+  EXPECT_TRUE(Contains(about, "Source-available, not open source"));
+  // The About page must link the licence text, not just name it.
+  EXPECT_TRUE(Contains(about, "blob/main/LICENSE"));
   // Upstream is credited too: BrowserX would not exist without them.
   EXPECT_TRUE(Contains(about, "chromium.org"));
   EXPECT_TRUE(Contains(about, "chromiumembedded/cef"));
@@ -272,6 +282,26 @@ TEST(InternalPages, CreditsAppearOnEveryPageAndOnAbout) {
   EXPECT_FALSE(Contains(escaped, "<img src=x"));
   EXPECT_FALSE(Contains(escaped, "<script>alert"));
   EXPECT_TRUE(Contains(escaped, "&lt;img src=x"));
+}
+
+TEST(InternalPages, LicenceIsPersonalUseOnlyEverywhere) {
+  // One source of truth: the same four restrictions appear in the constant, on the
+  // About page and in the CLI. A permissive licence must never creep back in.
+  const std::string terms = browserx::web::kProjectLicenceTerms;
+  for (const char* restriction : {"personal, non-commercial", "no modification",
+                                  "no redistribution or resale"}) {
+    EXPECT_TRUE(terms.find(restriction) != std::string::npos);
+  }
+  EXPECT_EQ(std::string(browserx::web::kProjectLicence),
+            std::string("BrowserX Personal-Use License"));
+  EXPECT_TRUE(std::string(browserx::web::kProjectLicenceUrl).find("LICENSE") != std::string::npos);
+
+  const std::string about = RenderPage(PageKind::kAbout, SampleData());
+  EXPECT_TRUE(Contains(about, browserx::web::kProjectLicenceTerms));
+  EXPECT_FALSE(Contains(about, "BSD-3-Clause (BrowserX)"));
+  // The upstream licences are still credited - not relicensed.
+  EXPECT_TRUE(Contains(about, "third-party licences for the Chromium/CEF runtime") ||
+              Contains(about, "keeps its own licences"));
 }
 
 TEST(InternalPages, IdentityConstantsMatchTheProduct) {
