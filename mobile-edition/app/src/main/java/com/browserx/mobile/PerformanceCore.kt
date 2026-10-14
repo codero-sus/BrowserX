@@ -282,6 +282,30 @@ private object Fallback {
                 metricsIntervalMs = 1000, cacheSizeMb = if (lowRam) 64 else 256, lazyNewTabs = true,
                 reduceMotion = false,
             )
+            // Specialist modes (approximate fallback only — the C++ core has the real
+            // policy). Same shape as the desktop: nothing throttled, nothing unloaded,
+            // thresholds raised, tight telemetry.
+            Mode.SUPER_INTERNET -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false, blockMedia = false,
+                blockFonts = false, blockThirdParty = false, blockTrackers = true, sleepAfterSeconds = 0,
+                discardAfterSeconds = 0, warnPressure = 0.90, discardPressure = 0.95,
+                keepDisplayAwake = false, metricsIntervalMs = 500,
+                cacheSizeMb = if (lowRam) 128 else 1024, lazyNewTabs = false, reduceMotion = false,
+            )
+            Mode.DOWNLOAD -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false, blockMedia = false,
+                blockFonts = false, blockThirdParty = false, blockTrackers = true, sleepAfterSeconds = 0,
+                discardAfterSeconds = 0, warnPressure = 0.92, discardPressure = 0.97,
+                keepDisplayAwake = true, metricsIntervalMs = 1000,
+                cacheSizeMb = if (lowRam) 128 else 2048, lazyNewTabs = false, reduceMotion = false,
+            )
+            Mode.STREAMING -> RuntimePolicy(
+                backgroundThrottling = false, targetFps = 0.0, blockImages = false, blockMedia = false,
+                blockFonts = false, blockThirdParty = false, blockTrackers = true, sleepAfterSeconds = 0,
+                discardAfterSeconds = 0, warnPressure = 0.88, discardPressure = 0.95,
+                keepDisplayAwake = true, metricsIntervalMs = 1000,
+                cacheSizeMb = if (lowRam) 128 else 1024, lazyNewTabs = false, reduceMotion = false,
+            )
         }
         return ModePlan(
             mode = mode,
@@ -290,7 +314,15 @@ private object Fallback {
             enableFeatures = emptyList(),
             disableFeatures = emptyList(),
             runtime = runtime,
-            notes = listOf("Native core not loaded — Kotlin fallback policy in use."),
+            notes = listOf(
+                "Native core not loaded — Kotlin fallback policy in use.",
+                if (mode in Mode.specialists) {
+                    "Specialist modes need the native core for their boot switches and Chromium " +
+                        "features; this fallback only applies the runtime policy."
+                } else {
+                    "Boot switches come from the core, so the fallback applies runtime policy only."
+                },
+            ),
             warnings = listOf("Install a build with the NDK-compiled core for the real mode engine."),
             memoryBudgetMb = 0,
         )
@@ -317,6 +349,11 @@ private object Fallback {
             Mode.LOW_RAM -> 0.70 to 0.78
             Mode.ECO -> 0.72 to 0.80
             Mode.GAME -> 0.85 to 0.92
+            // A specialist mode accepts more pressure before it interferes, because
+            // interfering means killing the transfer or the stream it was chosen for.
+            Mode.SUPER_INTERNET -> 0.90 to 0.95
+            Mode.DOWNLOAD -> 0.92 to 0.97
+            Mode.STREAMING -> 0.88 to 0.95
             else -> 0.80 to 0.88
         }
         val (action, level) = when {
@@ -343,6 +380,11 @@ private object Fallback {
         if (policy == AutoPilotMode.OFF) return AutoPilotDecision(false, false, currentMode, "", "")
         fun propose(target: Mode, reason: String, rule: String) =
             AutoPilotDecision(true, policy == AutoPilotMode.ASK, target, reason, rule)
+        // Same rule as the core: never move the user off a specialist mode to save
+        // battery — that is exactly when a long transfer runs.
+        if (Mode.specialists.contains(currentMode)) {
+            return AutoPilotDecision(false, false, currentMode, "", "")
+        }
         return when {
             onBattery && batteryPercent in 0.0..25.0 && currentMode != Mode.ECO ->
                 propose(Mode.ECO, "Battery at ${batteryPercent.toInt()}%", "battery-low")
