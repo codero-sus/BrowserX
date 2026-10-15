@@ -367,6 +367,22 @@ def check_preview(report: Report) -> None:
     report.add(group, "preview server", "ok", "stdlib-only Python (preview/serve.py)")
 
 
+def sdk_version_key(name: str) -> list[int]:
+    """The same ordering tools/build_windows.py uses to choose an SDK, imported from it so
+    the report cannot name a different one than the build will use."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "browserx_build_windows", str(REPO_ROOT / "tools" / "build_windows.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.sdk_version_key(name)
+    except Exception:
+        # A partial checkout, or a broken tools/ directory: fall back to the same rule
+        # rather than failing the whole report, and keep it identical on purpose.
+        return [int(part) if part.isdigit() else 0 for part in re.split(r"[.\-+]", name)]
+
+
 def check_windows(report: Report) -> None:
     """What building the browser on Windows needs - the question, answered directly.
 
@@ -415,13 +431,29 @@ def check_windows(report: Report) -> None:
     # --- the Windows SDK ----------------------------------------------------
     if not on_windows:
         report.add(group, "Windows 10/11 SDK", "info", "Windows-only: not checkable from here",
-                   "comes with the workload above (ucrt, um, shared + x64 libraries)")
+                   "one is required, and any one works: tick Windows 11 SDK (10.0.26100) "
+                   "unless the installer refuses it, in which case Windows 10 SDK "
+                   "(10.0.19041). Install exactly one - the build uses the newest and "
+                   "ignores the rest")
     else:
         kits = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / \
             "Windows Kits" / "10" / "Include"
-        versions = sorted(p.name for p in kits.iterdir() if p.is_dir()) if kits.is_dir() else []
+        versions = sorted((p.name for p in kits.iterdir() if p.is_dir()),
+                          key=sdk_version_key, reverse=True) if kits.is_dir() else []
         if versions:
-            report.add(group, "Windows 10/11 SDK", "ok", f"{versions[-1]} (x64 libraries present)")
+            report.add(group, "Windows 10/11 SDK", "ok",
+                       f"{versions[0]} will be used (x64 libraries present)")
+            if len(versions) > 1:
+                # The build uses the newest and ignores the rest, so extra SDKs are pure
+                # disk cost - and on a machine that is short of space, that is worth
+                # saying. It does not guess at the size: these vary, and the Visual Studio
+                # Installer shows the figure when the tick is removed.
+                report.add(group, "extra SDKs", "info",
+                           f"{len(versions) - 1} more installed ({', '.join(versions[1:4])}"
+                           f"{', …' if len(versions) > 4 else ''}); the build uses only "
+                           "the newest",
+                           "untick them in the Visual Studio Installer's Modify screen to "
+                           "reclaim the space")
         else:
             report.add(group, "Windows 10/11 SDK", "missing",
                        "no Windows SDK include tree found",

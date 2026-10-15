@@ -164,7 +164,25 @@ Download **Build Tools for Visual Studio 2022** ("Tools for Visual Studio" on th
 details** pane on the right and leave ticked only:
 
 * **MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)**
-* **Windows 11 SDK (10.0.26100)** — or any single Windows 10/11 SDK
+* **one** Windows SDK — the installer usually offers three:
+
+| SDK offered | Take it? |
+|-------------|----------|
+| **Windows 11 SDK (10.0.26100)** | **Yes** — the newest, and the workload marks it *Recommended* |
+| Windows 11 SDK (10.0.22621) or (10.0.22000) | Only if the newest refuses to install |
+| Windows 10 SDK (10.0.19041) | The safe fallback: it installs on any Windows 10 |
+
+**Exactly one.** BrowserX calls no version-specific API — the entire Windows surface it
+uses is `CreateMutexA`, `CloseHandle`, `GetModuleFileNameA` and `GetFileAttributesA`, all
+of which have existed since Windows XP — so the SDK version does not affect what can be
+built or what the binary runs on. Two SDKs are the same build plus wasted disk. `make
+requirements FOR=windows` says which one your machine will use and how many extra ones it
+finds.
+
+The SDK you build with does **not** set the oldest Windows the browser runs on: that is set
+by Chromium, and since Chromium 110 that floor is **Windows 10 or later** (Chrome 109 was
+the last release supporting Windows 7/8/8.1). CEF here is Chromium 144-era, so a Windows 7
+machine could not run the result whatever SDK you install.
 
 Untick CMake, vcpkg, Clang, ATL/MFC, and other SDKs: BrowserX needs none of them, and
 together they are most of the download. The installer shows the running total, so you can
