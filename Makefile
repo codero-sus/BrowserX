@@ -166,6 +166,7 @@ help:
 	@echo "  make pages           render every browserx:// page to out/pages/"
 	@echo "  make ui-check        drive those pages and the preview in jsdom (needs node)"
 	@echo "  make update          pull, rebuild what this machine can build, verify"
+	@echo "  make gui             build the browser from a window (Tkinter, no dependencies)"
 	@echo "  make check-windows   the Windows build compiles the same sources, no POSIX leaks"
 	@echo "  make requirements    what this machine has, per build target (FOR=core|browser|windows|mobile|preview)"
 	@echo "  make improvements    verify every logged improvement against the code"
@@ -288,7 +289,7 @@ check-compile: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
 	@echo ""
 
 .PHONY: check
-check: check-compile check-improvements check-windows
+check: check-compile check-improvements check-windows check-gui
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
@@ -497,6 +498,20 @@ ui-check: pages $(BENCHPAGE_BIN)
 	echo "  the same pages through the preview server (start it with 'make preview'):"; \
 	BROWSERX_JSDOM="$$spec" node $(ROOT)/tools/ui_check/preview_check.mjs; \
 	[ $$status -eq 0 ] || exit $$status
+
+# -----------------------------------------------------------------------------
+# Build window (Tkinter; no pip install, no display needed for the checks)
+# -----------------------------------------------------------------------------
+# The window is a front-end: every button runs a command that exists on the command line,
+# and the requirements it shows come from the same report `make requirements` prints. These
+# two targets keep it honest - the self-test exercises the job list, the gating and the
+# process runner without opening a window, so it can run on a machine that has no tkinter.
+.PHONY: gui gui-check
+gui:
+	@$(PYTHON) $(ROOT)/tools/build_gui.py
+
+gui-check:
+	@$(PYTHON) $(ROOT)/tools/build_gui.py --self-test
 
 # -----------------------------------------------------------------------------
 # Windows build checks (run on any machine: they read, they do not compile)

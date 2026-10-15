@@ -198,7 +198,9 @@ out\BrowserX.exe
 ```
 
 The Windows build is the same sources and the same rules, compiled by MSVC instead of
-g++; `make check-windows` proves both, on any machine. The [Windows section of
+g++; `make check-windows` proves both, on any machine. There is also a window for it —
+`python tools\build_gui.py` — which runs exactly those commands, greys out what cannot
+run on the machine and says why, and needs nothing beyond Python's own Tkinter. The [Windows section of
 `BUILDING.md`](BUILDING.md) has the tool table with sizes, and says plainly what has
 and has not been verified so far.
 
