@@ -133,6 +133,14 @@ TEST_BIN       := $(OUT_DIR)/browserx_tests
 BENCH_BIN      := $(OUT_DIR)/browserx-flagplan
 DOCTOR_BIN     := $(OUT_DIR)/browserx-doctor
 
+# The source list, printed for tools/build_windows.py --check-sources: that script builds
+# the same files with MSVC, and this target is how it proves it rather than asserting it.
+# It runs the Makefile's own $(APP_SRCS) rule, so if the two builds ever diverge, the
+# comparison notices even though it is the Makefile that changed.
+.PHONY: print-app-sources
+print-app-sources:
+	@for f in $(APP_SRCS); do echo "$${f#$(ROOT)/}"; done
+
 # -----------------------------------------------------------------------------
 # Help
 # -----------------------------------------------------------------------------
@@ -150,7 +158,7 @@ help:
 	@echo "  make headers         fetch CEF headers only (for compile checks)"
 	@echo "  make build           build out/BrowserX ($(BUILD_TYPE))"
 	@echo "  make debug           build with -O0 -g"
-	@echo "  make check           compile-check every source file (strict)"
+	@echo "  make check           compile-check every source file (strict) + the ledger + the Windows checks"
 	@echo "  make test            build + run unit tests (no CEF required)"
 	@echo "  make bench           print the resolved flag plan for all modes"
 	@echo "  make perf            measure BrowserX's own overhead against budgets"
@@ -158,7 +166,8 @@ help:
 	@echo "  make pages           render every browserx:// page to out/pages/"
 	@echo "  make ui-check        drive those pages and the preview in jsdom (needs node)"
 	@echo "  make update          pull, rebuild what this machine can build, verify"
-	@echo "  make requirements    what this machine has, per build target (FOR=core|browser|mobile|preview)"
+	@echo "  make check-windows   the Windows build compiles the same sources, no POSIX leaks"
+	@echo "  make requirements    what this machine has, per build target (FOR=core|browser|windows|mobile|preview)"
 	@echo "  make improvements    verify every logged improvement against the code"
 	@echo "  make doctor          environment + capability report"
 	@echo "  make run             build and launch BrowserX"
@@ -277,7 +286,7 @@ check-compile: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
 	@echo ""
 
 .PHONY: check
-check: check-compile check-improvements
+check: check-compile check-improvements check-windows
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
@@ -486,6 +495,18 @@ ui-check: pages $(BENCHPAGE_BIN)
 	echo "  the same pages through the preview server (start it with 'make preview'):"; \
 	BROWSERX_JSDOM="$$spec" node $(ROOT)/tools/ui_check/preview_check.mjs; \
 	[ $$status -eq 0 ] || exit $$status
+
+# -----------------------------------------------------------------------------
+# Windows build checks (run on any machine: they read, they do not compile)
+# -----------------------------------------------------------------------------
+# Two things decide whether the Windows build will work, and neither needs Windows to
+# check: it must compile the same files as this Makefile, and it must not include POSIX
+# headers outside a platform guard. Both are checked here, on every `make check` run, so
+# the Windows path cannot rot unnoticed between the rare times it is built.
+.PHONY: check-windows
+check-windows:
+	@$(PYTHON) $(ROOT)/tools/build_windows.py --check-sources
+	@$(PYTHON) $(ROOT)/tools/build_windows.py --check-portability
 
 # -----------------------------------------------------------------------------
 # Update (the same updater on Linux and Windows: tools/update.sh / tools\update.cmd)

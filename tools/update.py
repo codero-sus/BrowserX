@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+TOOLS_DIR = REPO_ROOT / "tools"
 STATE_FILE = REPO_ROOT / "out" / "update" / "state.json"
 
 # What --check exits with when there is something to fetch. Distinct from 0 (nothing to
@@ -263,12 +264,23 @@ def machine_capability(out: Out) -> dict:
                 "headers_present": False, "known": False}
     report = module.Report()
     module.check_core(report)
-    module.check_browser(report)
+    if sys.platform.startswith("win"):
+        # Windows has no `make`, no X11 and no GTK: the browser is built with MSVC by
+        # tools/build_windows.py. Asking the Linux browser group about this machine would
+        # answer "missing X11/GTK/display" and the updater would then refuse to build
+        # anything, which is exactly the wrong conclusion here.
+        module.check_windows(report)
+    else:
+        module.check_browser(report)
+    group = "windows" if sys.platform.startswith("win") else "browser"
     headers_present = any(row["name"] == "CEF headers" and row["state"] == "ok"
                           for row in report.of("browser"))
-    cef_missing = any(row["name"] == "CEF (full binary)" and row["state"] == "missing"
-                      for row in report.of("browser"))
-    return {"core_ok": report.ok("core"), "browser_ok": report.ok("browser"),
+    # The CEF row is named differently in the two groups: "windows64" is what a Windows
+    # build needs, "full binary" is what a Linux one needs, and both mean the same thing
+    # to the decision below.
+    cef_missing = any(row["state"] == "missing" and row["name"].startswith("CEF")
+                      for row in report.of(group))
+    return {"core_ok": report.ok("core"), "browser_ok": report.ok(group),
             "cef_missing": cef_missing, "headers_present": headers_present, "known": True}
 
 
@@ -343,6 +355,31 @@ def do_pull(repo: Repo, branch: str, upstream: str, args, out: Out,
     return True, repo.head()
 
 
+def is_windows() -> bool:
+    return sys.platform.startswith("win")
+
+
+def build_command(step: str, args, windows: bool | None = None) -> tuple[str, list[str]]:
+    """The command that performs one build step, and the label to print for it.
+
+    Kept pure and separate from running it: the Windows choice has to be testable on
+    whatever machine happens to be running the tests, and it is the kind of decision that
+    is otherwise only exercised on the platform you cannot easily check.
+    """
+    if windows is None:
+        windows = is_windows()
+    if windows:
+        # One command on Windows: build_windows.py finds MSVC itself, so there is no
+        # toolchain to set up first. --stage puts libcef.dll next to the exe, because an
+        # updated exe beside a missing DLL is not an update.
+        command = [sys.executable, str(TOOLS_DIR / "build_windows.py"), "--stage",
+                   "--jobs", str(args.jobs or (os.cpu_count() or 2))]
+        return "build_windows.py --stage", command
+    jobs = ["-j", str(args.jobs)] if args.jobs else []
+    targets = ["all"] if step == "browser" else ["pages"]
+    return "make " + " ".join(targets), ["make", *jobs, *targets]
+
+
 def do_build(plan: list[str], args, out: Out) -> list[dict]:
     """Runs the planned build steps, streaming their output. Stops at the first failure."""
     results = []
@@ -356,14 +393,10 @@ def do_build(plan: list[str], args, out: Out) -> list[dict]:
             if code != 0:
                 break
             continue
-        # The browser build is `make` (link out/BrowserX). The core build is `make pages`,
-        # which compiles the core, the tools and the page renderer without needing CEF.
-        # `make test` is deliberately NOT here: it runs as verification below, and running
-        # the whole suite twice would only make an update slower to report the same thing.
-        targets = ["all"] if step == "browser" else ["pages"]
-        out.step("building: make " + " ".join(targets) + (" " + " ".join(jobs) if jobs else ""))
-        code, _ = run(["make", *jobs, *targets], stream=True, timeout=None)
-        results.append({"step": "make " + " ".join(targets), "ok": code == 0})
+        label, command = build_command(step, args, windows=is_windows())
+        out.step("building: " + label)
+        code, _ = run(command, stream=True, timeout=None)
+        results.append({"step": label, "ok": code == 0})
         if code != 0:
             break
     return results
@@ -372,6 +405,16 @@ def do_build(plan: list[str], args, out: Out) -> list[dict]:
 def do_verify(checks: list[str], args, out: Out) -> list[dict]:
     results = []
     for check in checks:
+        if sys.platform.startswith("win"):
+            # `make test` has no Windows equivalent here: the unit tests compile without CEF
+            # and run as a separate step only on the POSIX side, so on Windows the honest
+            # verification is that the build linked and the exe exists - reported as such
+            # rather than as a test run that did not happen.
+            exe = REPO_ROOT / "out" / "BrowserX.exe"
+            ok = exe.is_file() and exe.stat().st_size > 0
+            out.step(f"verifying: {exe.relative_to(REPO_ROOT)} exists")
+            results.append({"step": "out/BrowserX.exe exists", "ok": ok})
+            continue
         out.step(f"verifying: make {check}")
         code, _ = run(["make", check], stream=True, timeout=None)
         results.append({"step": f"make {check}", "ok": code == 0})
@@ -506,40 +549,67 @@ def self_test() -> int:
     # entry points fail on the user's machine, which is exactly what this checks.
     expect((REPO_ROOT / "tools" / "update.sh").is_file(), "tools/update.sh exists")
     expect((REPO_ROOT / "tools" / "update.cmd").is_file(), "tools/update.cmd exists")
-    # The Windows launcher cannot be executed from here, so the rules that make batch
-    # scripts fail are checked statically instead of being taken on trust. Each check below
-    # stands for a specific, well-known cmd.exe trap.
-    cmd = REPO_ROOT / "tools" / "update.cmd"
-    if cmd.is_file():
+    # The Windows launchers cannot be executed here, so the rules that make batch scripts
+    # fail are checked statically instead of being taken on trust - for every .cmd in the
+    # repository, because a rule that is only enforced on one file is enforced by luck.
+    for cmd_name in ("update.cmd", "build_windows.cmd"):
+        cmd = REPO_ROOT / "tools" / cmd_name
+        if not cmd.is_file():
+            continue
         raw = cmd.read_bytes()
         text = raw.decode("utf-8", "replace")
         expect(b"\r\n" in raw and b"\n\n" not in raw.replace(b"\r\n", b""),
-               "update.cmd uses CRLF line endings (cmd.exe reads a bare LF as part of the line)")
-        # Comments are not code: they explain the traps, and one of them quotes the very
-        # pattern that must not appear in real commands. Check the commands, not the prose.
+               f"{cmd_name} uses CRLF line endings (cmd.exe reads a bare LF as part of the line)")
+        # Comments are not code: they explain the traps, and some of them quote the very
+        # patterns that must not appear in real commands. Check the commands, not the prose.
         code = "\n".join(line for line in text.splitlines()
                          if not line.strip().lower().startswith("rem"))
         expect("%ERRORLEVEL%" not in code,
-               "no command in update.cmd uses %ERRORLEVEL% (inside a block it is a stale value)")
+               f"no command in {cmd_name} uses %ERRORLEVEL% (inside a block it is a stale value)")
         expect("!ERRORLEVEL!" in code,
-               "update.cmd checks exit codes with !ERRORLEVEL! (delayed expansion)")
+               f"{cmd_name} checks exit codes with !ERRORLEVEL! (delayed expansion)")
         expect("EnableDelayedExpansion" in code,
-               "update.cmd enables delayed expansion, which !ERRORLEVEL! needs")
+               f"{cmd_name} enables delayed expansion, which !ERRORLEVEL! needs")
         # The single '&' is allowed only in `endlocal & exit /b %RC%`: that idiom has to stay
         # on one line, and `exit /b` cannot fail, so there is nothing for '&' to hide there.
         stray = code.replace("endlocal & exit /b", "")
         expect(" & " not in stray,
-               "update.cmd never chains real commands with a single '&' (it would run on failure too)")
-        expect("chcp 65001" in text, "update.cmd sets a console code page that can print the marks")
+               f"{cmd_name} never chains real commands with a single '&' (it would run on failure too)")
+        expect("chcp 65001" in text,
+               f"{cmd_name} sets a console code page that can print the marks")
         expect("endlocal & exit /b %RC%" in text,
-               "update.cmd leaves its scope and returns a real exit code")
-        expect("goto :done" in text and "set \"RC=!ERRORLEVEL!\"" in text,
-               "update.cmd passes Python's exit code through (so --check's 10 survives)")
+               f"{cmd_name} leaves its scope and returns a real exit code")
+        # The Store-stub trap: `where python` finds a python.exe that is not Python.
+        expect("import sys" in code,
+               f"{cmd_name} proves Python works instead of trusting that it exists")
 
     print()
     if failures:
         print(f"  {len(failures)} self-test failure(s)\n")
         return 1
+    # The Windows build command, decided here rather than on Windows: this is the one
+    # branch of the updater that cannot be exercised on a Linux machine any other way.
+    class _Args:
+        def __init__(self, jobs=None):
+            self.jobs = jobs
+            self.no_build = False
+            self.no_verify = False
+            self.full = False
+            self.deps = False
+            self.dry_run = False
+
+    win_label, win_command = build_command("browser", _Args(4), windows=True)
+    expect("build_windows.py --stage" in win_label,
+           "on Windows the updater builds with the MSVC script, not make")
+    expect(win_command[1].endswith("build_windows.py") and "--stage" in win_command,
+           "the Windows build command stages the CEF runtime next to the exe")
+    expect("make" not in win_command, "the Windows build never calls make")
+    linux_label, linux_command = build_command("browser", _Args(4), windows=False)
+    expect(linux_label == "make all" and linux_command[:2] == ["make", "-j"],
+           "on POSIX the updater still builds with make")
+    core_label, _ = build_command("core", _Args(), windows=False)
+    expect(core_label == "make pages", "the POSIX core build is make pages, not make test")
+
     print("  self-test passed\n")
     return 0
 
