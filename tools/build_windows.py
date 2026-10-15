@@ -78,6 +78,13 @@ CEF_RUNTIME_FILES = (
 )
 CEF_RUNTIME_DIRS = ("locales", "swiftshader")
 
+# The SDK this project is developed and released against. Not a list of acceptable SDKs -
+# any one Windows 10/11 SDK builds BrowserX, because the whole Win32 surface it uses is
+# CreateMutexA/CloseHandle/GetModuleFileNameA/GetFileAttributesA. This is the one the
+# tooling names when something newer is installed, so a preview SDK is chosen knowingly
+# rather than by accident.
+RECOMMENDED_SDK = "10.0.26100"
+
 # The libraries CEF documents for a Windows client (libcef.lib plus the system ones it
 # calls through). libcef_dll_wrapper is built here from the distribution's own sources -
 # CEF does not ship a prebuilt wrapper, and linking libcef.lib without it fails at
@@ -196,6 +203,32 @@ def sdk_version_key(name: str) -> list[int]:
     "10.0.10000.0" before "10.0.9999.0".
     """
     return [int(part) if part.isdigit() else 0 for part in re.split(r"[.\-+]", name)]
+
+
+def sdk_note(chosen: str) -> str:
+    """One line about the chosen SDK, or an empty string when there is nothing to say.
+
+    Newer is not better here. A Windows 11 SDK numbered above the released one is usually
+    an Insider preview (Canary/Dev), and a preview toolchain is a strange thing to ship a
+    browser against for no gain: none of the APIs this project calls has changed since
+    Windows XP. So the build says which one it is using and which one this project targets,
+    and then does what the machine allows.
+    """
+    if not chosen:
+        return ""
+    try:
+        # Compared on major.minor.build only. An SDK directory is named with a fourth
+        # component ("10.0.26100.8249"), and comparing all four makes the same SDK look
+        # newer than itself - which is exactly the false alarm the dry run caught.
+        newer = sdk_version_key(chosen)[:3] > sdk_version_key(RECOMMENDED_SDK)[:3]
+    except (TypeError, ValueError):
+        return ""
+    if newer:
+        return (f"{chosen} is newer than the SDK this project targets "
+                f"({RECOMMENDED_SDK}). Newer buys nothing here and an SDK above the "
+                "released one is often a Windows Insider preview. Building is fine; just "
+                "know which one you are building with.")
+    return ""
 
 
 def find_windows_sdk() -> dict | None:
@@ -531,6 +564,9 @@ def build(args) -> int:
     say(f"  compiler   : {cl}")
     if sdk:
         say(f"  Windows SDK: {sdk.get('version', 'unknown')}")
+        note = sdk_note(str(sdk.get("version", "")))
+        if note:
+            warn(note)
     say(f"  sources    : {len(plan['sources'])} browser + {len(plan['wrapper'])} CEF wrapper"
         f" + {len(plan['tools'])} tools")
     say(f"  config     : {'debug' if args.debug else 'release'}, jobs {args.jobs}")
@@ -812,6 +848,21 @@ def self_test() -> int:
     expect(sdk_version_key("10.0.26100.0") == [10, 0, 26100, 0],
            "a version parses into its numeric parts")
     expect(sdk_version_key("nonsense") == [0], "an unparsable version does not crash the sort")
+
+    # Choosing a preview SDK silently is the failure this note exists to prevent: the
+    # number alone is all the build can know, so it says what it knows and no more.
+    expect(sdk_note(RECOMMENDED_SDK) == "", "the recommended SDK needs no note")
+    expect(sdk_note("10.0.22621.0") == "", "an older SDK needs no note")
+    expect("newer than the SDK this project targets" in sdk_note("10.0.28000.2705"),
+           "a newer SDK - the usual shape of an Insider preview - is named, not used silently")
+    expect("Windows Insider preview" in sdk_note("10.0.28000.2705"),
+           "the note says what a version above the released one usually means")
+    expect(sdk_note("") == "", "no SDK, nothing to say")
+    # The false alarm this caught: a full SDK directory name carries a fourth component,
+    # and comparing all four makes 10.0.26100.8249 "newer" than 10.0.26100.
+    expect(sdk_note("10.0.26100.8249") == "",
+           "the same SDK named with its build component is not a newer SDK")
+    expect(sdk_note("10.0.26100.0") == "", "nor is the zeroed form")
 
     # --- CEF's wrapper is not compiled like our code -------------------------------
     cef = Path("/tmp/fake-cef")
