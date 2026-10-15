@@ -136,6 +136,9 @@ PageData BuildPageData(const app::CefHost& host) {
   data.plan_text = host.plan().ToReport();
   data.profile_report = core::DescribeProfile(host.system_profile());
   data.catalog_report = core::RenderCatalogReport(false);
+  // The start page's search box uses the same template as the omnibox, so the page
+  // cannot search somewhere the user did not configure.
+  data.search_template = host.settings().settings().search_template;
 
   // Every mode, resolved for this machine: the same JSON `make bench --json`
   // prints, so what the page shows is what the browser would apply.

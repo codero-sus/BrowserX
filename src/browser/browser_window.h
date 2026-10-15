@@ -78,6 +78,13 @@ enum ChromeId {
   kIdOpenDownloads,
   kIdOpenModes,
   kIdOpenBench,
+  kIdOpenShortcuts,
+  kIdJumpTo = 240,
+  // The jump list (Ctrl+K) needs ids for pages that have no menu item of their own.
+  // Kept below the tab strip's ids (10000+) so a view can never be confused for one.
+  kIdJumpPagesMenu = 250,   // the submenu headings themselves (never actioned)
+  kIdJumpModesMenu = 251,
+  kIdJumpPageBase = 1000,
   kIdDevTools,
   kIdFindInPage,
   kIdPrint,
@@ -256,6 +263,12 @@ class BrowserWindow : public CefWindowDelegate,
   void OpenInternalPage(const std::string& path);
   void ShowMainMenu(const CefPoint& screen_point);
   void ShowModeMenu(const CefPoint& screen_point);
+  /// Adds every mode item to a menu model. Shared by the mode menu and Ctrl+K, so a
+  /// new mode cannot leave one of them behind.
+  void AddModeMenuItems(CefRefPtr<CefMenuModel> model);
+  /// The Ctrl+K jump list: every page and every mode, from anywhere - including
+  /// ordinary web pages, where an internal page's own palette cannot run.
+  void ShowJumpMenu();
 
   // --- CefWindowDelegate ---------------------------------------------------
   void OnWindowCreated(CefRefPtr<CefWindow> window) override;
