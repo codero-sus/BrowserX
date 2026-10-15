@@ -397,6 +397,206 @@ std::string StripTrackingParams(std::string_view url_text) {
   return base + "?" + fmt::Join(kept, "&");
 }
 
+// --- origin, literals, query, domains -------------------------------------
+// These exist because four different parts of the UI need the same answers
+// (status bar, shield, bookmarks, permission display) and five slightly different
+// answers were worse than one tested one.
+
+std::string OriginOf(std::string_view url_text) {
+  const std::string scheme = SchemeOf(url_text);
+  const std::string host = HostOf(url_text);
+  if (scheme.empty() || host.empty()) return std::string();
+  const int port = PortOf(url_text);
+  const int default_port = DefaultPortFor(scheme);
+  if (port > 0 && port != default_port) return scheme + "://" + host + ":" + std::to_string(port);
+  return scheme + "://" + host;
+}
+
+bool IsIpLiteralHost(std::string_view host) {
+  std::string_view text = host;
+  if (text.size() >= 2 && text.front() == '[' && text.back() == ']') return true;  // [::1]
+  if (text.find(':') != std::string_view::npos) return true;                        // bare IPv6
+  return LooksLikeIpv4(text);
+}
+
+namespace {
+
+/// Splits a URL into the part before '?', the query, and the fragment. The fragment is
+/// tracked separately because it is not a query parameter: dropping it while editing the
+/// query would silently lose the reader's place in the page, and leaving it inside the
+/// query would make "...#section" look like a parameter value.
+void SplitUrlParts(std::string_view url, std::string* base, std::string* query,
+                   std::string* fragment) {
+  std::string_view rest = url;
+  base->clear();
+  query->clear();
+  fragment->clear();
+  const size_t hash = rest.find('#');
+  if (hash != std::string_view::npos) {
+    *fragment = std::string(rest.substr(hash));
+    rest = rest.substr(0, hash);
+  }
+  const size_t question = rest.find('?');
+  if (question == std::string_view::npos) {
+    *base = std::string(rest);
+    return;
+  }
+  *base = std::string(rest.substr(0, question));
+  *query = std::string(rest.substr(question + 1));
+}
+
+/// Rebuilds the URL from the three parts, leaving a fragment attached to the path when
+/// there is no query left.
+std::string JoinUrlParts(const std::string& base, const std::vector<std::string>& pairs,
+                         const std::string& fragment) {
+  if (pairs.empty()) return base + fragment;
+  return base + "?" + fmt::Join(pairs, "&") + fragment;
+}
+
+int HexDigit(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+}  // namespace
+
+std::string WithoutQueryParam(std::string_view url, std::string_view name) {
+  const std::string lower_name = fmt::ToLower(name);
+  std::string base;
+  std::string query;
+  std::string fragment;
+  SplitUrlParts(url, &base, &query, &fragment);
+  if (query.empty()) return std::string(url);
+
+  std::vector<std::string> kept;
+  for (const std::string& pair : fmt::Split(query, '&')) {
+    const size_t equals = pair.find('=');
+    const std::string key = fmt::ToLower(equals == std::string::npos ? pair : pair.substr(0, equals));
+    if (lower_name.empty() || key == lower_name) continue;  // dropped
+    kept.push_back(pair);
+  }
+  return JoinUrlParts(base, kept, fragment);
+}
+
+std::string QueryParam(std::string_view url, std::string_view name) {
+  const std::string lower_name = fmt::ToLower(name);
+  std::string base;
+  std::string query;
+  std::string fragment;
+  SplitUrlParts(url, &base, &query, &fragment);
+  for (const std::string& pair : fmt::Split(query, '&')) {
+    const size_t equals = pair.find('=');
+    if (equals == std::string::npos) continue;
+    if (fmt::ToLower(pair.substr(0, equals)) != lower_name) continue;
+    std::string value;
+    for (size_t i = equals + 1; i < pair.size(); ++i) {
+      if (pair[i] == '+') {
+        value += ' ';
+      } else if (pair[i] == '%' && i + 2 < pair.size()) {
+        const int high = HexDigit(pair[i + 1]);
+        const int low = HexDigit(pair[i + 2]);
+        if (high < 0 || low < 0) {
+          value += pair[i];
+        } else {
+          value += static_cast<char>(high * 16 + low);
+          i += 2;
+        }
+      } else {
+        value += pair[i];
+      }
+    }
+    return value;
+  }
+  return std::string();
+}
+
+namespace {
+
+/// Multi-label public suffixes that change what "the site" means. Not the full PSL -
+/// a curated list of the ones that appear in ordinary browsing, with a documented
+/// fallback to the last two labels. Being wrong about the PSL means blocking or
+/// allowing the wrong site, so the list is deliberately conservative and tested.
+const char* const kPublicSuffixes[] = {
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "net.uk", "sch.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
+    "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+    "co.jp", "ne.jp", "or.jp", "go.jp", "ac.jp", "ad.jp",
+    "com.br", "com.mx", "com.ar", "com.tr", "com.cn", "com.hk", "com.sg", "com.tw",
+    "co.in", "net.in", "org.in", "gov.in", "ac.in", "co.za", "co.kr", "co.il",
+    "com.pl", "com.ua", "com.ru", "co.id", "or.id", "my.id", "web.id",
+    "github.io", "gitlab.io", "pages.dev", "workers.dev", "vercel.app", "netlify.app",
+    "herokuapp.com", "onrender.com", "firebaseapp.com", "web.app", "appspot.com",
+};
+
+}  // namespace
+
+std::string RegistrableDomain(std::string_view host) {
+  const std::string lower = fmt::ToLower(fmt::Trim(host));
+  if (lower.empty()) return std::string();
+  // A trailing dot is legal in DNS ("example.com.") and means the same host.
+  std::string text = lower;
+  if (text.back() == '.') text.pop_back();
+  if (IsIpLiteralHost(text)) return text;
+
+  const std::vector<std::string> labels = fmt::Split(text, '.');
+  if (labels.size() <= 2) return text;
+
+  // Longest known suffix match wins, so "a.b.example.co.uk" -> "example.co.uk".
+  size_t suffix_labels = 0;
+  for (const char* suffix : kPublicSuffixes) {
+    const std::vector<std::string> suffix_parts = fmt::Split(suffix, '.');
+    if (suffix_parts.size() >= labels.size()) continue;
+    bool matches = true;
+    for (size_t i = 0; i < suffix_parts.size(); ++i) {
+      if (labels[labels.size() - suffix_parts.size() + i] != suffix_parts[i]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches && suffix_parts.size() > suffix_labels) suffix_labels = suffix_parts.size();
+  }
+  // With no multi-label suffix match the public suffix is the TLD itself, so
+  // "www.example.com" is "example.com" - not "com".
+  const size_t public_suffix_labels = suffix_labels > 0 ? suffix_labels : 1;
+  const size_t keep = public_suffix_labels + 1;
+  if (keep >= labels.size()) return text;
+  std::vector<std::string> tail(labels.end() - static_cast<long>(keep), labels.end());
+  return fmt::Join(tail, ".");
+}
+
+bool SameSite(std::string_view a, std::string_view b) {
+  const std::string left = RegistrableDomain(HostOf(a));
+  const std::string right = RegistrableDomain(HostOf(b));
+  if (left.empty() || right.empty()) return false;
+  return left == right;
+}
+
+bool SchemeIsSecure(std::string_view url_text) {
+  const std::string scheme = SchemeOf(url_text);
+  return scheme == "https" || scheme == "browserx" || scheme == "about" || scheme == "file";
+}
+
+bool IsLocalhost(std::string_view host) {
+  const std::string lower = fmt::ToLower(host);
+  if (lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower == "[::1]") return true;
+  return fmt::EndsWith(lower, ".localhost");
+}
+
+std::string NormalizeForCompare(std::string_view url_text) {
+  std::string out;
+  for (char c : url_text) out += c;
+  // Fragments never change which resource is being fetched.
+  const size_t hash = out.find('#');
+  if (hash != std::string::npos) out.erase(hash);
+  // A trailing slash after a path means the same resource as the path itself.
+  const size_t question = out.find('?');
+  const size_t slash_end = question == std::string::npos ? out.size() : question;
+  if (slash_end > 1 && out[slash_end - 1] == '/') out.erase(slash_end - 1, 1);
+  return out;
+}
+
 bool HostMatchesPattern(std::string_view host, std::string_view pattern) {
   // Allocation-free on purpose: the shield calls this once per rule for every
   // resource request, and an earlier version lowercased *both* strings into new

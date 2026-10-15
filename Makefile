@@ -121,6 +121,7 @@ CHECK_OBJS     := $(patsubst $(ROOT)/%.cc,$(CHECK_OBJ_DIR)/%.o,$(APP_SRCS))
 # Compiled by `make test` without CEF headers on the include path, so they must
 # stay CEF-free (check-test-extra-purity enforces it).
 TEST_EXTRA_SRCS := $(SRC_DIR)/app/cli.cc $(SRC_DIR)/app/app_paths.cc \
+                   $(SRC_DIR)/app/library_store.cc \
                    $(SRC_DIR)/browser/session.cc $(SRC_DIR)/browser/tab_commands.cc \
                    $(SRC_DIR)/web/internal_pages.cc $(SRC_DIR)/web/bench_page.cc
 TEST_OBJS      := $(patsubst $(ROOT)/%.cc,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS)) \
@@ -155,6 +156,9 @@ help:
 	@echo "  make perf            measure BrowserX's own overhead against budgets"
 	@echo "  make bench-page      write the offline benchmark page (browserx://bench)"
 	@echo "  make pages           render every browserx:// page to out/pages/"
+	@echo "  make ui-check        drive those pages and the preview in jsdom (needs node)"
+	@echo "  make requirements    what this machine has, per build target (FOR=core|browser|mobile|preview)"
+	@echo "  make improvements    verify every logged improvement against the code"
 	@echo "  make doctor          environment + capability report"
 	@echo "  make run             build and launch BrowserX"
 	@echo "  make run-nosandbox   launch without the Chromium sandbox (dev)"
@@ -173,6 +177,15 @@ help:
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
+# What this machine needs, checked rather than claimed. Answers "can I build what, here?"
+# and exits non-zero when what you asked for cannot be built:
+#   make requirements                  everything, as a table
+#   make requirements FOR=core         only the core/tests/tools (exit code gates scripts)
+# FOR accepts core, browser, mobile or preview.
+.PHONY: requirements
+requirements:
+	@$(PYTHON) $(ROOT)/tools/check_build_requirements.py $(if $(FOR),--for $(FOR),)
+
 .PHONY: deps
 deps:
 	@$(PYTHON) $(ROOT)/tools/fetch_cef.py
@@ -247,14 +260,23 @@ $(CHECK_OBJ_DIR)/%.o: $(ROOT)/%.cc
 	@$(CXX) $(BASE_FLAGS) $(WARN) -Werror=return-type -Werror=delete-non-virtual-dtor \
 		-fsyntax-only $(OPT_FLAGS:-O2=-O0) $(SAN_FLAGS) $(DEFINES) -I$(ROOT)/src -I$(CHECK_CEF_ROOT) $<
 
-.PHONY: check
-check: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
+.PHONY: check-improvements
+check-improvements:
+	@$(PYTHON) $(TOOLS_DIR)/check_improvements.py --min 200
+
+# Compile-only check: every source file, against the real CEF headers. Split out from
+# `check` so the ledger gate (below) can fail without hiding a compiler error behind it.
+.PHONY: check-compile
+check-compile: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
 	@echo ""
 	@echo "  ✔ compile check passed ($(words $(APP_SRCS)) source files)"
 	@if [ -z "$(HAVE_CEF_DIST)" ]; then \
 		echo "    note: CEF headers only — run 'make deps' for a full build"; \
 	fi
 	@echo ""
+
+.PHONY: check
+check: check-compile check-improvements
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
@@ -353,6 +375,10 @@ $(PERF_BIN): $(TOOLS_DIR)/perf.cc $(CORE_SRCS)
 	@echo "  CXX+LD tools/perf.cc"
 	@$(CXX) $(CXX_STD) -O2 -pthread -I$(ROOT)/src $^ -o $@
 
+.PHONY: improvements
+improvements:
+	@$(PYTHON) $(TOOLS_DIR)/check_improvements.py --list
+
 .PHONY: pages
 pages: $(PAGES_BIN)
 	@$(PAGES_BIN) $(OUT_DIR)/pages --with-sample-session
@@ -432,6 +458,33 @@ sandbox-setup:
 .PHONY: package
 package: build
 	@bash $(ROOT)/tools/package.sh
+
+# -----------------------------------------------------------------------------
+# UI verification (jsdom): the rendered pages and the preview, driven end to end
+# -----------------------------------------------------------------------------
+# The browser itself has no JavaScript dependencies. This target is the exception, and it
+# is opt-in: if jsdom is missing it says so and how to get it, rather than failing with a
+# module-resolution stack trace.
+JSDOM_CANDIDATES := $(ROOT)/node_modules/jsdom/lib/api.js /tmp/uicheck/node_modules/jsdom/lib/api.js
+
+.PHONY: ui-check
+ui-check: pages $(BENCHPAGE_BIN)
+	@command -v node >/dev/null 2>&1 || { \
+		echo "  → node is not installed; skipping the jsdom UI checks"; exit 0; }
+	@spec=""; for candidate in $(JSDOM_CANDIDATES); do \
+		if [ -f "$$candidate" ]; then spec="$$candidate"; break; fi; done; \
+	if [ -z "$$spec" ]; then \
+		echo "  → jsdom is missing. Install it beside the checkout with:"; \
+		echo "      npm install jsdom --no-save"; \
+		exit 0; \
+	fi; \
+	echo ""; \
+	echo "  driving $(OUT_DIR)/pages in jsdom..."; \
+	BROWSERX_JSDOM="$$spec" node $(ROOT)/tools/ui_check/pages_check.mjs $(OUT_DIR)/pages; \
+	status=$$?; \
+	echo "  the same pages through the preview server (start it with 'make preview'):"; \
+	BROWSERX_JSDOM="$$spec" node $(ROOT)/tools/ui_check/preview_check.mjs; \
+	[ $$status -eq 0 ] || exit $$status
 
 # -----------------------------------------------------------------------------
 # UI preview (clickable design preview; runs in any browser, no CEF needed)

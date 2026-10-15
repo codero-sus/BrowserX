@@ -26,6 +26,7 @@
 #ifndef BROWSERX_APP_CEF_HOST_H_
 #define BROWSERX_APP_CEF_HOST_H_
 
+#include "app/library_store.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -73,6 +74,11 @@ class CefHost {
   SettingsStore& settings() { return settings_; }
   const SettingsStore& settings() const { return settings_; }
 
+  /// History and bookmarks. Owned here because a profile has exactly one of each, and the
+  /// internal pages, the window and the CLI all read the same instance.
+  LibraryStore& library() { return library_; }
+  const LibraryStore& library() const { return library_; }
+
   const core::SystemProfile& system_profile() const { return profile_; }
   const core::ModePlan& plan() const { return plan_; }
   core::ModePlan& mutable_plan() { return plan_; }
@@ -106,6 +112,7 @@ class CefHost {
   LaunchOptions options_;
   Paths paths_;
   SettingsStore settings_;
+  LibraryStore library_;
   core::SystemProfile profile_;
   core::ModePlan plan_;
   BrowserShell* shell_ = nullptr;

@@ -385,6 +385,7 @@ class BrowserWindow : public CefWindowDelegate,
   std::string initial_url_;
   std::string restored_session_json_;
   std::string current_url_;
+  std::string current_title_;  // last title the page reported, for history
   std::string status_message_;
   std::string flash_;
   std::string mode_label_ = "ULTRA";

@@ -306,9 +306,12 @@ const std::vector<FeatureEntry>& FeatureTable() {
        "Hardware video encoding: lowers CPU for calls/streaming."},
       {"NetworkContextPrefetch", Provenance::kVerified, Risk::kSafe, kSrcNetFeat,
        "Speculative connection prefetch: faster page starts in HIGH PERFORMANCE mode."},
-      {"ProcessPerSiteMainFrameThreshold", Provenance::kVerified, Risk::kSafe, kSrcContentFeat,
-       "Site-instance sharing threshold for main frames: tunes how aggressively same-site tabs share "
-       "processes."},
+      {"ProcessPerSiteUpToMainFrameThreshold", Provenance::kVerified, Risk::kSafe, kSrcContentFeat,
+       "Reuses a renderer process for same-site main frames while the frame count stays under a "
+       "threshold: fewer processes for the same pages. Enabled by default on desktop, so the value "
+       "is its parameters (ProcessPerSiteMainFrameThreshold default 2, "
+       "ProcessPerSiteMainFrameSiteScalingFactor default 1.5, ProcessPerSiteMainFrameTotalMemoryLimit "
+       "default 2 GiB), written on the command line as FeatureName:param/value."},
       // --- connection setup and transfer throughput (SUPER INTERNET / DOWNLOAD) ---
       {"HappyEyeballsV3", Provenance::kVerified, Risk::kSafe, kSrcNetBaseFeat,
        "Race the IPv6 and IPv4 connection attempts in parallel and keep whichever answers first: "
@@ -397,9 +400,17 @@ const SwitchEntry* FindSwitch(std::string_view id) {
   return nullptr;
 }
 
+std::string FeatureNameOf(std::string_view token) {
+  size_t end = token.find_first_of("<:");
+  if (end == std::string_view::npos) end = token.size();
+  return std::string(fmt::Trim(token.substr(0, end)));
+}
+
 const FeatureEntry* FindFeature(std::string_view name) {
+  const std::string base = FeatureNameOf(name);
+  if (base.empty()) return nullptr;
   for (const FeatureEntry& entry : FeatureTable()) {
-    if (name == entry.name) return &entry;
+    if (entry.name != nullptr && base == entry.name) return &entry;
   }
   return nullptr;
 }

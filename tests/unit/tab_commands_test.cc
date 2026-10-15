@@ -19,6 +19,7 @@ namespace {
 using browserx::browser::ApplyTabAction;
 using browserx::browser::NextGroupNameIn;
 using browserx::browser::Session;
+using browserx::browser::TabState;
 using browserx::browser::TabAction;
 using browserx::browser::TabActionOutcome;
 using browserx::browser::TabCommand;
@@ -267,6 +268,79 @@ TEST(TabCommands, UnhandledActionsAreInert) {
   // A null session never crashes.
   const TabActionOutcome null_outcome = ApplyTabAction(Action(TabCommand::kNewTab), nullptr);
   EXPECT_FALSE(null_outcome.handled);
+}
+
+TEST(TabCommands, ClosingRemembersTheTabSoReopeningRestoresIt) {
+  Session session;
+  const int a = session.AddTab("https://a.example/", true);
+  const int b = session.AddTab("https://b.example/reading", false);
+  session.SetTitle(b, "A long read");
+  session.SetGroup(b, "reading");
+  session.SetZoom(b, 130);
+  session.SetPinned(b, true);
+  session.Activate(b);
+  session.AddTab("https://c.example/", false);
+
+  // Closing through a tab command is what the strip's close button does.
+  const TabActionOutcome closed = ApplyTabAction(Action(TabCommand::kCloseTab, b), &session);
+  EXPECT_TRUE(closed.handled);
+  EXPECT_TRUE(session.Find(b) == nullptr);
+  EXPECT_EQ(session.recently_closed_count(), size_t{1});
+
+  // Ctrl+Shift+T goes through the session's stack, not a URL passed in by the UI.
+  const TabActionOutcome reopened = ApplyTabAction(Action(TabCommand::kReopenTab), &session);
+  EXPECT_TRUE(reopened.handled);
+  ASSERT_TRUE(reopened.create_ids.size() == 1);
+  const TabState* back = session.Find(reopened.create_ids[0]);
+  ASSERT_TRUE(back != nullptr);
+  EXPECT_EQ(back->url, std::string("https://b.example/reading"));
+  EXPECT_EQ(back->title, std::string("A long read")) << "the title comes back, not just the URL";
+  EXPECT_EQ(back->group, std::string("reading"));
+  EXPECT_EQ(back->zoom_percent, 130);
+  EXPECT_TRUE(back->pinned);
+  EXPECT_EQ(session.recently_closed_count(), size_t{0}) << "the stack is consumed";
+
+  // With nothing to undo, an explicit URL still works, and nothing at all is a no-op.
+  const TabActionOutcome from_url =
+      ApplyTabAction(Action(TabCommand::kReopenTab, 0, "https://shell.example/"), &session);
+  EXPECT_TRUE(from_url.handled);
+  EXPECT_EQ(session.Find(from_url.activate_id)->url, std::string("https://shell.example/"));
+  const TabActionOutcome nothing = ApplyTabAction(Action(TabCommand::kReopenTab), &session);
+  EXPECT_FALSE(nothing.handled) << "an empty stack and no URL means there is nothing to do";
+
+  (void)a;
+}
+
+TEST(TabCommands, BulkClosesProtectPinnedTabsAndAreUndoable) {
+  Session session;
+  const int a = session.AddTab("https://a.example/", true);
+  const int pinned = session.AddTab("https://pinned.example/", false);
+  session.SetPinned(pinned, true);
+  session.AddTab("https://b.example/", false);
+  session.AddTab("https://c.example/", false);
+  session.Activate(a);
+
+  const TabActionOutcome others = ApplyTabAction(Action(TabCommand::kCloseOthers), &session);
+  EXPECT_TRUE(others.handled);
+  EXPECT_EQ(session.count(), size_t{2}) << "the kept tab and the pinned one survive";
+  EXPECT_TRUE(session.Find(pinned) != nullptr) << "pinning means 'do not touch this'";
+  EXPECT_EQ(session.active_id(), a);
+  EXPECT_TRUE(others.message.find("2 other tabs") != std::string::npos)
+      << "the status bar says how many went";
+
+  // Both closed tabs can be walked back, one Ctrl+Shift+T at a time.
+  EXPECT_EQ(session.recently_closed_count(), size_t{2});
+  EXPECT_TRUE(ApplyTabAction(Action(TabCommand::kReopenTab), &session).handled);
+  EXPECT_TRUE(ApplyTabAction(Action(TabCommand::kReopenTab), &session).handled);
+  EXPECT_TRUE(ApplyTabAction(Action(TabCommand::kReopenTab), &session).handled == false)
+      << "and then the stack is empty";
+  EXPECT_EQ(session.count(), size_t{4});
+
+  session.Activate(a);
+  const TabActionOutcome right = ApplyTabAction(Action(TabCommand::kCloseToRight), &session);
+  EXPECT_TRUE(right.handled);
+  EXPECT_TRUE(session.Find(pinned) != nullptr) << "close-to-right never sweeps away pinned tabs";
+  EXPECT_EQ(session.active_id(), a);
 }
 
 }  // namespace

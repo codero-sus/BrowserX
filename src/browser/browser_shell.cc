@@ -4,6 +4,8 @@
 
 #include "browser/browser_shell.h"
 
+#include <chrono>
+
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -107,6 +109,7 @@ void BrowserShellImpl::OnShuttingDown() {
   core::log::Info("shell", "shutting down - flushing settings and session");
   SaveSession();  // tab state first: it is what the next launch shows
   host_->settings().SaveIfDirty();
+  host_->library().SaveIfDirty();
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +213,7 @@ CefPoint BrowserShellImpl::NextWindowOrigin() {
 void BrowserShellImpl::Quit() {
   shutting_down_ = true;
   host_->settings().SaveIfDirty();
+  host_->library().SaveIfDirty();
   CefQuitMessageLoop();
 }
 
@@ -260,6 +264,38 @@ void BrowserShellImpl::CycleAutoPilot() {
 void BrowserShellImpl::NoteFullscreenChanged(bool fullscreen) {
   fullscreen_active_ = fullscreen;
   core::log::InfoF("modes", "fullscreen %s", fullscreen ? "entered" : "left");
+}
+
+const core::ModePlan& BrowserShellImpl::current_plan() const { return host_->plan(); }
+
+core::ModePlan BrowserShellImpl::PlanFor(core::Mode mode) const {
+  core::EngineContext context;
+  context.profile = &host_->system_profile();
+  // The target mode's own settings win, because that is what switching would apply.
+  context.overrides = host_->settings().settings().MakeContext(mode, &host_->system_profile()).overrides;
+  return core::BuildPlan(mode, context);
+}
+
+void BrowserShellImpl::NoteVisit(BrowserWindow* window, const std::string& url,
+                                 const std::string& title) {
+  (void)window;
+  if (host_ == nullptr || url.empty()) return;
+  // Wall-clock milliseconds: the history file stores absolute times, so a page visited
+  // today still reads correctly in a week.
+  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+  if (host_->library().RecordVisit(url, title, now_ms)) {
+    // Written on the same debounced tick as the settings, so a long browsing session is
+    // not one disk write per page.
+    host_->library().MarkDirty();
+  }
+}
+
+void BrowserShellImpl::NoteTitle(const std::string& url, const std::string& title) {
+  if (host_ == nullptr || url.empty() || title.empty()) return;
+  host_->library().history().SetTitle(url, title);
+  host_->library().MarkDirty();
 }
 
 void BrowserShellImpl::NoteLoadState(BrowserWindow* window, bool loading) {

@@ -236,9 +236,6 @@ void TabStrip::Apply(const TabAction& action) {
   if (outcome.activate_id != 0) {
     host_->ShowTabView(outcome.activate_id);
   }
-  if (!outcome.closed_url.empty()) {
-    PushClosed(outcome.closed_url, outcome.closed_title);
-  }
   if (outcome.structure_changed || !outcome.create_ids.empty() ||
       !outcome.destroy_ids.empty()) {
     Refresh();
@@ -278,27 +275,6 @@ int TabStrip::SleepTabs(const std::vector<int>& tab_ids) {
   return slept;
 }
 
-// ---------------------------------------------------------------------------
-// Reopen stack
-// ---------------------------------------------------------------------------
-void TabStrip::PushClosed(const std::string& url, const std::string& title) {
-  if (url.empty() || url == "browserx://newtab") return;  // nothing worth restoring
-  closed_.emplace_back(url, title);
-  // Ten is enough to undo an accident without holding on to stale pages forever.
-  static constexpr size_t kMaxClosed = 10;
-  if (closed_.size() > kMaxClosed) closed_.erase(closed_.begin());
-}
-
-bool TabStrip::ReopenLast() {
-  if (closed_.empty()) return false;
-  const std::pair<std::string, std::string> entry = closed_.back();
-  closed_.pop_back();
-  TabAction action;
-  action.command = TabCommand::kReopenTab;
-  action.argument = entry.first;
-  Apply(action);
-  return true;
-}
 
 std::string TabStrip::ActiveTabSummary() const {
   if (host_ == nullptr) return std::string();

@@ -133,3 +133,61 @@ TEST(Format, SparklineBucketCount) {
   EXPECT_EQ(Sparkline({}, 10), std::string());
   EXPECT_EQ(Sparkline({0.0, 1.0}, 24).size(), 6u);
 }
+
+// --- display helpers --------------------------------------------------------
+
+TEST(Format, RelativeTimeReadsLikeEnglish) {
+  const int64_t now = 1'000'000'000'000LL;  // an arbitrary "now": the caller owns the clock
+  EXPECT_EQ(FormatRelativeTime(now - 5'000, now), std::string("just now"));
+  EXPECT_EQ(FormatRelativeTime(now - 90'000, now), std::string("1 min ago"));
+  EXPECT_EQ(FormatRelativeTime(now - 300'000, now), std::string("5 min ago"));
+  EXPECT_EQ(FormatRelativeTime(now - 3 * 3600'000LL, now), std::string("3 h ago"));
+  EXPECT_EQ(FormatRelativeTime(now - 26 * 3600'000LL, now), std::string("1 day ago"));
+  EXPECT_EQ(FormatRelativeTime(now - 3 * 24 * 3600'000LL, now), std::string("3 days ago"));
+  EXPECT_EQ(FormatRelativeTime(now - 400 * 24 * 3600'000LL, now), std::string("1 year ago"));
+  // A clock that went backwards, or a file written in the future, must not print
+  // "-3 min ago".
+  EXPECT_EQ(FormatRelativeTime(now + 60'000, now), std::string("in the future"));
+}
+
+TEST(Format, ListsAndPluralsAvoidTheAwkwardCases) {
+  EXPECT_EQ(FormatList({}), std::string());
+  EXPECT_EQ(FormatList({"one"}), std::string("one"));
+  EXPECT_EQ(FormatList({"a", "b"}), std::string("a and b"));
+  EXPECT_EQ(FormatList({"a", "b", "c"}), std::string("a, b and c"));
+  EXPECT_EQ(FormatList({"a", "b"}, "or"), std::string("a or b"));
+
+  EXPECT_EQ(Pluralize(0, "tab"), std::string("0 tabs"));
+  EXPECT_EQ(Pluralize(1, "tab"), std::string("1 tab"));
+  EXPECT_EQ(Pluralize(2, "tab"), std::string("2 tabs"));
+  EXPECT_EQ(Pluralize(3, "day"), std::string("3 days")) << "a y after a vowel stays a y";
+  EXPECT_EQ(Pluralize(3, "county"), std::string("3 counties"));
+  EXPECT_EQ(Pluralize(3, "box", "boxes"), std::string("3 boxes")) << "irregular forms are given";
+  // Sibilant endings take "es"; this one was wrong until the mode diff reported
+  // "adds 9 switchs" on the modes page.
+  EXPECT_EQ(Pluralize(2, "switch"), std::string("2 switches"));
+  EXPECT_EQ(Pluralize(1, "switch"), std::string("1 switch"));
+  EXPECT_EQ(Pluralize(2, "class"), std::string("2 classes"));
+  EXPECT_EQ(Pluralize(2, "dish"), std::string("2 dishes"));
+  EXPECT_EQ(Pluralize(2, "box"), std::string("2 boxes"));
+  EXPECT_EQ(Pluralize(2, "bus"), std::string("2 buses"));
+  EXPECT_EQ(Pluralize(2, "tray"), std::string("2 trays")) << "y after a vowel only takes s";
+  EXPECT_EQ(Pluralize(1234, "visit"), std::string("1,234 visits")) << "grouped like every other number";
+}
+
+TEST(Format, SizesAndCleanText) {
+  EXPECT_EQ(FormatSize(0), std::string("0 B"));
+  EXPECT_EQ(FormatSize(512), std::string("512 B"));
+  EXPECT_EQ(FormatSize(2048), std::string("2 KB"));
+  EXPECT_EQ(FormatSize(1024 * 1024 * 3 / 2), std::string("1.5 MB"));
+  EXPECT_EQ(FormatSize(2ull * 1024 * 1024 * 1024), std::string("2.00 GB"));
+
+  // Titles arrive from web pages; tabs, menus and JSON all need one safe form.
+  EXPECT_EQ(CleanDisplayText("  hello\n\tworld  "), std::string("hello world"));
+  // Note the split literals: "\x7fc" would be read as ONE escape (0x7FC, out of range),
+  // because a \x escape consumes every hex digit that follows it.
+  EXPECT_EQ(CleanDisplayText("a\x01" "b\x7f" "c"), std::string("abc"));
+  EXPECT_EQ(CleanDisplayText("", 10), std::string());
+  EXPECT_EQ(CleanDisplayText("   ", 10), std::string());
+  EXPECT_EQ(CleanDisplayText("abcdefghij", 4), std::string("abcd\xE2\x80\xA6"));
+}
