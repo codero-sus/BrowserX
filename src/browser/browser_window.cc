@@ -21,6 +21,7 @@
 #include "browser/browser_shell.h"
 #include "core/format.h"
 #include "core/log.h"
+#include "core/net_errors.h"
 #include "core/url_utils.h"
 #include "web/internal_pages.h"
 
@@ -1176,9 +1177,33 @@ void BrowserWindow::OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFram
                                 ErrorCode error_code, const CefString& error_text,
                                 const CefString& failed_url) {
   if (!frame->IsMain()) return;
-  core::log::WarnF("page", "load error %d: %s (%s)", static_cast<int>(error_code),
-                   error_text.ToString().c_str(), failed_url.ToString().c_str());
+  const int code = static_cast<int>(error_code);
+  const std::string url = failed_url.ToString();
+  core::log::WarnF("page", "load error %d: %s (%s)", code, error_text.ToString().c_str(),
+                   url.c_str());
+
+  // Not every failure deserves a page: stopping a load and a cache miss are how things are
+  // supposed to work, and a browser that interrupts you for either teaches you to dismiss
+  // its error pages. Those get the status bar only.
+  if (!core::NetErrorWarrantsPage(code)) {
+    Flash("Stopped: " + error_text.ToString());
+    return;
+  }
+  // A browserx:// page that failed is a bug in this build, not a network problem: say so
+  // in the status bar and leave the address alone rather than replacing the page with an
+  // explanation of a network failure that did not happen.
+  if (core::url::IsInternal(url)) {
+    Flash("This browserx:// page could not be built: " + error_text.ToString());
+    return;
+  }
   Flash("Failed to load: " + error_text.ToString());
+  if (browser.get() == nullptr) return;
+
+  // The explanation is rendered by the browserx://error page, from core::ExplainNetError,
+  // so the wording is the unit-tested one rather than a second copy of it living here.
+  const std::string target = "browserx://error?code=" + std::to_string(code) + "&url=" +
+                             core::url::EncodeQuery(url, false);
+  browser->GetMainFrame()->LoadURL(target);
 }
 
 // ---------------------------------------------------------------------------
