@@ -15,6 +15,15 @@ using browserx::core::url::BuildSearchUrl;
 using browserx::core::url::EncodePath;
 using browserx::core::url::EncodeQuery;
 using browserx::core::url::HasScheme;
+using browserx::core::url::IsIpLiteralHost;
+using browserx::core::url::IsLocalhost;
+using browserx::core::url::NormalizeForCompare;
+using browserx::core::url::OriginOf;
+using browserx::core::url::QueryParam;
+using browserx::core::url::RegistrableDomain;
+using browserx::core::url::SameSite;
+using browserx::core::url::SchemeIsSecure;
+using browserx::core::url::WithoutQueryParam;
 using browserx::core::url::HostMatchesPattern;
 using browserx::core::url::HostOf;
 using browserx::core::url::IsHttp;
@@ -184,4 +193,100 @@ TEST(Url, PathExtractionForShieldPathRules) {
             std::string("/ad/track.gif"));
   EXPECT_EQ(browserx::core::url::PathOf("not a url"), std::string("/"));
   EXPECT_EQ(browserx::core::url::PathOf("https://example.com/promo/"), std::string("/promo/"));
+}
+
+// --- origin, literals, query, domains (the helpers the UI leans on) ---------
+
+TEST(UrlUtils, OriginIsSchemeHostAndNonDefaultPort) {
+  EXPECT_EQ(OriginOf("https://example.com/a/b?c=1"), std::string("https://example.com"));
+  EXPECT_EQ(OriginOf("https://example.com:8443/x"), std::string("https://example.com:8443"));
+  // The default port is noise: it is the same origin with or without it.
+  EXPECT_EQ(OriginOf("https://example.com:443/x"), std::string("https://example.com"));
+  EXPECT_EQ(OriginOf("http://example.com:80/x"), std::string("http://example.com"));
+  EXPECT_EQ(OriginOf("http://example.com:8080/"), std::string("http://example.com:8080"));
+  // An internal page does have an origin string; what it does not have is a transport
+  // to report, which is the question SchemeIsSecure() answers.
+  EXPECT_EQ(OriginOf("browserx://modes"), std::string("browserx://modes"));
+  EXPECT_TRUE(OriginOf("about:blank").empty());
+}
+
+TEST(UrlUtils, IpLiteralHostsAreRecognised) {
+  EXPECT_TRUE(IsIpLiteralHost("127.0.0.1"));
+  EXPECT_TRUE(IsIpLiteralHost("192.168.1.10"));
+  EXPECT_TRUE(IsIpLiteralHost("[::1]"));
+  EXPECT_TRUE(IsIpLiteralHost("fe80::1"));
+  EXPECT_FALSE(IsIpLiteralHost("example.com"));
+  EXPECT_FALSE(IsIpLiteralHost("example.123"));
+}
+
+TEST(UrlUtils, TrackingParametersCanBeRemovedAndRead) {
+  const std::string url = "https://shop.example/item?id=7&utm_source=x&gclid=y#top";
+  const std::string clean = WithoutQueryParam(url, "utm_source");
+  EXPECT_TRUE(clean.find("utm_source") == std::string::npos);
+  EXPECT_TRUE(clean.find("id=7") != std::string::npos) << clean;
+  EXPECT_TRUE(clean.find("gclid=y") != std::string::npos) << clean;
+  EXPECT_TRUE(clean.find("#top") != std::string::npos) << "the fragment is not a parameter";
+  // Empty name means "all of them" - the copy-clean-link action.
+  const std::string bare = WithoutQueryParam(url, "");
+  EXPECT_TRUE(bare.find('?') == std::string::npos) << bare;
+  EXPECT_TRUE(bare.find("#top") != std::string::npos);
+  // A parameter that is not there changes nothing.
+  EXPECT_EQ(WithoutQueryParam(url, "nope"), url);
+}
+
+TEST(UrlUtils, QueryParamDecodesPercentAndPlus) {
+  EXPECT_EQ(QueryParam("https://x.example/?q=hello+world", "q"), std::string("hello world"));
+  EXPECT_EQ(QueryParam("https://x.example/?q=caf%C3%A9", "q"), std::string("caf\xC3\xA9"));
+  EXPECT_EQ(QueryParam("https://x.example/?q=100%25", "q"), std::string("100%"));
+  EXPECT_EQ(QueryParam("https://x.example/?Q=up", "q"), std::string("up")) << "names are case-insensitive";
+  EXPECT_TRUE(QueryParam("https://x.example/?a=1", "b").empty());
+  EXPECT_TRUE(QueryParam("https://x.example/", "a").empty());
+  // A truncated escape must not eat the character that follows it.
+  EXPECT_EQ(QueryParam("https://x.example/?q=a%2", "q"), std::string("a%2"));
+}
+
+TEST(UrlUtils, RegistrableDomainHandlesMultiLabelSuffixes) {
+  EXPECT_EQ(RegistrableDomain("www.example.com"), std::string("example.com"));
+  EXPECT_EQ(RegistrableDomain("a.b.example.co.uk"), std::string("example.co.uk"));
+  EXPECT_EQ(RegistrableDomain("cdn.example.co.uk"), std::string("example.co.uk"));
+  EXPECT_EQ(RegistrableDomain("user.github.io"), std::string("user.github.io"))
+      << "a user page on a shared host is its own site";
+  EXPECT_EQ(RegistrableDomain("example.com."), std::string("example.com"))
+      << "a trailing dot is the same host";
+  EXPECT_EQ(RegistrableDomain("localhost"), std::string("localhost"));
+  EXPECT_EQ(RegistrableDomain("127.0.0.1"), std::string("127.0.0.1"));
+}
+
+TEST(UrlUtils, SameSiteIgnoresSchemePortAndSubdomain) {
+  EXPECT_TRUE(SameSite("https://a.example.com/x", "http://b.example.com/y"));
+  EXPECT_TRUE(SameSite("https://example.com:8443/", "https://example.com/"));
+  EXPECT_FALSE(SameSite("https://example.com/", "https://example.org/"));
+  // The classic trap: "notexample.com" is not a subdomain of "example.com".
+  EXPECT_FALSE(SameSite("https://example.com/", "https://notexample.com/"));
+  // Same-site is defined on the host rather than the scheme - that is what the cookie
+  // rules use - so a single-label host really is the same site.
+  EXPECT_TRUE(SameSite("browserx://modes", "https://modes/"));
+  EXPECT_FALSE(SameSite("browserx://modes", "about:blank")) << "no host, no site";
+}
+
+TEST(UrlUtils, SecureSchemesAndLocalhost) {
+  EXPECT_TRUE(SchemeIsSecure("https://example.com/"));
+  EXPECT_TRUE(SchemeIsSecure("browserx://settings"));
+  EXPECT_FALSE(SchemeIsSecure("http://example.com/"));
+  EXPECT_FALSE(SchemeIsSecure("http://localhost:3000/"))
+      << "localhost over http is still not https - the page says so rather than lying";
+  EXPECT_TRUE(IsLocalhost("localhost"));
+  EXPECT_TRUE(IsLocalhost("app.localhost"));
+  EXPECT_TRUE(IsLocalhost("127.0.0.1"));
+  EXPECT_FALSE(IsLocalhost("localhost.example.com"));
+}
+
+TEST(UrlUtils, NormalizeForCompareIsStable) {
+  EXPECT_EQ(NormalizeForCompare("https://example.com/a#frag"), std::string("https://example.com/a"));
+  EXPECT_EQ(NormalizeForCompare("https://example.com/a/"), std::string("https://example.com/a"));
+  EXPECT_EQ(NormalizeForCompare("https://example.com/a/?x=1#f"), std::string("https://example.com/a?x=1"));
+  // The root slash goes too, so both spellings of one address collapse into a single
+  // history entry rather than two.
+  EXPECT_EQ(NormalizeForCompare("https://example.com/"), std::string("https://example.com"));
+  EXPECT_EQ(NormalizeForCompare("https://example.com"), std::string("https://example.com"));
 }

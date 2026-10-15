@@ -50,6 +50,7 @@ function toast(message) {
 /* ------------------------------------------------------------------- data */
 async function load() {
   loadPages();
+  loadImprovements();
   try {
     const response = await fetch('api/plans');
     if (!response.ok) throw new Error((await response.json()).error || response.statusText);
@@ -375,15 +376,12 @@ async function loadPages() {
     picker.innerHTML = '<p class="note">' + listing.error + '</p>';
     return;
   }
-  const titles = {
-    newtab: 'New tab', modes: 'Modes', telemetry: 'Telemetry', settings: 'Settings',
-    shortcuts: 'Keyboard shortcuts', catalog: 'Switch catalogue', session: 'Session',
-    about: 'About BrowserX', find: 'Find in page',
-  };
+  // Titles come from the pages themselves (the server reads each page's <title>), so a
+  // page that is added tomorrow is labelled correctly without editing this file.
   picker.innerHTML = listing.pages.map((page) =>
     `<button class="page-chip" data-page-url="${page.url}" data-page-name="${page.name}">` +
-    `<strong>${titles[page.name] || page.name}</strong>` +
-    `<span>browserx://${page.name} · ${(page.bytes / 1024).toFixed(1)} KB</span></button>`
+    `<strong>${esc(page.title || page.name)}</strong>` +
+    `<span>browserx://${esc(page.name)} · ${(page.bytes / 1024).toFixed(1)} KB</span></button>`
   ).join('');
 
   const frame = $('#pages-frame');
@@ -402,6 +400,77 @@ async function loadPages() {
     if (chip) show(chip.dataset.pageUrl, chip.dataset.pageName);
   });
   if (listing.pages.length) show(listing.pages[0].url, listing.pages[0].name);
+}
+
+/* ------------------------------------------------------------- escaping --- */
+/* Everything below renders text that comes from elsewhere: the ledger's own prose, a
+ * page's <title>, a switch id. Inserting that into innerHTML unescaped is how a page
+ * breaks - and how a string someone else controls becomes markup. One function, used
+ * everywhere text goes into HTML. */
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ---------------------------------------------- the improvement ledger --- */
+/* Reads the ledger from the checker, so the preview and `make check` can never
+ * disagree about how many improvements exist or whether they are still true. */
+async function loadImprovements() {
+  const table = $('#improvements-table tbody');
+  if (!table) return;
+  let ledger;
+  try {
+    ledger = await (await fetch('/api/improvements')).json();
+  } catch (error) {
+    table.innerHTML = `<tr><td colspan="4" class="note">Could not read the ledger: ${error}</td></tr>`;
+    return;
+  }
+  if (ledger.error) {
+    table.innerHTML = `<tr><td colspan="4" class="note">${ledger.error}</td></tr>`;
+    return;
+  }
+  const areas = Object.entries(ledger.areas || {}).sort((a, b) => b[1] - a[1]);
+  $('#improvements-kpis').innerHTML =
+    `<div class="kpi"><span class="k">Recorded</span><span class="v">${ledger.count}</span></div>` +
+    `<div class="kpi"><span class="k">Target</span><span class="v">${ledger.minimum || 200}</span></div>` +
+    `<div class="kpi"><span class="k">Areas</span><span class="v">${areas.length}</span></div>` +
+    `<div class="kpi"><span class="k">Broken anchors</span><span class="v">${(ledger.problems || []).length}</span></div>`;
+  const progress = $('#improvements-progress');
+  if (progress) {
+    const target = ledger.minimum || 200;
+    progress.textContent = ledger.count >= target
+      ? ` The target of ${target} is met and checked.`
+      : ` ${ledger.count} of ${target} recorded so far — the ratchet in make check fails until the rest are real.`;
+  }
+  table.innerHTML = (ledger.entries || []).map((entry) => {
+    const haystack = esc((entry.area + ' ' + entry.what + ' ' + entry.file).toLowerCase());
+    return `<tr data-search="${haystack}">` +
+      `<td class="mono">${Number(entry.id)}</td><td>${esc(entry.area)}</td>` +
+      `<td>${esc(entry.what)}</td><td class="mono note">${esc(entry.file)}</td></tr>`;
+  }).join('');
+  // The count is asserted against what was actually inserted: a row that fails to render
+  // must not be quietly missing from the page while the headline still says 74.
+  const rendered = table.children.length;
+  if (rendered !== (ledger.entries || []).length) {
+    table.insertAdjacentHTML('beforeend',
+      `<tr><td colspan="4" class="note">${rendered} of ${(ledger.entries || []).length} entries rendered</td></tr>`);
+  }
+  const search = $('#improvements-search');
+  if (search) {
+    search.addEventListener('input', () => {
+      const needle = search.value.trim().toLowerCase();
+      let shown = 0;
+      for (const row of table.children) {
+        const match = !needle || (row.dataset.search || '').includes(needle);
+        row.hidden = !match;
+        if (match) shown += 1;
+      }
+    });
+  }
 }
 
 /* ------------------------------------------------------------------- wire */

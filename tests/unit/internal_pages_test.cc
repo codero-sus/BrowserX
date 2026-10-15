@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/library.h"
 #include "core/mode_engine.h"
 #include "test_harness.h"
 #include "web/internal_pages.h"
@@ -42,6 +43,17 @@ PageData SampleData() {
   data.profile_report = "System profile\n  Memory: 3939 MB total";
   data.catalog_report = "Chromium switch catalogue\n  renderer-process-limit  verified";
   data.session_json = R"({"version":1,"windows":[{"tabs":[{"url":"https://example.com/"}]}]})";
+  // A real history and bookmark pair, built by the stores the browser uses, so the pages
+  // are tested against the exact JSON that reaches them in a live profile.
+  browserx::core::History history;
+  history.Add("https://example.com/docs", "Documentation", 1'700'000'000'000LL);
+  history.Add("https://example.com/docs", "Documentation", 1'700'000'100'000LL);
+  history.Add("https://news.example/story", "A story", 1'700'000'200'000LL);
+  data.history_json = history.ToJson();
+  browserx::core::Bookmarks bookmarks;
+  bookmarks.Add("https://example.com/docs", "Documentation", "work", 1'700'000'000'000LL);
+  data.bookmarks_json = bookmarks.ToJson();
+  data.now_ms = 1'700'000'300'000LL;  // the page renders "when" from this, not from the clock
   return data;
 }
 
@@ -221,12 +233,20 @@ TEST(InternalPages, ModeSwitchRequestsAreValidated) {
 }
 
 TEST(InternalPages, UnwiredPagesAdmitItHonestly) {
-  for (const PageKind kind : {PageKind::kHistory, PageKind::kBookmarks, PageKind::kDownloads}) {
+  // Downloads is still waiting for the CEF download callbacks, and says exactly that.
+  const std::string downloads = RenderPage(PageKind::kDownloads, SampleData());
+  EXPECT_TRUE(Contains(downloads, "not wired up in this build yet"));
+  // Crucially: no fake empty-state table.
+  EXPECT_FALSE(Contains(downloads, "<tbody></tbody>"));
+  EXPECT_FALSE(Contains(downloads, "You have no"));
+
+  // History and bookmarks used to be in that group. Now they render a real store, so
+  // the honest thing is the opposite: they must no longer claim to be unwired.
+  for (const PageKind kind : {PageKind::kHistory, PageKind::kBookmarks}) {
     const std::string html = RenderPage(kind, SampleData());
-    EXPECT_TRUE(Contains(html, "not wired up in this build yet"));
-    // Crucially: no fake empty-state table.
-    EXPECT_FALSE(Contains(html, "<tbody></tbody>"));
-    EXPECT_FALSE(Contains(html, "You have no"));
+    EXPECT_FALSE(Contains(html, "not wired up in this build yet"))
+        << PageName(kind) << " is wired to the library store and must not say otherwise";
+    EXPECT_TRUE(Contains(html, "library-table")) << "it renders a real table";
   }
 }
 
@@ -419,5 +439,92 @@ TEST(InternalPages, EveryModeGetsAchipAndTheCliListsThemAll) {
   // the page without any extra wiring.
   for (const char* id : {"super-internet", "download", "streaming"}) {
     EXPECT_TRUE(Contains(html, std::string("data-set-mode=\"") + id + "\""));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// History and bookmarks: the two pages that read a real store
+// ---------------------------------------------------------------------------
+TEST(InternalPages, HistoryRendersRealRowsInDateOrder) {
+  const PageData data = SampleData();
+  const std::string html = RenderPage(PageKind::kHistory, data);
+
+  EXPECT_TRUE(Contains(html, "browserx://history")) << "the page identifies itself in the nav";
+  EXPECT_TRUE(Contains(html, ">A story<")) << "the newest page is listed";
+  EXPECT_TRUE(Contains(html, "Documentation"));
+  EXPECT_TRUE(Contains(html, "example.com")) << "the host of each row is shown, not just the URL";
+  EXPECT_TRUE(Contains(html, "data-filter=\"#library-table\""))
+      << "filtering reuses the page's one filter implementation";
+  EXPECT_TRUE(Contains(html, "<span class=\"v\">2</span><span class=\"k\">pages</span>"))
+      << "the KPI counts pages, not visits: two pages, one of them visited twice";
+  EXPECT_TRUE(Contains(html, "<span class=\"v\">3</span><span class=\"k\">visits</span>"));
+
+  // Relative time comes from data.now_ms, so the rendered page and the store agree.
+  EXPECT_TRUE(Contains(html, "1 min ago")) << "the newest visit, 100 s before the page's now";
+  EXPECT_TRUE(Contains(html, "3 min ago")) << "and the older one, 200 s before it";
+  EXPECT_FALSE(Contains(html, "1970")) << "a page rendered with a clock never shows epoch dates";
+
+  // Newest first: "A story" appears before the docs row.
+  EXPECT_TRUE(html.find(">A story<") < html.find(">Documentation<"));
+
+  // A fragment in the stored URL is part of the same page, so it is not listed twice.
+  EXPECT_TRUE(html.find("Documentation") != html.find("Documentation", html.find("Documentation") + 1))
+      << "the page appears exactly once even though it was visited twice";
+
+  // Escaping: a title with markup in it must not become markup.
+  PageData hostile = SampleData();
+  browserx::core::History evil;
+  evil.Add("https://evil.example/?q=1", "\"><script>alert(1)</script>", 1'700'000'300'000LL);
+  hostile.history_json = evil.ToJson();
+  const std::string hostile_html = RenderPage(PageKind::kHistory, hostile);
+  EXPECT_FALSE(Contains(hostile_html, "<script>alert(1)"))
+      << "a page title cannot inject script into a browser page";
+  EXPECT_TRUE(Contains(hostile_html, "&lt;script&gt;"));
+}
+
+TEST(InternalPages, BookmarksShowFoldersAndSayWhenTheyAreSamples) {
+  const PageData data = SampleData();
+  const std::string html = RenderPage(PageKind::kBookmarks, data);
+
+  EXPECT_TRUE(Contains(html, ">Documentation<"));
+  EXPECT_TRUE(Contains(html, ">work<")) << "the folder column carries the folder name";
+  EXPECT_TRUE(Contains(html, "Folder")) << "and the column says what it holds";
+  EXPECT_TRUE(Contains(html, "<span class=\"v\">1</span><span class=\"k\">bookmarks</span>"));
+  EXPECT_TRUE(Contains(html, "<span class=\"v\">1</span><span class=\"k\">folders</span>"));
+  EXPECT_FALSE(Contains(html, "Sample data")) << "real data is never labelled as a sample";
+
+  // The preview and the tests both use sample data; when they do, the page says so.
+  PageData sample = SampleData();
+  sample.library_is_sample = true;
+  const std::string sample_html = RenderPage(PageKind::kBookmarks, sample);
+  EXPECT_TRUE(Contains(sample_html, "Sample data"))
+      << "invented rows must never be presented as the user's bookmarks";
+
+  // Empty stores say what to do next instead of rendering an empty table.
+  PageData empty = SampleData();
+  empty.history_json.clear();
+  empty.bookmarks_json.clear();
+  EXPECT_TRUE(Contains(RenderPage(PageKind::kHistory, empty), "History"));
+  EXPECT_TRUE(Contains(RenderPage(PageKind::kBookmarks, empty), "Bookmarks"));
+}
+
+TEST(InternalPages, LibraryPagesSurviveBrokenJsonAndNeedNoNetwork) {
+  PageData broken = SampleData();
+  broken.history_json = "{this is not json";
+  broken.bookmarks_json = "[]";
+  const std::string history = RenderPage(PageKind::kHistory, broken);
+  EXPECT_TRUE(Contains(history, "could not be read"))
+      << "a corrupt store is reported on the page, not hidden behind an empty list";
+  const std::string bookmarks = RenderPage(PageKind::kBookmarks, broken);
+  EXPECT_TRUE(Contains(bookmarks, "Bookmarks"));
+
+  // Both pages stay self-contained: no external resource may be referenced, or the
+  // browser would need the network to show its own history.
+  for (const PageKind kind : {PageKind::kHistory, PageKind::kBookmarks}) {
+    const std::string html = RenderPage(kind, SampleData());
+    EXPECT_FALSE(Contains(html, "http://")) << PageName(kind) << " must not fetch anything";
+    EXPECT_FALSE(Contains(html, "src=\"http"));
+    EXPECT_FALSE(Contains(html, "<link ")) << "no external stylesheet";
+    EXPECT_FALSE(Contains(html, "//cdn"));
   }
 }

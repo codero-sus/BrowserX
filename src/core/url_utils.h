@@ -73,6 +73,37 @@ std::string StripTrackingParams(std::string_view url);
 /// List of query parameter prefixes considered tracking noise.
 const std::vector<std::string>& TrackingParamPrefixes();
 
+/// "scheme://host:port" — the origin, for the status bar and for SameOrigin.
+/// browserx://modes has one too; only URLs with no host at all (about:, data:) return
+/// an empty string, and the caller then shows nothing rather than inventing one.
+std::string OriginOf(std::string_view url);
+/// True when the host is a literal address (IPv4 or a bracketed IPv6), which needs
+/// no DNS and is worth showing differently: "you are going to a number, not a name".
+bool IsIpLiteralHost(std::string_view host);
+/// The address minus any query parameter whose name appears in `name` (all of them
+/// when the name is empty). Used by "copy clean link" and by the download page.
+std::string WithoutQueryParam(std::string_view url, std::string_view name);
+/// Value of a query parameter, or empty. Percent-decodes and turns '+' into a space
+/// because that is what a query string means.
+std::string QueryParam(std::string_view url, std::string_view name);
+/// The registrable domain — the "example.com" part of "a.b.example.co.uk" — using a
+/// built-in list of the public suffixes that matter for display and for the shield.
+/// Falls back to the last two labels when the suffix is not known.
+std::string RegistrableDomain(std::string_view host);
+/// True when the two URLs would be "the same site" for a privacy decision:
+/// same registrable domain, ignoring scheme and port.
+bool SameSite(std::string_view a, std::string_view b);
+/// True when the URL's scheme is one whose content the browser treats as secure
+/// (https, browserx, about, file). Used by the omnibox indicator and by tests.
+bool SchemeIsSecure(std::string_view url);
+/// True for the local-development hosts (localhost, 127.0.0.1, ::1, *.localhost).
+bool IsLocalhost(std::string_view host);
+/// A stable form for de-duplicating history and comparing bookmarks: the fragment is
+/// dropped (it never changes which resource is fetched) and so is a trailing slash -
+/// including the root one, so "https://example.com" and "https://example.com/" are one
+/// address instead of two entries in the list.
+std::string NormalizeForCompare(std::string_view url);
+
 /// True when the host matches `pattern`, where pattern may be
 /// "example.com" (suffix match, including subdomains), "*.example.com" or
 /// "exact.host" (leading '=' forces an exact match).

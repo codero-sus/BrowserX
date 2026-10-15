@@ -4,6 +4,8 @@
 
 #include "core/mode_engine.h"
 
+#include <map>
+
 #include <algorithm>
 #include <cstdio>
 #include <sstream>
@@ -575,11 +577,20 @@ void AddLowRamProfile(ModePlan* plan, const EngineContext& context, const System
       "Recommended: keep 'block images' and 'block media' ready to toggle per-site for heavy pages.");
 
   // Feature-level process sharing (advanced): merge same-site frames harder.
+  //
+  // The token form is load-bearing. Chromium parses "FeatureName:param/value" out of
+  // --enable-features (base/feature_list.h, InitFromCommandLine); a bare
+  // "Name/Value" is not a feature at all, it is a parameter name, and Chromium ignores
+  // the whole token. BrowserX used to emit exactly that, so the plan promised process
+  // sharing it never got. Verified against content/public/common/content_features.cc:
+  // the feature is kProcessPerSiteUpToMainFrameThreshold, and both names below are its
+  // parameters, not features.
   if (overrides.allow_advanced) {
-    plan->boot.EnableFeature("ProcessPerSiteMainFrameThreshold/1",
-                             "Share a process for the first same-site tab even on bigger machines");
-    plan->boot.EnableFeature("ProcessPerSiteMainFrameSiteScalingFactor/1",
-                             "Scale process sharing with available memory");
+    plan->boot.EnableFeature(
+        "ProcessPerSiteUpToMainFrameThreshold:ProcessPerSiteMainFrameThreshold/4/"
+        "ProcessPerSiteMainFrameSiteScalingFactor/1",
+        "Share one renderer between same-site main frames more readily (threshold 4 instead of "
+        "the default 2, scaling factor 1.0 instead of 1.5): fewer processes per site");
     plan->boot.EnableFeature("NetworkServiceInProcess2",
                              "Run the network service inside the browser process: removes an "
                              "entire process (~50-120 MB)");
@@ -1090,6 +1101,215 @@ void AddUltraProfile(ModePlan* plan, const EngineContext& context, const SystemP
 }
 
 }  // namespace
+
+
+// ---------------------------------------------------------------------------
+// Comparing and checking plans
+// ---------------------------------------------------------------------------
+std::string PlanDifference::ToFlag() const {
+  if (is_feature) return "enable-features:" + id;
+  if (to_value.empty()) return "--" + id;
+  return "--" + id + "=" + to_value;
+}
+
+namespace {
+
+/// Features, flattened into the same id space as switches, so a diff does not need two
+/// passes over two different data shapes.
+std::map<std::string, std::string> FeatureState(const SwitchPlan& plan) {
+  std::map<std::string, std::string> out;
+  for (const std::string& name : plan.disabled_features()) out[name] = "disabled";
+  for (const std::string& name : plan.enabled_features()) out[name] = "enabled";
+  return out;
+}
+
+std::string ReasonForFeature(const SwitchPlan& plan, const std::string& name, bool enabled) {
+  for (const PlannedSwitch& entry : plan.feature_reasons()) {
+    if (entry.id == name) return entry.reason;  // last write wins, same as the plan
+  }
+  (void)enabled;
+  return std::string();
+}
+
+}  // namespace
+
+std::vector<PlanDifference> DiffPlans(const ModePlan& from, const ModePlan& to,
+                                      size_t max_items) {
+  std::vector<PlanDifference> out;
+
+  std::map<std::string, PlannedSwitch> before;
+  for (const PlannedSwitch& entry : from.boot.switches()) before[entry.id] = entry;
+  for (const PlannedSwitch& entry : from.child.switches()) before[entry.id] = entry;
+
+  for (const PlannedSwitch& after : to.boot.switches()) {
+    const auto it = before.find(after.id);
+    if (it != before.end() && it->second.value == after.value) {
+      before.erase(it);  // unchanged: not part of the answer
+      continue;
+    }
+    PlanDifference difference;
+    difference.id = after.id;
+    difference.to_value = after.value.empty() ? "on" : after.value;
+    difference.to_reason = after.reason;
+    if (it != before.end()) {
+      difference.from_value = it->second.value.empty() ? "on" : it->second.value;
+      difference.from_reason = it->second.reason;
+      before.erase(it);
+    }
+    out.push_back(std::move(difference));
+  }
+  // Whatever is left was in the old plan and is not in the new one.
+  for (const auto& [id, entry] : before) {
+    PlanDifference difference;
+    difference.id = id;
+    difference.from_value = entry.value.empty() ? "on" : entry.value;
+    difference.from_reason = entry.reason;
+    out.push_back(std::move(difference));
+  }
+
+  const std::map<std::string, std::string> features_before = FeatureState(from.boot);
+  const std::map<std::string, std::string> features_after = FeatureState(to.boot);
+  for (const auto& [name, state] : features_after) {
+    const auto it = features_before.find(name);
+    if (it != features_before.end() && it->second == state) continue;
+    PlanDifference difference;
+    difference.id = name;
+    difference.is_feature = true;
+    difference.to_value = state;
+    difference.to_reason = ReasonForFeature(to.boot, name, state == "enabled");
+    if (it != features_before.end()) {
+      difference.from_value = it->second;
+      difference.from_reason = ReasonForFeature(from.boot, name, it->second == "enabled");
+    }
+    out.push_back(std::move(difference));
+  }
+  for (const auto& [name, state] : features_before) {
+    if (features_after.count(name) != 0) continue;
+    PlanDifference difference;
+    difference.id = name;
+    difference.is_feature = true;
+    difference.from_value = state;
+    difference.from_reason = ReasonForFeature(from.boot, name, state == "enabled");
+    out.push_back(std::move(difference));
+  }
+
+  std::sort(out.begin(), out.end(),
+            [](const PlanDifference& a, const PlanDifference& b) { return a.id < b.id; });
+  if (max_items != 0 && out.size() > max_items) out.resize(max_items);
+  return out;
+}
+
+std::string DescribePlanDiff(const std::vector<PlanDifference>& differences) {
+  size_t added = 0, removed = 0, changed = 0;
+  for (const PlanDifference& difference : differences) {
+    if (difference.from_value.empty() && !difference.to_value.empty()) {
+      ++added;
+    } else if (difference.to_value.empty()) {
+      ++removed;
+    } else {
+      ++changed;
+    }
+  }
+  if (differences.empty()) return "no switch changes";
+  // Each count gets its own noun, because "retunes 1 switches" is exactly the kind of
+  // sloppiness a browser shows the user hundreds of times a day.
+  std::vector<std::string> parts;
+  if (added != 0) parts.push_back("adds " + fmt::Pluralize(static_cast<int64_t>(added), "switch"));
+  if (removed != 0) {
+    parts.push_back("removes " + fmt::Pluralize(static_cast<int64_t>(removed), "switch"));
+  }
+  if (changed != 0) {
+    parts.push_back("retunes " + fmt::Pluralize(static_cast<int64_t>(changed), "switch"));
+  }
+  std::string out;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    if (i != 0) out += i + 1 == parts.size() ? " and " : ", ";
+    out += parts[i];
+  }
+  return out;
+}
+
+bool ValidatePlan(const ModePlan& plan, std::string* problem) {
+  auto fail = [&](const std::string& text) {
+    if (problem != nullptr) *problem = text;
+    return false;
+  };
+
+  std::vector<std::string> seen;
+  for (const PlannedSwitch& entry : plan.boot.switches()) {
+    if (entry.id.empty()) return fail("a planned switch has an empty id");
+    if (std::find(seen.begin(), seen.end(), entry.id) != seen.end()) {
+      return fail("--" + entry.id + " is planned twice, which makes the plan contradictory");
+    }
+    seen.push_back(entry.id);
+    // Every switch the plan emits must exist in the catalogue, which is the verified list.
+    // A switch that is not there is either a typo or something nobody checked against
+    // Chromium, and both are reasons to refuse it.
+    if (FindSwitch(entry.id) == nullptr) {
+      return fail("--" + entry.id + " is not in the switch catalogue");
+    }
+    if (entry.reason.empty()) {
+      return fail("--" + entry.id + " is planned without a reason");
+    }
+  }
+  for (const PlannedSwitch& entry : plan.child.switches()) {
+    if (FindSwitch(entry.id) == nullptr) {
+      return fail("child-only --" + entry.id + " is not in the switch catalogue");
+    }
+  }
+  for (const std::string& name : plan.boot.enabled_features()) {
+    if (FindFeature(name) == nullptr) return fail("feature " + name + " is not in the catalogue");
+  }
+  for (const std::string& name : plan.boot.disabled_features()) {
+    if (FindFeature(name) == nullptr) return fail("feature " + name + " is not in the catalogue");
+  }
+  // The same feature must not be both on and off: Chromium resolves that silently, and a
+  // plan that contradicts itself would make the report a lie.
+  for (const std::string& name : plan.boot.enabled_features()) {
+    if (std::find(plan.boot.disabled_features().begin(), plan.boot.disabled_features().end(),
+                  name) != plan.boot.disabled_features().end()) {
+      return fail("feature " + name + " is both enabled and disabled");
+    }
+  }
+  if (problem != nullptr) problem->clear();
+  return true;
+}
+
+std::vector<std::string> ExplainUnusedSwitches(const ModePlan& plan,
+                                               const EngineContext& context,
+                                               size_t max_items) {
+  std::vector<std::string> out;
+  const SystemProfile* profile = context.profile;
+
+  // The machine facts a mode would need to use the switch at all. Anything the plan left
+  // out because of one of these is explained, so a short plan does not look arbitrary.
+  auto reason_for = [&](const SwitchEntry& entry) -> std::string {
+    const std::string id = entry.id != nullptr ? entry.id : "";
+    if (profile != nullptr) {
+      if (profile->gpu_vendor.empty() && id.find("gpu") != std::string::npos) {
+        return "no GPU reported";
+      }
+      if (profile->cpu_physical <= 1 &&
+          id.find("renderer-process-limit") != std::string::npos) {
+        return "one physical core, so splitting renderers would not help";
+      }
+      if (profile->battery == BatteryState::kNotPresent && (id == "disable-renderer-backgrounding" || id == "disable-background-timer-throttling")) {
+        return "no battery to save";
+      }
+    }
+    return std::string();
+  };
+
+  for (const SwitchEntry& entry : AllSwitches()) {
+    if (entry.id == nullptr || plan.boot.Has(entry.id)) continue;
+    if (!IsApplicable(entry)) continue;
+    const std::string why = reason_for(entry);
+    if (why.empty()) continue;
+    out.push_back(std::string("not applied: --") + entry.id + " (" + why + ")");
+    if (max_items != 0 && out.size() >= max_items) break;
+  }
+  return out;
+}
 
 ModePlan BuildPlan(Mode mode, const EngineContext& context) {
   ModePlan plan;

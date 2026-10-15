@@ -106,6 +106,20 @@ const std::vector<FeatureEntry>& AllFeatures();
 
 /// Lookup; returns nullptr when unknown.
 const SwitchEntry* FindSwitch(std::string_view id);
+/// The feature *name* part of an --enable-features token.
+///
+/// Chromium accepts four forms (base/feature_list.h, InitFromCommandLine):
+///   FeatureName
+///   FeatureName<TrialName
+///   FeatureName:k1/v1/k2/v2
+///   FeatureName<TrialName.GroupName:k1/v1/k2/v2
+/// so a token that tunes parameters still refers to one catalogue entry. Looking up the
+/// whole token would fail, report "unverified", and hide a feature that is in fact
+/// verified - which is how BrowserX came to ship a feature token that Chromium ignored
+/// entirely (it used a bare slash, which is a *parameter* name, not a feature name).
+std::string FeatureNameOf(std::string_view token);
+
+/// Looks up a feature by name, accepting a parameterised token as well.
 const FeatureEntry* FindFeature(std::string_view name);
 
 /// True when the switch is safe to place on the command line (i.e. verified or

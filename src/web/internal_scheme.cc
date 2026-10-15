@@ -4,12 +4,15 @@
 
 #include "web/internal_scheme.h"
 
+#include <chrono>
+
 #include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "app/cef_host.h"
+#include "core/json.h"
 #include "browser/browser_shell.h"
 #include "core/chromium_catalog.h"
 #include "core/mode_engine.h"
@@ -152,6 +155,47 @@ PageData BuildPageData(const app::CefHost& host) {
     plans.push_back(core::BuildPlan(mode_info.mode, context));
   }
   data.plans_json = core::report::RenderPlansJson(plans, host.system_profile());
+
+  // What would change if you switched: computed by the engine from the same plans, so the
+  // modes page can say "adds 4 switches, removes 2" instead of "faster".
+  {
+    const core::ModePlan* active_plan = nullptr;
+    for (const core::ModePlan& plan : plans) {
+      if (plan.mode == host.plan().mode) active_plan = &plan;
+    }
+    core::json::Value::Array diffs;
+    for (const core::ModePlan& plan : plans) {
+      const core::ModeInfo& info = core::GetModeInfo(plan.mode);
+      const std::vector<core::PlanDifference> against =
+          active_plan != nullptr ? core::DiffPlans(*active_plan, plan, /*max_items=*/12)
+                                 : std::vector<core::PlanDifference>();
+      core::json::Value::Object entry;
+      entry["id"] = core::json::Value(info.id != nullptr ? info.id : "");
+      entry["label"] = core::json::Value(info.label != nullptr ? info.label : "");
+      entry["summary"] = core::json::Value(core::DescribePlanDiff(against));
+      core::json::Value::Array items;
+      for (const core::PlanDifference& difference : against) {
+        core::json::Value::Object item;
+        item["flag"] = core::json::Value(difference.ToFlag());
+        item["from"] = core::json::Value(difference.from_value);
+        item["to"] = core::json::Value(difference.to_value);
+        item["reason"] = core::json::Value(difference.to_reason.empty() ? difference.from_reason
+                                                                       : difference.to_reason);
+        items.push_back(core::json::Value(item));
+      }
+      entry["items"] = core::json::Value(items);
+      diffs.push_back(core::json::Value(entry));
+    }
+    data.mode_diffs_json = core::json::Serialize(core::json::Value(diffs), 0);
+  }
+
+  // History and bookmarks, straight from the store the browser writes. The pages render
+  // rows from this JSON, so browserx://history shows the same list the file holds.
+  data.history_json = host.library().history().ToJson();
+  data.bookmarks_json = host.library().bookmarks().ToJson();
+  data.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
 
   // Session state, when the shell has a window open. The interface returns an
   // empty string otherwise, and the pages report that honestly.
