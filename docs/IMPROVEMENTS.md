@@ -168,3 +168,13 @@ were written beside.
 | 145 | Honesty | BUILDING.md states plainly that the Windows path is written and statically checked but has not yet been compiled by MSVC on a real machine | BUILDING.md | `has not yet been compiled by MSVC` |
 | 146 | Docs | The requirements table names the Windows target beside the Linux one, so neither is discovered by surprise | BUILDING.md | `The full browser on Windows` |
 | 147 | Docs | The README gives the Windows build its own commands next to the Linux ones, instead of leaving Windows to be guessed at | README.md | `build_windows.cmd --stage` |
+| 148 | Security | make clean keeps out/profile, because in portable mode that directory is the entire run profile - the one thing in this tree that cannot be regenerated | Makefile | `kept    $(OUT_DIR)/profile (your history, bookmarks and settings)` |
+| 149 | Tooling | make space reports what the build is holding, measured rather than estimated, and deletes nothing | Makefile | `space-apply:` |
+| 150 | Hygiene | The disk report classifies every item by what removing it costs - a recompile, a 200 MB re-download - instead of reporting sizes alone | tools/disk_report.py | `make deps   (about 200 MB of download` |
+| 151 | Security | The removal tool refuses the sources, the git history and the headers, and checks that refusal immediately before each delete rather than once at startup | tools/disk_report.py | `is never removed by this tool` |
+| 152 | Tests | The disk tool's safety was tested by pointing it at a sandbox with a fake profile, and by forcing it to remove src/, .git and docs/ - all three refused | tools/disk_report.py | `def assert_safe_to_remove(path: Path) -> None:` |
+| 153 | Hygiene | distclean says what it costs to undo, instead of removing a 200 MB download in silence | Makefile | `getting them back: make deps` |
+| 154 | Docs | BrowserX.vsconfig names the three Visual Studio components this build needs, so the installer imports a minimal selection instead of the recommended pile | BrowserX.vsconfig | `Microsoft.VisualStudio.Component.Windows11SDK.26100` |
+| 155 | Docs | BUILDING.md separates installing the compiler from installing the extras, with the space each one costs and which are not needed | BUILDING.md | `### Trimming Visual Studio` |
+| 156 | UX | The Windows install instructions use the Visual Studio Installer first, with the exact components to keep ticked and the ones to untick | BUILDING.md | `Untick CMake, vcpkg, Clang, ATL/MFC` |
+| 157 | Honesty | The documented winget commands carry the agreement flags, because without them the first run stops at a prompt and the following commands become that prompt's answers | BUILDING.md | `Paste one line, wait for it to finish` |
