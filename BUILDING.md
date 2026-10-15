@@ -99,25 +99,116 @@ make doctor         # runtime environment, not build requirements
 `check-improvements` (the improvement ledger, see `docs/IMPROVEMENTS.md`), so a failing
 ledger can never hide a compiler error, and vice versa.
 
+## Disk space: what BrowserX costs, and what you can trim
+
+**Ask before deleting anything:**
+
+```bash
+make space                 # measured sizes, and what each one costs to get back
+make space-apply           # remove the rebuildable outputs (keeps your profile)
+make space-apply DEEP=1    # also the fetched CEF trees: 200 MB of download again
+```
+
+The figures for this checkout, measured rather than guessed: `build/` (object files) about
+**94 MB**, `out/` (the test binary alone is 37 MB of it) about **40 MB**, and the committed
+CEF headers **1.9 MB**. The CEF *binary* distribution is the big one: **~200 MB downloaded,
+~1 GB extracted** — and it is the one thing here worth thinking about before removing,
+because the download is not small.
+
+Two rules the tool follows, and the reason `Tooling` here is not just a `du` wrapper:
+
+* **`make clean` never deletes `out/profile`.** In portable mode the run profile — history,
+  bookmarks, settings, caches — lives inside `out/`, so `rm -rf out` would destroy the only
+  data in this project that cannot be regenerated. `make clean` removes everything in `out/`
+  except that directory, and says so when it finds one. `make space-apply` has the same
+  guard, checked immediately before each delete rather than once at startup.
+* **Removal is separated from measurement.** `make space` deletes nothing, ever.
+
+### Trimming Visual Studio
+
+This is usually the biggest single number, and the most trimmable. The **Build Tools** are
+the compiler without the IDE — and the IDE is most of the download:
+
+| What | Space | Needed? |
+|------|-------|---------|
+| Build Tools + C++ workload (MSVC v143, x64/x86) | ~2 GB | **Yes** — this is the compiler |
+| One Windows SDK (10.0.26100) | ~1 GB | **Yes** — `windows.h`, `kernel32.lib` |
+| *Desktop development with C++* recommended extras: CMake tools, AddressSanitizer, testing tools, vcpkg | ~1–2 GB | **No** — BrowserX needs none of them |
+| The full Visual Studio IDE | +6 GB and up | **No** — unless you want its debugger |
+| Additional SDKs, Clang toolchain, ATL/MFC, ARM/ARM64 toolsets | 1–3 GB each | **No** — unless you build for them |
+
+`BrowserX.vsconfig` in the repository root names exactly the three components this build
+needs. If the Visual Studio Installer offers **More → Import configuration**, point it at
+that file and it will install the compiler and one SDK, nothing else. Otherwise, in the
+installer tick only:
+
+* **Desktop development with C++** (workload)
+* **MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)**
+* **Windows 11 SDK (10.0.26100)** — or any one Windows 10/11 SDK; one is required
+
+...and untick everything else on the right-hand pane, which is where most of the space
+goes. The installer shows the running total as you tick, so the number is visible before
+you commit to it.
+
 ## Building the browser on Windows
 
 BrowserX on Windows is built with **MSVC** and the **prebuilt CEF Windows binaries**.
 There is no building Chromium involved — that is the entire point of CEF: it *is*
 Chromium, packaged as a binary distribution that you link against.
 
+### Step 1 — the compiler: use the Visual Studio Installer
+
+Download **Build Tools for Visual Studio 2022** ("Tools for Visual Studio" on the
+[download page](https://visualstudio.microsoft.com/downloads/)), run it, and on the
+*Workloads* tab tick **Desktop development with C++**. Then open the **Installation
+details** pane on the right and leave ticked only:
+
+* **MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)**
+* **Windows 11 SDK (10.0.26100)** — or any single Windows 10/11 SDK
+
+Untick CMake, vcpkg, Clang, ATL/MFC, and other SDKs: BrowserX needs none of them, and
+together they are most of the download. The installer shows the running total, so you can
+watch it fall as you untick. If your installer offers **More → Import configuration**,
+point it at [`BrowserX.vsconfig`](BrowserX.vsconfig) in this repository instead — it lists
+exactly those three components and nothing else.
+
+`winget` can do the same thing in one line, but it asks for source agreements the first
+time it runs, and it must be given the flags for them or it will sit at a prompt:
+
 ```bat
-:: 1. the tools (one line; the Build Tools are free and about 3 GB on disk)
-winget install --id Microsoft.VisualStudio.2022.BuildTools ^
-    --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-winget install --id Python.Python.3.12
-winget install --id Git.Git
-::    ...then open a NEW window so PATH picks them up
+winget install --id Microsoft.VisualStudio.2022.BuildTools --accept-package-agreements ^
+    --accept-source-agreements ^
+    --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
 
-:: 2. the Chromium/CEF binaries this links against (about 200 MB download)
+Then Python and Git — **one command at a time**, and **open a new window afterwards** so
+the new PATH applies:
+
+```bat
+winget install --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements
+```
+
+```bat
+winget install --id Git.Git --accept-package-agreements --accept-source-agreements
+```
+
+> **If you paste several commands in one go**, the shell hands the later ones to whatever
+> prompt is on screen — which is how a winget agreement prompt turns into the answer
+> "winget install --id Python.Python.3.12". Paste one line, wait for it to finish.
+
+### Step 2 — the Chromium/CEF binaries
+
+```bat
 python tools\fetch_cef.py
+```
 
-:: 3. build
+### Step 3 — build
+
+```bat
 tools\build_windows.cmd --stage
+```
+
+```bat
 out\BrowserX.exe
 ```
 
