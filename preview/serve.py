@@ -168,15 +168,54 @@ class PreviewHandler(BaseHTTPRequestHandler):
             return
         pages = []
         for path in sorted(PAGES_DIR.glob("*.html")):
-            pages.append({"name": path.stem, "url": "/pages/" + path.name,
-                          "bytes": path.stat().st_size})
+            # The page's own <title> is what the browser puts on the tab, so the picker shows
+            # the same words the real browser would - and a new page gets a proper label
+            # without anyone updating a list here.
+            title = ""
+            try:
+                head = path.read_text(encoding="utf-8", errors="replace")[:4096]
+                start = head.find("<title>")
+                end = head.find("</title>", start + 1)
+                if start != -1 and end != -1:
+                    title = head[start + len("<title>"):end].replace(" · BrowserX", "").strip()
+                    # The title is HTML: unescape the entities a renderer wrote, so the
+                    # picker shows "Modes & performance" and not "Modes &amp; performance".
+                    for entity, plain in (("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                                          ("&quot;", '"'), ("&#39;", "'")):
+                        title = title.replace(entity, plain)
+            except OSError:
+                pass
+            pages.append({"name": path.stem, "title": title or path.stem,
+                          "url": "/pages/" + path.name, "bytes": path.stat().st_size})
         self.send_json({"ok": True, "count": len(pages), "pages": pages,
                         "note": "rendered by src/web/internal_pages.cc; the tab list "
                                 "is sample data (there is no live browser process here)"})
 
+    def serve_improvements(self) -> None:
+        """The improvement ledger, straight from the checker.
+
+        The preview shows the same numbers `make check` enforces: how many improvements are
+        recorded, in which areas, and whether every anchor still exists in the code. Nothing
+        is re-counted in JavaScript - a wrong number here would just be a second opinion.
+        """
+        script = REPO_ROOT / "tools" / "check_improvements.py"
+        if not script.is_file():
+            self.send_error_json(500, "tools/check_improvements.py is missing")
+            return
+        try:
+            result = subprocess.run([sys.executable, str(script), "--json"], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, timeout=20)
+            payload = json.loads(result.stdout or "{}")
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            self.send_error_json(500, f"could not read the ledger: {error}")
+            return
+        self.send_json(payload)
+
     def serve_api(self, route: str, query: dict[str, list[str]]) -> None:
-        if route == "/api/pages":
+        if route in ("/api/pages", "/pages"):
             self.serve_pages_index()
+        elif route == "/api/improvements":
+            self.serve_improvements()
         elif route == "/api/plans":
             self.send_json(run_json(tool_path(FLAGPLAN, ["make bench"]), ["--json"]))
         elif route == "/api/catalog":

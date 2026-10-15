@@ -27,6 +27,7 @@
     <button class="tab sleeping" data-tab="catalog"><span class="dot"></span>Switch catalogue<span class="x">×</span></button>
     <button class="tab" data-tab="about"><span class="dot"></span>About BrowserX<span class="x">×</span></button>
     <button class="tab" data-tab="pages"><span class="dot"></span>BrowserX pages<span class="x">×</span></button>
+    <button class="tab sleeping" data-tab="improvements"><span class="dot"></span>Improvements<span class="x">×</span></button>
     <a class="tab bench-tab" href="/bench" target="_blank" rel="noopener"
        title="The offline benchmark page BrowserX serves at browserx://bench — open it here and in BrowserX on the same machine, one at a time"><span class="dot"></span>Benchmark<span class="x">↗</span></a>
     <button class="newtab" title="New tab">+</button>
@@ -169,6 +170,26 @@
           <a class="pill" id="pages-frame-open" href="#" target="_blank" rel="noopener">open in a new tab ↗</a>
         </div>
         <iframe id="pages-frame" title="A rendered browserx:// page" loading="lazy"></iframe>
+      </div>
+    </section>
+
+    <section class="page" data-page="improvements" hidden>
+      <h1>Improvement ledger</h1>
+      <p class="lede">
+        Every improvement in this build, read straight from <code>docs/IMPROVEMENTS.md</code> by
+        <code>tools/check_improvements.py</code> — the same numbers <code>make check</code> enforces.
+        Each entry names the file it lives in and a string that must be found there, so an entry
+        cannot outlive the code it describes. <span id="improvements-progress"></span>
+      </p>
+      <div class="kpis" id="improvements-kpis"></div>
+      <div class="card">
+        <label class="field"><span>Filter</span>
+          <input type="search" id="improvements-search" placeholder="area, file or words…" autocomplete="off">
+        </label>
+        <table id="improvements-table">
+          <thead><tr><th>#</th><th>Area</th><th>Improvement</th><th>Where</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
 

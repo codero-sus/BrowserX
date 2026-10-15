@@ -55,15 +55,205 @@ bool PlanHas(const ModePlan& plan, const std::string& id) {
 }
 
 bool PlanHasFeature(const ModePlan& plan, const std::string& name) {
+  // Uses the browser's own parser, so the test cannot disagree with what Chromium will
+  // see: a token is "FeatureName" optionally followed by "<Trial" and/or ":params".
   for (const std::string& feature : plan.boot.enabled_features()) {
-    // features may carry "/value" parameters
-    const size_t slash = feature.find('/');
-    const std::string base = slash == std::string::npos ? feature : feature.substr(0, slash);
-    if (base == name) return true;
+    if (browserx::core::FeatureNameOf(feature) == name) return true;
   }
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Plan validation, diffing and honest "why was this not applied"
+// ---------------------------------------------------------------------------
+TEST(ModeEngine, EveryModePlanPassesValidation) {
+  // The catalogue is the verified list, and every switch a plan emits must be in it. This
+  // is the test that turns "the modes look right" into "the modes are checkable": a typo
+  // or an unverified flag fails here rather than being silently ignored by Chromium.
+  EngineContext context;  // no profile: the plans must be valid even without one
+  for (const ModeInfo& info : AllModes()) {
+    const ModePlan plan = BuildPlan(info.mode, context);
+    std::string problem;
+    EXPECT_TRUE(ValidatePlan(plan, &problem))
+        << info.id << ": " << problem;
+    EXPECT_TRUE(problem.empty()) << "a valid plan reports nothing";
+  }
+}
+
+TEST(ModeEngine, ValidationCatchesARepeatedSwitchAndAnUnknownOne) {
+  EngineContext context;
+  const ModePlan good = BuildPlan(Mode::kUltra, context);
+
+  ModePlan doubled = good;
+  doubled.boot.Add("disk-cache-size", "1048576", "a second opinion");
+  std::string problem;
+  EXPECT_FALSE(ValidatePlan(doubled, &problem));
+  EXPECT_TRUE(problem.find("planned twice") != std::string::npos) << problem;
+
+  ModePlan typo = good;
+  typo.boot.Add("this-switch-does-not-exist", "", "oops");
+  EXPECT_FALSE(ValidatePlan(typo, &problem));
+  EXPECT_TRUE(problem.find("not in the switch catalogue") != std::string::npos) << problem;
+
+  ModePlan silent = good;
+  silent.boot.Add("disk-cache-size2", "1", "");
+  // (also unknown, but the point is that a plan without reasons is refused)
+  EXPECT_FALSE(ValidatePlan(silent, &problem));
+
+  // A feature turned on and then off is not a contradiction, it is a resolution: the
+  // engine keeps the last decision only (see SwitchPlan::SetFeatureState), so the plan can
+  // never send the same feature in both --enable-features and --disable-features.
+  ModePlan resolved = good;
+  resolved.boot.EnableFeature("ParallelDownloading", "why not");
+  resolved.boot.DisableFeature("ParallelDownloading", "and why");
+  bool still_enabled = false;
+  bool still_disabled = false;
+  for (const std::string& feature : resolved.boot.enabled_features()) {
+    if (feature == "ParallelDownloading") still_enabled = true;
+  }
+  for (const std::string& feature : resolved.boot.disabled_features()) {
+    if (feature == "ParallelDownloading") still_disabled = true;
+  }
+  EXPECT_FALSE(still_enabled) << "the later decision replaced the earlier one";
+  EXPECT_TRUE(still_disabled);
+  EXPECT_TRUE(ValidatePlan(resolved, &problem)) << problem;
+}
+
+TEST(ModeEngine, SwitchingModesIsExplainedFlagByFlag) {
+  EngineContext context;
+  const ModePlan ultra = BuildPlan(Mode::kUltra, context);
+  const ModePlan game = BuildPlan(Mode::kGaming, context);
+
+  const std::vector<PlanDifference> differences = DiffPlans(ultra, game);
+  EXPECT_FALSE(differences.empty()) << "two different modes must differ in their switches";
+  // Sorted by id, so the UI can print it and a reviewer can read it.
+  for (size_t i = 1; i < differences.size(); ++i) {
+    EXPECT_TRUE(differences[i - 1].id <= differences[i].id) << "the diff is sorted";
+  }
+  // Every difference is either only in the new plan, only in the old one, or a retune.
+  for (const PlanDifference& difference : differences) {
+    EXPECT_TRUE(!difference.id.empty());
+    EXPECT_TRUE(!difference.from_value.empty() || !difference.to_value.empty());
+    EXPECT_TRUE(difference.from_value != difference.to_value)
+        << difference.id << " is listed but did not change";
+  }
+  const std::string sentence = DescribePlanDiff(differences);
+  EXPECT_TRUE(sentence.find("switch") != std::string::npos);
+  EXPECT_FALSE(sentence.find(" 1 switches") != std::string::npos)
+      << "each count gets the right noun: " << sentence;
+
+  // The diff of a plan with itself is empty, which is what the UI shows for the active mode.
+  EXPECT_TRUE(DiffPlans(ultra, ultra).empty());
+  EXPECT_EQ(DescribePlanDiff({}), std::string("no switch changes"));
+
+  // A limit is honoured, and 0 means "everything".
+  EXPECT_TRUE(DiffPlans(ultra, game, 3).size() <= size_t{3});
+  EXPECT_TRUE(DiffPlans(ultra, game, 0).size() >= DiffPlans(ultra, game, 3).size());
+
+  // Switching back gives the mirrored answer, not a different one.
+  const std::vector<PlanDifference> back = DiffPlans(game, ultra);
+  EXPECT_EQ(back.size(), differences.size())
+      << "the same flags change in both directions";
+}
+
+TEST(ModeEngine, UnusedSwitchesAreExplainedRatherThanHidden) {
+  EngineContext context;
+  // A machine with no GPU, one core and no battery: the switches that would help a gaming
+  // desktop are irrelevant, and the report has to say why instead of listing less.
+  SystemProfile modest;
+  modest.os = OS::kLinux;
+  modest.os_name = "Test Linux";
+  modest.cpu_physical = 1;
+  modest.cpu_logical = 1;
+  modest.total_ram_mb = 2048;
+  modest.battery = BatteryState::kNotPresent;
+  modest.gpu_vendor.clear();
+  modest.gpu_tier = GpuTier::kSoftware;
+  context.profile = &modest;
+
+  const ModePlan plan = BuildPlan(Mode::kHighPerformance, context);
+  const std::vector<std::string> unused = ExplainUnusedSwitches(plan, context);
+  for (const std::string& line : unused) {
+    EXPECT_TRUE(line.find("not applied: --") == 0) << line;
+    EXPECT_TRUE(line.find(")") != std::string::npos) << "every note gives a reason";
+  }
+  // A limit is honoured.
+  EXPECT_TRUE(ExplainUnusedSwitches(plan, context, 2).size() <= size_t{2});
+  // Nothing in the explanation may name a switch the plan already applied.
+  for (const std::string& line : unused) {
+    for (const PlannedSwitch& applied : plan.boot.switches()) {
+      EXPECT_FALSE(line.find("--" + applied.id + " ") != std::string::npos)
+          << "a switch that was applied is not reported as unused: " << line;
+    }
+  }
+}
+
+TEST(ModeEngine, PlanDifferencesRenderAsFlagsForTheReport) {
+  EngineContext context;
+  const ModePlan low = BuildPlan(Mode::kLowRam, context);
+  const ModePlan hp = BuildPlan(Mode::kHighPerformance, context);
+  for (const PlanDifference& difference : DiffPlans(low, hp, 8)) {
+    const std::string flag = difference.ToFlag();
+    if (difference.is_feature) {
+      EXPECT_TRUE(flag.find("feature") != std::string::npos) << flag;
+    } else {
+      EXPECT_TRUE(flag.find("--") == 0) << flag;
+    }
+  }
+}
+TEST(ModeEngine, FeatureTokensAreParsedTheWayChromiumParsesThem) {
+  // Verified against base/feature_list.h (InitFromCommandLine): a token is
+  // "FeatureName", "FeatureName<Trial", "FeatureName:k/v/k2/v2" or
+  // "FeatureName<Trial.Group:k/v". The name is what the catalogue knows.
+  using browserx::core::FeatureNameOf;
+  EXPECT_EQ(FeatureNameOf("ParallelDownloading"), std::string("ParallelDownloading"));
+  EXPECT_EQ(FeatureNameOf("ParallelDownloading:k/v"), std::string("ParallelDownloading"));
+  EXPECT_EQ(FeatureNameOf("ParallelDownloading<Trial"), std::string("ParallelDownloading"));
+  EXPECT_EQ(FeatureNameOf("ParallelDownloading<Trial.Group:k/v"), std::string("ParallelDownloading"));
+  EXPECT_EQ(FeatureNameOf(""), std::string());
+
+  // A parameterised token resolves to the catalogue entry of its feature, so a tuned
+  // feature is still reported with its provenance instead of as "unverified".
+  const browserx::core::FeatureEntry* entry =
+      browserx::core::FindFeature("ParallelDownloading:MinSize/1024");
+  EXPECT_TRUE(entry != nullptr) << "the catalogue lookup strips the parameters";
+  EXPECT_TRUE(browserx::core::FindFeature("NotAThing<Study") == nullptr);
+  EXPECT_TRUE(browserx::core::FindFeature("") == nullptr);
+}
+
+TEST(ModeEngine, LowRamAdvancedProcessSharingUsesARealFeatureToken) {
+  // This is a bug fix with a test: the plan used to emit
+  // "ProcessPerSiteMainFrameThreshold/1", which is a *parameter* name of another feature
+  // and not a feature at all. Chromium ignored the token, so the mode promised sharing it
+  // never applied. Every emitted feature token must now name a catalogue entry.
+  using browserx::core::FindFeature;
+  using browserx::core::FeatureNameOf;
+  SystemProfile small;
+  small.total_ram_mb = 2048;
+  small.cpu_physical = 2;
+  small.cpu_logical = 4;
+  EngineContext context;
+  context.profile = &small;
+  RuntimeOverrides overrides;
+  overrides.allow_advanced = true;
+  context.overrides = overrides;
+
+  const ModePlan plan = BuildPlan(Mode::kLowRam, context);
+  bool saw_process_sharing = false;
+  for (const std::string& token : plan.boot.enabled_features()) {
+    EXPECT_TRUE(FindFeature(token) != nullptr)
+        << "every enabled feature must be a catalogued, verified feature: " << token;
+    EXPECT_TRUE(token.find('/') == std::string::npos || token.find(':') != std::string::npos)
+        << "parameters are written as Name:param/value, never as a bare slash: " << token;
+    if (FeatureNameOf(token) == "ProcessPerSiteUpToMainFrameThreshold") {
+      saw_process_sharing = true;
+      EXPECT_TRUE(token.find("ProcessPerSiteMainFrameThreshold/") != std::string::npos)
+          << "the tuned parameter is part of the token";
+    }
+  }
+  EXPECT_TRUE(saw_process_sharing) << "LOW RAM's advanced path tunes process sharing";
+  EXPECT_TRUE(ValidatePlan(plan, nullptr));
+}
 }  // namespace
 
 TEST(ModeEngine, ParseAndCycleModes) {
@@ -189,7 +379,12 @@ TEST(ModeEngine, LowRamAdvancedOptInAddsProcessSharing) {
   const ModePlan plan = BuildPlan(Mode::kLowRam, context);
   EXPECT_TRUE(PlanHas(plan, "disable-site-isolation-trials"));
   EXPECT_TRUE(PlanHasFeature(plan, "NetworkServiceInProcess2"));
-  EXPECT_TRUE(PlanHasFeature(plan, "ProcessPerSiteMainFrameThreshold"));
+  // This line used to assert "ProcessPerSiteMainFrameThreshold", which is a *parameter*
+  // name of a different feature: the test was pinning a token Chromium ignores. The real
+  // feature is ProcessPerSiteUpToMainFrameThreshold, tuned through its parameters.
+  EXPECT_TRUE(PlanHasFeature(plan, "ProcessPerSiteUpToMainFrameThreshold"));
+  EXPECT_FALSE(PlanHasFeature(plan, "ProcessPerSiteMainFrameThreshold"))
+      << "the bare parameter name is not a feature and must never be enabled as one";
 }
 
 TEST(ModeEngine, HighPerformanceMode) {

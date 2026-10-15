@@ -90,6 +90,14 @@ void CefHost::Initialize(const LaunchOptions& options, const Paths& paths) {
     settings_.Load(std::string());  // no path => defaults
   } else {
     settings_.Load(paths_.settings_file());
+
+  // History and bookmarks load after settings, so a future setting that caps the lists
+  // can be applied before the files are read.
+  library_.Load(paths_);
+  core::log::InfoF("library", "loaded (%s)", library_.last_note().c_str());
+  if (!library_.last_error().empty()) {
+    core::log::WarnF("library", "%s", library_.last_error().c_str());
+  }
   }
   core::Settings& values = settings_.mutable_settings();
   if (options_.mode_explicit) values.startup_mode = options_.mode;

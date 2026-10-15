@@ -18,10 +18,14 @@
 // on any machine, before the first `make run`.
 
 #include <cstdio>
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <string>
 
 #include "core/chromium_catalog.h"
+#include "core/json.h"
+#include "core/library.h"
 #include "core/mode_engine.h"
 #include "core/report.h"
 #include "core/system_profile.h"
@@ -102,7 +106,53 @@ int main(int argc, char** argv) {
     plans.push_back(browserx::core::BuildPlan(info.mode, context));
   }
   data.plans_json = browserx::core::report::RenderPlansJson(plans, profile);
+
+  // The modes page shows what a switch would change, computed by the same engine call the
+  // browser makes, so the preview cannot promise a different set of flags than the real
+  // mode switcher.
+  {
+    browserx::core::json::Value::Array diffs;
+    for (const browserx::core::ModePlan& plan : plans) {
+      const browserx::core::ModeInfo& info = browserx::core::GetModeInfo(plan.mode);
+      const std::vector<browserx::core::PlanDifference> against =
+          browserx::core::DiffPlans(active_plan, plan, 12);
+      browserx::core::json::Value::Object entry;
+      entry["id"] = browserx::core::json::Value(info.id != nullptr ? info.id : "");
+      entry["label"] = browserx::core::json::Value(info.label != nullptr ? info.label : "");
+      entry["summary"] = browserx::core::json::Value(browserx::core::DescribePlanDiff(against));
+      entry["items"] = browserx::core::json::Value(browserx::core::json::Value::Array());
+      diffs.push_back(browserx::core::json::Value(entry));
+    }
+    data.mode_diffs_json = browserx::core::json::Serialize(browserx::core::json::Value(diffs), 0);
+  }
   if (with_session) data.session_json = kSampleSession;
+
+  // The history and bookmark readers are always reviewable, so their pages are always
+  // written. The sample is built with the real store (core::History / core::Bookmarks),
+  // which is the only way to be sure the page parses exactly what the browser writes.
+  const int64_t hour = 60 * 60 * 1000;
+  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+  browserx::core::History sample_history;
+  for (int i = 0; i < 7; ++i) {
+    sample_history.Add("https://news.example/tea-harvest", "The tea harvest, explained",
+                       now_ms - (5 + i) * hour);
+  }
+  sample_history.Add("https://docs.example/guide/getting-started", "Getting started — Docs",
+                     now_ms - 26 * hour);
+  sample_history.Add("https://docs.example/guide/getting-started", "Getting started — Docs",
+                     now_ms - 3 * hour);
+  sample_history.Add("https://shop.example/cart", "Your cart", now_ms - 40 * 60 * 1000);
+  browserx::core::Bookmarks sample_bookmarks;
+  sample_bookmarks.Add("https://docs.example/guide/getting-started", "Getting started — Docs",
+                       "work", now_ms - 4 * 24 * hour);
+  sample_bookmarks.Add("https://news.example/tea-harvest", "The tea harvest, explained", "",
+                       now_ms - 30 * 60 * 1000);
+  data.history_json = sample_history.ToJson();
+  data.bookmarks_json = sample_bookmarks.ToJson();
+  data.now_ms = now_ms;
+  data.library_is_sample = true;
 
   const std::string mkdir = "mkdir -p '" + output_dir + "'";
   if (std::system(mkdir.c_str()) != 0) {
@@ -116,6 +166,7 @@ int main(int argc, char** argv) {
         browserx::web::PageKind::kTelemetry, browserx::web::PageKind::kSettings,
         browserx::web::PageKind::kShortcuts, browserx::web::PageKind::kCatalog,
         browserx::web::PageKind::kSession, browserx::web::PageKind::kAbout,
+        browserx::web::PageKind::kHistory, browserx::web::PageKind::kBookmarks,
         browserx::web::PageKind::kFind}) {
     const std::string path = output_dir + "/" + browserx::web::PageName(kind) + ".html";
     if (!WriteFile(path, browserx::web::RenderPage(kind, data))) return 1;

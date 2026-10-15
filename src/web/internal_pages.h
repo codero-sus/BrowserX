@@ -15,6 +15,7 @@
 #ifndef BROWSERX_WEB_INTERNAL_PAGES_H_
 #define BROWSERX_WEB_INTERNAL_PAGES_H_
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,6 +89,26 @@ struct PageData {
   /// searches where the omnibox searches; the default is only a fallback for callers
   /// that render pages without settings (tests, the preview).
   std::string search_template = "https://duckduckgo.com/?q=%s";
+  /// browserx://history as JSON (core::History::ToJson()). The page parses this and
+  /// renders the rows itself, so the same renderer works in the browser, in the preview
+  /// server and in the mobile panels. Empty means "no history store in this build".
+  std::string history_json;
+  /// browserx://bookmarks as JSON (core::Bookmarks::ToJson()).
+  std::string bookmarks_json;
+  /// Milliseconds since the epoch, used for "3 days ago". 0 means the page falls back to
+  /// the system clock; the browser passes its own value so a rendered page and the
+  /// history it came from agree on what "now" is.
+  int64_t now_ms = 0;
+  /// core::DiffPlans against the active mode, as JSON: one entry per mode with a summary
+  /// line ("adds 4 switches and removes 2") and the differing flags with their reasons.
+  /// The engine computes it, so the page cannot describe a mode differently from what the
+  /// browser would apply.
+  std::string mode_diffs_json;
+  /// True when the JSON above is sample data rather than this browser's real store. Pages
+  /// say so out loud instead of presenting invented rows as history (the preview server
+  /// and the tests both need that honesty).
+  bool library_is_sample = false;
+
   /// The host that was actually requested. Only used by the "no such page" view,
   /// so the user sees the address they typed instead of a generic message.
   std::string requested_host;

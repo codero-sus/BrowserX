@@ -209,7 +209,15 @@ int main(int argc, char** argv) {
 
   if (json) {
     std::vector<browserx::core::ModePlan> plans;
-    for (const Mode mode : selected) plans.push_back(browserx::core::BuildPlan(mode, context));
+    for (const Mode mode : selected) {
+      const browserx::core::ModePlan plan = browserx::core::BuildPlan(mode, context);
+      std::string problem;
+      if (!browserx::core::ValidatePlan(plan, &problem)) {
+        std::fprintf(stderr, "  !! invalid plan in --json output: %s\n", problem.c_str());
+        return 2;
+      }
+      plans.push_back(plan);
+    }
     std::printf("%s", browserx::core::report::RenderPlansJson(plans, profile).c_str());
     return 0;
   }
@@ -219,6 +227,21 @@ int main(int argc, char** argv) {
     std::printf("\n  BrowserX — Chromium switch plans (verified %s against chromium@%s)\n",
                 browserx::core::kCatalogVerifiedOn, browserx::core::kCatalogChromiumRef);
   }
+  // Every plan is validated before it is printed: a switch that is not in the verified
+  // catalogue, or a plan that contradicts itself, fails loudly here instead of being
+  // applied by Chromium and silently ignored (which is the one failure mode a browser
+  // making performance claims cannot afford).
+  bool invalid = false;
+  for (const Mode mode : selected) {
+    const ModePlan plan = browserx::core::BuildPlan(mode, context);
+    std::string problem;
+    if (!browserx::core::ValidatePlan(plan, &problem)) {
+      std::fprintf(stderr, "  !! %s: invalid plan: %s\n", plan.mode == Mode::kUltra ? "ultra" : "",
+                   problem.c_str());
+      invalid = true;
+    }
+  }
+  if (invalid) return 2;
   for (const Mode mode : selected) {
     const ModePlan plan = browserx::core::BuildPlan(mode, context);
     std::printf("%s", browserx::core::report::RenderPlanText(plan, profile, quiet).c_str());

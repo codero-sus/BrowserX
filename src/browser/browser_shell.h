@@ -63,6 +63,20 @@ class BrowserShellImpl : public BrowserShell {
   void CycleAutoPilot();
   void NoteFullscreenChanged(bool fullscreen);
   void NoteLoadState(BrowserWindow* window, bool loading);
+
+  /// The plan the browser is running right now.
+  const core::ModePlan& current_plan() const;
+  /// The plan this machine would use for `mode` (same context as launch: the detected
+  /// hardware profile plus the user's settings). Used by the UI to say what switching
+  /// would change, so the menu and the modes page cannot describe it differently.
+  core::ModePlan PlanFor(core::Mode mode) const;
+  /// Records a finished navigation in history. Called once per load, so the visit count
+  /// means "how many times this page was opened" rather than "how many events fired".
+  void NoteVisit(BrowserWindow* window, const std::string& url, const std::string& title);
+  /// Refines the title of a page already in history (no extra visit). Pages frequently
+  /// report their real title after the load finished, and a history entry called
+  /// "Loading…" would be useless.
+  void NoteTitle(const std::string& url, const std::string& title);
   void NoteNavigationStarted(BrowserWindow* window, const std::string& url);
 
   // --- shield --------------------------------------------------------------

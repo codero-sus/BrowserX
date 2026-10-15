@@ -86,6 +86,9 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
       if (tab == nullptr) break;
       outcome.closed_url = tab->url;
       outcome.closed_title = tab->title.empty() ? tab->url : tab->title;
+      // The session keeps the closed tab itself (title, group, zoom, pinning), so reopening
+      // restores what the tab was rather than just its address.
+      session->RememberClosed(*tab);
       const bool was_last = session->count() == 1;
       outcome.destroy_ids.push_back(target);
       session->CloseTab(target);
@@ -105,11 +108,22 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
     }
 
     case TabCommand::kReopenTab: {
+      // The session's own stack first: it remembers several tabs and their state. The
+      // `argument` path stays for callers that only know a URL (a shell hook, the CLI).
+      const int id = session->ReopenLastClosed(/*activate=*/true);
+      if (id != 0) {
+        outcome.handled = true;
+        outcome.activate_id = id;
+        outcome.create_ids.push_back(id);
+        outcome.structure_changed = true;
+        outcome.message = "Reopened tab";
+        break;
+      }
       if (action.argument.empty()) break;
-      const int id = session->AddTab(action.argument, /*activate=*/true);
+      const int from_url = session->AddTab(action.argument, /*activate=*/true);
       outcome.handled = true;
-      outcome.activate_id = id;
-      outcome.create_ids.push_back(id);
+      outcome.activate_id = from_url;
+      outcome.create_ids.push_back(from_url);
       outcome.structure_changed = true;
       outcome.message = "Reopened tab";
       break;
@@ -201,19 +215,20 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
     }
 
     case TabCommand::kCloseOthers: {
-      const int keep = session->active_id();
+      // The session owns this, including remembering the closed tabs so Ctrl+Shift+T can
+      // walk back through them. Doing it here as well is how the two drift apart.
       std::vector<int> victims;
       for (const TabState& candidate : session->tabs()) {
-        if (candidate.id == keep || candidate.pinned) continue;
+        if (candidate.id == session->active_id() || candidate.pinned) continue;
         victims.push_back(candidate.id);
         outcome.destroy_ids.push_back(candidate.id);
       }
       if (victims.empty()) break;
-      for (const int id : victims) session->CloseTab(id);
+      const size_t closed = session->CloseOthers(session->active_id());
       outcome.handled = true;
       outcome.activate_id = session->active_id();
       outcome.structure_changed = true;
-      outcome.message = "Closed " + std::to_string(victims.size()) + " other tabs";
+      outcome.message = "Closed " + std::to_string(closed) + " other tabs";
       break;
     }
 
@@ -223,16 +238,16 @@ TabActionOutcome ApplyTabAction(const TabAction& action, Session* session) {
       std::vector<int> victims;
       const std::vector<TabState> snapshot = session->tabs();
       for (size_t i = static_cast<size_t>(index) + 1; i < snapshot.size(); ++i) {
-        if (snapshot[i].pinned) continue;  // pinned tabs are never swept away
+        if (snapshot[i].pinned) continue;
         victims.push_back(snapshot[i].id);
-        outcome.destroy_ids.push_back(snapshot[i].id);
       }
       if (victims.empty()) break;
-      for (const int id : victims) session->CloseTab(id);
+      const size_t closed = session->CloseToTheRight(session->active_id());
+      for (const int id : victims) outcome.destroy_ids.push_back(id);
       outcome.handled = true;
       outcome.activate_id = session->active_id();
       outcome.structure_changed = true;
-      outcome.message = "Closed " + std::to_string(victims.size()) + " tabs to the right";
+      outcome.message = "Closed " + std::to_string(closed) + " tabs to the right";
       break;
     }
 

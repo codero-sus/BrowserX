@@ -254,6 +254,47 @@ Mode DefaultModeFor(const SystemProfile& profile);
 /// Short label for logs/UI ("GAME", "LOW RAM", ...).
 std::string DescribePlanOneLine(const ModePlan& plan);
 
+// ---------------------------------------------------------------------------
+// Comparing and checking plans
+// ---------------------------------------------------------------------------
+
+/// One switch that differs between two plans.
+struct PlanDifference {
+  std::string id;              // switch id, or "enable-features:NAME" for a feature
+  std::string from_value;      // empty when the switch is only in `to`
+  std::string to_value;        // empty when the switch is only in `from`
+  std::string from_reason;
+  std::string to_reason;
+  bool is_feature = false;
+  /// "-> --id=to" style flag text for the destination plan.
+  std::string ToFlag() const;
+};
+
+/// What changes when switching from one mode to another. Sorted by id so the answer is
+/// stable, and limited to `max_items` (0 = everything). This is what the mode switcher
+/// shows: not "GAME is fast", but exactly which flags appear and which disappear.
+std::vector<PlanDifference> DiffPlans(const ModePlan& from, const ModePlan& to,
+                                      size_t max_items = 0);
+
+/// One line summarising a diff: "GAME adds 12 switches, removes 4, changes 2".
+std::string DescribePlanDiff(const std::vector<PlanDifference>& differences);
+
+/// Checks a plan against the catalogue and against itself. Returns true when the plan is
+/// safe to apply; otherwise fills `problem` with the first thing that is wrong.
+///
+/// A typo in a mode table would otherwise be applied by Chromium and silently ignored,
+/// which is the worst possible outcome for a browser that makes performance claims: the
+/// user would get neither the speed nor an explanation. `make bench` and the mode tests
+/// run this for every mode on every machine profile.
+bool ValidatePlan(const ModePlan& plan, std::string* problem);
+
+/// Switches the catalogue knows, that this mode did not use because the machine cannot
+/// benefit from them (no GPU, one core, no battery, ...). Rendered as notes in the UI, so
+/// a short flag list on a weak machine reads as "here is why", not "here is less".
+std::vector<std::string> ExplainUnusedSwitches(const ModePlan& plan,
+                                               const EngineContext& context,
+                                               size_t max_items = 6);
+
 }  // namespace core
 }  // namespace browserx
 

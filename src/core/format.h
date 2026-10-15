@@ -29,6 +29,10 @@ bool Contains(std::string_view text, std::string_view needle);
 bool ContainsCaseInsensitive(std::string_view haystack, std::string_view needle);
 bool EqualsCaseInsensitive(std::string_view a, std::string_view b);
 std::string ReplaceAll(std::string_view text, std::string_view from, std::string_view to);
+/// Escapes &, <, >, ", ' for HTML text and attribute contexts. Kept in core because both
+/// a bookmark export file and the browser's own pages need the same escaping, and two
+/// copies of it would eventually disagree.
+std::string HtmlEscape(std::string_view text);
 std::vector<std::string> Split(std::string_view text, char separator, bool skip_empty = true);
 std::vector<std::string> SplitAny(std::string_view text, std::string_view separators, bool skip_empty = true);
 std::string Join(const std::vector<std::string>& parts, std::string_view separator);
@@ -57,6 +61,21 @@ bool ParseInt(std::string_view text, int64_t* out);
 bool ParseDouble(std::string_view text, double* out);
 /// "512", "512MB", "2g" -> megabytes. Returns false on garbage.
 bool ParseSizeMb(std::string_view text, int64_t* out_mb);
+
+/// "just now" / "4 min ago" / "3 h ago" / "2 days ago", for history and the session
+/// list. `now_ms` and `then_ms` are both milliseconds since the epoch, so the caller
+/// owns the clock and the formatting stays testable.
+std::string FormatRelativeTime(int64_t then_ms, int64_t now_ms);
+/// "a", "a and b", "a, b and c" - a list a person would write, with an Oxford-free
+/// join (the browser has no room for an Oxford comma in a status bar).
+std::string FormatList(const std::vector<std::string>& items, std::string_view conjunction = "and");
+/// "1 tab" / "3 tabs" - correct English in one call, so no caller has to write "s?".
+std::string Pluralize(int64_t count, std::string_view singular, std::string_view plural = "");
+/// "1.5 KB" style size with the unit that fits; 0 means "0 B".
+std::string FormatSize(uint64_t bytes);
+/// Strips control characters and collapses whitespace runs: titles come from web pages
+/// and end up in menus, tabs and JSON, so one place has to make them safe to display.
+std::string CleanDisplayText(std::string_view text, size_t max_chars = 160);
 
 /// Sparkline from a series of 0..1 values using block glyphs (for telemetry UI).
 std::string Sparkline(const std::vector<double>& values, int buckets = 24);

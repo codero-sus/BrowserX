@@ -334,6 +334,7 @@ int main(int argc, char** argv) {
   host.settings().RecordAppliedPlan(browserx::core::GetModeInfo(host.current_mode()).id,
                                     host.applied_boot_flags());
   host.settings().SaveIfDirty();
+  host.library().SaveIfDirty();  // history and bookmarks last: they change most
 
   // 8. Either the full UI or a headless probe.
   int exit_code = 0;

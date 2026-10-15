@@ -527,17 +527,15 @@ void BrowserWindow::HandleTabCommand(int command_id) {
     case kIdNewTab: action.command = TabCommand::kNewTab; break;
     case kIdCloseTab: action.command = TabCommand::kCloseTab; break;
     case kIdReopenTab: {
-      // The strip owns the closed-tab stack; a sleeping tab is woken instead.
-      if (strip_->closed_count() > 0) {
-        strip_->ReopenLast();
-        return;
-      }
+      // The session owns the closed-tab stack (several tabs deep, with their titles,
+      // groups, zoom and pinning) - one owner, so the menu, Ctrl+Shift+T and the strip's
+      // own buttons cannot disagree about what "the last closed tab" is.
       if (session.active_tab() != nullptr && session.active_tab()->sleeping) {
-        action.command = TabCommand::kWake;
+        action.command = TabCommand::kWake;  // a sleeping tab comes back before an undo
         break;
       }
       action.command = TabCommand::kReopenTab;
-      action.argument = initial_url_;
+      action.argument = initial_url_;  // only used when the stack is empty
       break;
     }
     case kIdNextTab: action.command = TabCommand::kNextTab; break;
@@ -652,22 +650,42 @@ void BrowserWindow::OnChromeMenuCommand(int command_id) { OnToolbarCommand(comma
 
 void BrowserWindow::AddModeMenuItems(CefRefPtr<CefMenuModel> model) {
   if (model.get() == nullptr) return;  // a menu the platform refused to create
-  model->AddItem(kIdModeUltra, "ULTRA - balanced (Ctrl+1)");
-  model->AddItem(kIdModeGaming, "GAME - maximum frame rate (Ctrl+2)");
-  model->AddItem(kIdModeHighPerformance, "HIGH PERFORMANCE - maximum throughput (Ctrl+3)");
-  model->AddItem(kIdModeLowRam, "LOW RAM - smallest footprint (Ctrl+4)");
-  model->AddItem(kIdModeEco, "ECO - longest battery life (Ctrl+5)");
-  model->AddItem(kIdModeSuperInternet, "SUPER INTERNET - max network speed (Ctrl+6)");
-  model->AddItem(kIdModeDownload, "DOWNLOAD - built for big transfers (Ctrl+7)");
-  model->AddItem(kIdModeStreaming, "STREAMING - smooth video and audio (Ctrl+8)");
+
+  // Each entry says what switching would actually change, computed by the engine
+  // (core::DiffPlans against the mode that is running). A mode menu that says "GAME -
+  // maximum frame rate" is a slogan; one that says "-4 switches" is a fact the user can
+  // check in browserx://modes. When the engine is unavailable the labels simply stay short.
+  auto label_for = [&](core::Mode mode, const char* text, const char* shortcut) {
+    std::string label = text;
+    if (shortcut != nullptr) label += shortcut;
+    if (shell_ == nullptr || shell_->current_plan().mode == mode) return label;
+    // The engine decides; the menu only prints. Long summaries are trimmed, because a menu
+    // item is a line, not a paragraph - the full list lives on browserx://modes.
+    std::string summary = core::DescribePlanDiff(
+        core::DiffPlans(shell_->current_plan(), shell_->PlanFor(mode), 0));
+    if (summary == "no switch changes") return label;
+    if (summary.size() > 46) summary = summary.substr(0, 44) + "\xE2\x80\xA6";
+    return label + "\t" + summary;
+  };
+
+  model->AddItem(kIdModeUltra, label_for(core::Mode::kUltra, "ULTRA - balanced (Ctrl+1)", nullptr));
+  model->AddItem(kIdModeGaming, label_for(core::Mode::kGaming, "GAME - maximum frame rate (Ctrl+2)", nullptr));
+  model->AddItem(kIdModeHighPerformance,
+                 label_for(core::Mode::kHighPerformance, "HIGH PERFORMANCE - maximum throughput (Ctrl+3)", nullptr));
+  model->AddItem(kIdModeLowRam, label_for(core::Mode::kLowRam, "LOW RAM - smallest footprint (Ctrl+4)", nullptr));
+  model->AddItem(kIdModeEco, label_for(core::Mode::kEco, "ECO - longest battery life (Ctrl+5)", nullptr));
+  model->AddItem(kIdModeSuperInternet,
+                 label_for(core::Mode::kSuperInternet, "SUPER INTERNET - max network speed (Ctrl+6)", nullptr));
+  model->AddItem(kIdModeDownload, label_for(core::Mode::kDownload, "DOWNLOAD - built for big transfers (Ctrl+7)", nullptr));
+  model->AddItem(kIdModeStreaming, label_for(core::Mode::kStreaming, "STREAMING - smooth video and audio (Ctrl+8)", nullptr));
   model->AddSeparator();
-  model->AddItem(kIdModePrivacy, "PRIVACY - nothing left on disk (Ctrl+9)");
-  model->AddItem(kIdModeDataSaver, "DATA SAVER - spend the least data");
-  model->AddItem(kIdModeWeakNetwork, "WEAK NETWORK - for slow or crowded links");
-  model->AddItem(kIdModeLowLatency, "LOW LATENCY - first byte and input response");
-  model->AddItem(kIdModeReader, "READER - long-form reading");
-  model->AddItem(kIdModeBenchmark, "BENCHMARK - measure, do not browse");
-  model->AddItem(kIdModeKiosk, "KIOSK - unattended screen");
+  model->AddItem(kIdModePrivacy, label_for(core::Mode::kPrivacy, "PRIVACY - nothing left on disk (Ctrl+9)", nullptr));
+  model->AddItem(kIdModeDataSaver, label_for(core::Mode::kDataSaver, "DATA SAVER - spend the least data", nullptr));
+  model->AddItem(kIdModeWeakNetwork, label_for(core::Mode::kWeakNetwork, "WEAK NETWORK - for slow or crowded links", nullptr));
+  model->AddItem(kIdModeLowLatency, label_for(core::Mode::kLowLatency, "LOW LATENCY - first byte and input response", nullptr));
+  model->AddItem(kIdModeReader, label_for(core::Mode::kReader, "READER - long-form reading", nullptr));
+  model->AddItem(kIdModeBenchmark, label_for(core::Mode::kBenchmark, "BENCHMARK - measure, do not browse", nullptr));
+  model->AddItem(kIdModeKiosk, label_for(core::Mode::kKiosk, "KIOSK - unattended screen", nullptr));
 }
 
 void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
@@ -1088,6 +1106,12 @@ void BrowserWindow::OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<Cef
 
 void BrowserWindow::OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) {
   const std::string text = title.ToString();
+  // The page's real title usually arrives after the load finished, so history gets it
+  // here rather than at load time (an entry called "Loading…" is not useful).
+  if (browser_ != nullptr && browser == browser_) {
+    current_title_ = text;
+    if (shell_ != nullptr) shell_->NoteTitle(current_url_, text);
+  }
   const int tab_id = TabIdForBrowser(browser);
   if (tab_id != 0 && session_.SetTitle(tab_id, text)) {
     // Only the label of that one chip changes, so update it in place.
@@ -1140,7 +1164,12 @@ void BrowserWindow::OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool is_
     reload_button_->SetText(is_loading ? "\xE2\x9C\x95" : "\xE2\x9F\xB3");
     reload_button_->SetTooltipText(is_loading ? "Stop (Esc)" : "Reload (Ctrl+R)");
   }
-  if (shell_ != nullptr) shell_->NoteLoadState(this, is_loading);
+  if (shell_ != nullptr) {
+    shell_->NoteLoadState(this, is_loading);
+    // One visit per finished navigation, recorded after the load so an address that
+    // failed to load is not remembered as a page you read.
+    if (!is_loading) shell_->NoteVisit(this, current_url_, current_title_);
+  }
 }
 
 void BrowserWindow::OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,

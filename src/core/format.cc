@@ -354,6 +354,116 @@ std::string Sparkline(const std::vector<double>& values, int buckets) {
   return out;
 }
 
+// --- display helpers -------------------------------------------------------
+// Small, dull functions with one purpose: no part of the UI should be writing its own
+// pluralisation, its own time strings or its own title cleanup. When three of them do,
+// the browser starts looking inconsistent in ways nobody can point at.
+
+/// True for the endings English pluralises with "es" rather than "s".
+bool EndsWithSibilant(std::string_view word) {
+  if (word.empty()) return false;
+  const char last = word.back();
+  if (last == 's' || last == 'x' || last == 'z') return true;
+  if (word.size() < 2) return false;
+  const std::string tail = fmt::ToLower(word.substr(word.size() - 2));
+  return tail == "ch" || tail == "sh";
+}
+
+bool IsVowel(char c) {
+  const char lowered = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return lowered == 'a' || lowered == 'e' || lowered == 'i' || lowered == 'o' || lowered == 'u';
+}
+
+std::string FormatRelativeTime(int64_t then_ms, int64_t now_ms) {
+  const int64_t delta_ms = now_ms - then_ms;
+  if (delta_ms < 0) return "in the future";
+  const int64_t seconds = delta_ms / 1000;
+  if (seconds < 45) return "just now";
+  const int64_t minutes = seconds / 60;
+  if (minutes < 60) return FormatNumber(minutes == 0 ? 1 : minutes) + " min ago";
+  const int64_t hours = minutes / 60;
+  if (hours < 24) return FormatNumber(hours == 1 ? 1 : hours) + " h ago";
+  const int64_t days = hours / 24;
+  if (days < 30) return Pluralize(days, "day") + " ago";
+  const int64_t months = days / 30;
+  if (months < 12) return Pluralize(months, "month") + " ago";
+  return Pluralize(months / 12, "year") + " ago";
+}
+
+std::string FormatList(const std::vector<std::string>& items, std::string_view conjunction) {
+  if (items.empty()) return std::string();
+  if (items.size() == 1) return items[0];
+  std::string out = items[0];
+  for (size_t i = 1; i + 1 < items.size(); ++i) out += ", " + items[i];
+  out += " ";
+  out += conjunction;
+  out += " " + items.back();
+  return out;
+}
+
+std::string Pluralize(int64_t count, std::string_view singular, std::string_view plural) {
+  std::string word(singular);
+  if (count != 1) {
+    if (!plural.empty()) {
+      word = std::string(plural);
+    } else if (EndsWithSibilant(word)) {
+      // "switch" -> "switches", "box" -> "boxes", "class" -> "classes", "dish" -> "dishes".
+      // Getting this wrong is how a UI ends up saying "3 switchs" in fourteen places.
+      word += "es";
+    } else if (word.size() > 1 && word.back() == 'y' && !IsVowel(word[word.size() - 2])) {
+      word.pop_back();
+      word += "ies";  // "county" -> "counties", but "day" -> "days"
+    } else {
+      word += "s";
+    }
+  }
+  return FormatNumber(count) + " " + word;
+}
+
+std::string FormatSize(uint64_t bytes) {
+  if (bytes < 1024) return std::to_string(bytes) + " B";
+  if (bytes < 1024 * 1024) return FormatDouble(static_cast<double>(bytes) / 1024.0, 0) + " KB";
+  if (bytes < 1024ull * 1024 * 1024) {
+    return FormatDouble(static_cast<double>(bytes) / (1024.0 * 1024.0), 1) + " MB";
+  }
+  return FormatDouble(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 2) + " GB";
+}
+
+std::string CleanDisplayText(std::string_view text, size_t max_chars) {
+  std::string flat;
+  bool last_was_space = false;
+  for (const char raw : text) {
+    const unsigned char c = static_cast<unsigned char>(raw);
+    const bool is_space = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+    if (is_space) {
+      if (!flat.empty() && !last_was_space) flat += ' ';
+      last_was_space = true;
+      continue;
+    }
+    if (c < 0x20 || c == 0x7F) continue;  // control characters never belong on screen
+    flat += raw;
+    last_was_space = false;
+  }
+  while (!flat.empty() && flat.back() == ' ') flat.pop_back();
+  return Truncate(flat, max_chars);
+}
+
+std::string HtmlEscape(std::string_view text) {
+  std::string out;
+  out.reserve(text.size() + 16);
+  for (const char c : text) {
+    switch (c) {
+      case '&': out += "&amp;"; break;
+      case '<': out += "&lt;"; break;
+      case '>': out += "&gt;"; break;
+      case '"': out += "&quot;"; break;
+      case '\'': out += "&#39;"; break;
+      default: out += c; break;
+    }
+  }
+  return out;
+}
+
 }  // namespace fmt
 }  // namespace core
 }  // namespace browserx
