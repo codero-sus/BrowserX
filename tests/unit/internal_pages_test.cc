@@ -528,3 +528,128 @@ TEST(InternalPages, LibraryPagesSurviveBrokenJsonAndNeedNoNetwork) {
     EXPECT_FALSE(Contains(html, "//cdn"));
   }
 }
+
+TEST(InternalPages, ErrorRequestsAreParsedInEverySpelling) {
+  InternalUrl url;
+  int code = 0;
+  std::string failed;
+
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=-105&url=https%3A%2F%2Fx.example%2Fa", &url));
+  EXPECT_TRUE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_EQ(code, -105);
+  EXPECT_EQ(failed, std::string("https://x.example/a"));
+
+  // The name form, with and without the ERR_ prefix, because a hand-typed URL and a
+  // generated one are not the same shape.
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=ERR_NAME_NOT_RESOLVED", &url));
+  EXPECT_TRUE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_EQ(code, -105);
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=name_not_resolved", &url));
+  EXPECT_TRUE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_EQ(code, -105);
+
+  // A real code this build has no explanation for is still a code, and it must survive
+  // the trip: the page prints it rather than losing it.
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=-9999", &url));
+  EXPECT_TRUE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_EQ(code, -9999);
+
+  // '+' is a space in a query string, and percent escapes are decoded once.
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=-102&url=a+b%20c", &url));
+  EXPECT_TRUE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_EQ(failed, std::string("a b c"));
+
+  // Rejections: the wrong page, no code at all, and a code that is not a code.
+  EXPECT_TRUE(ParseInternalUrl("browserx://about?code=-105", &url));
+  EXPECT_FALSE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?url=x", &url));
+  EXPECT_FALSE(ParseErrorRequest(url, &code, &failed));
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=", &url));
+  EXPECT_FALSE(ParseErrorRequest(url, &code, &failed));
+  // A positive number is not a Chromium error code, and inventing one would be a lie
+  // with no upside; it is refused so the page says it has no code.
+  EXPECT_TRUE(ParseInternalUrl("browserx://error?code=105", &url));
+  EXPECT_FALSE(ParseErrorRequest(url, &code, &failed));
+}
+
+TEST(InternalPages, ErrorPageExplainsTheFailureAndNeverBlamEsTheWrongParty) {
+  PageData data;
+  data.error_code = -105;
+  data.error_url = "https://nowhere.example/tea";
+  const std::string html = RenderPage(PageKind::kError, data);
+  EXPECT_TRUE(html.find("That address could not be found") != std::string::npos);
+  EXPECT_TRUE(html.find("https://nowhere.example/tea") != std::string::npos);
+  EXPECT_TRUE(html.find("ERR_NAME_NOT_RESOLVED (-105)") != std::string::npos);
+  EXPECT_TRUE(html.find("Check the spelling") != std::string::npos);
+  // A DNS failure is not the browser's doing, and the page must not hint that it is.
+  EXPECT_TRUE(html.find("BrowserX made this decision") == std::string::npos);
+  // No certificate lecture where there is no certificate problem.
+  EXPECT_TRUE(html.find("about trust, not convenience") == std::string::npos);
+}
+
+TEST(InternalPages, ErrorPageOwnsUpWhenTheBrowserIsTheReason) {
+  PageData data;
+  data.error_code = -20;  // BLOCKED_BY_CLIENT: the shield, in this browser
+  data.error_url = "https://tracker.example/pixel";
+  const std::string html = RenderPage(PageKind::kError, data);
+  EXPECT_TRUE(html.find("BrowserX blocked this request") != std::string::npos);
+  EXPECT_TRUE(html.find("BrowserX made this decision") != std::string::npos);
+  EXPECT_TRUE(html.find("browserx://settings") != std::string::npos);
+}
+
+TEST(InternalPages, ErrorPageDoesNotOfferAWayPastATrustFailure) {
+  PageData data;
+  data.error_code = -200;  // CERT_COMMON_NAME_INVALID
+  data.error_url = "https://not-really-your-bank.example/login";
+  const std::string html = RenderPage(PageKind::kError, data);
+  EXPECT_TRUE(html.find("about trust, not convenience") != std::string::npos);
+  // The phrase appears only to say it does not exist, and nothing on the page is a
+  // button that would walk past the failure.
+  EXPECT_TRUE(html.find("does not offer a") != std::string::npos);
+  EXPECT_TRUE(html.find(">Continue") == std::string::npos);
+  EXPECT_TRUE(html.find("Proceed anyway") == std::string::npos);
+  // The address that failed is shown as text to read, never as a link to click: an error
+  // page that links back to the untrusted host it just refused to load would be a button
+  // past the failure wearing a different coat. The credits' own links still work.
+  EXPECT_TRUE(html.find("href=\"https://not-really-your-bank.example") == std::string::npos);
+  EXPECT_TRUE(html.find("https://not-really-your-bank.example/login") != std::string::npos);
+  EXPECT_TRUE(html.find("href=\"https://github.com/codero-sus\"") != std::string::npos);
+}
+
+TEST(InternalPages, ErrorPageSaysWhenItHasNoExplanation) {
+  PageData data;
+  data.error_code = -4242;
+  const std::string html = RenderPage(PageKind::kError, data);
+  EXPECT_TRUE(html.find("cannot explain") != std::string::npos);
+  EXPECT_TRUE(html.find("-4242") != std::string::npos);
+  // The unknown-code path must not borrow another code's name.
+  EXPECT_TRUE(html.find("ERR_") == std::string::npos);
+  // ...and it lists what it *can* explain, so the gap is visible rather than hidden.
+  EXPECT_TRUE(html.find("Every failure code this build can explain") != std::string::npos);
+}
+
+TEST(InternalPages, ErrorPageEscapesWhatTheNetworkGaveIt) {
+  PageData data;
+  data.error_code = -102;
+  data.error_url = "https://evil.example/<script>alert(1)</script>";
+  data.error_text = "\"quoted\" & <b>bold</b>";
+  const std::string html = RenderPage(PageKind::kError, data);
+  EXPECT_TRUE(html.find("<script>alert(1)</script>") == std::string::npos);
+  EXPECT_TRUE(html.find("&lt;script&gt;") != std::string::npos);
+  EXPECT_TRUE(html.find("&amp;") != std::string::npos);
+  // The page's own script is still there: escaping the data must not break the page.
+  EXPECT_TRUE(html.find("browserx internal-page") != std::string::npos ||
+              html.find("<script") != std::string::npos);
+}
+
+TEST(InternalPages, ErrorPageIsReachableAndNamedLikeEveryOtherPage) {
+  EXPECT_TRUE(KindForHost("error") == PageKind::kError);
+  EXPECT_EQ(std::string(PageName(PageKind::kError)), "error");
+  EXPECT_TRUE(PageTitle(PageKind::kError) != nullptr);
+  EXPECT_TRUE(std::string(ContentTypeFor(PageKind::kError)).find("text/html") != std::string::npos);
+  bool listed = false;
+  for (const std::string& host : AllInternalHosts()) {
+    if (host == "error") listed = true;
+  }
+  EXPECT_TRUE(listed);
+}

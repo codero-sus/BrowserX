@@ -38,6 +38,7 @@ enum class PageKind {
   kDownloads,
   kFind,
   kBench,    // rendering/script benchmark (the measuring stick for speed claims)
+  kError,    // what a failed load means, in plain language (core::ExplainNetError)
   kUnknown,  // anything else -> a helpful "no such page" listing
 };
 
@@ -113,6 +114,17 @@ struct PageData {
   /// so the user sees the address they typed instead of a generic message.
   std::string requested_host;
 
+  /// The error page (browserx://error?code=-105&url=...). `error_code` is Chromium's
+  /// net error value and `error_url` the address that failed; both are shown as they
+  /// came, because a page that paraphrases the failure without showing the code is
+  /// impossible to search or report. `error_text` is the raw text CEF supplied, when
+  /// there is one, and `error_is_headless_probe` marks the page rendered by the preview
+  /// and the page dump so the view can say it is an example rather than a real failure.
+  int error_code = 0;
+  std::string error_url;
+  std::string error_text;
+  bool error_is_sample = false;
+
   /// Credits shown in the footer and on the About page.
   std::string author = kProjectAuthor;
   std::string author_url = kProjectAuthorUrl;
@@ -145,6 +157,12 @@ std::string ContentTypeFor(PageKind kind);
 /// Escapes text for HTML text/attribute context (also used for the JSON embedded
 /// in <script> tags, where it must additionally neutralise "</script>").
 std::string EscapeHtml(std::string_view text);
+
+/// Reads an error code out of a browserx://error URL ("?code=-105"). Accepts the plain
+/// number, a leading "ERR_", or the upstream name, because a hand-typed URL and a
+/// generated one are not always the same shape; returns false when nothing usable is
+/// there, and the page then says it has no code rather than pretending it has one.
+bool ParseErrorRequest(const InternalUrl& url, int* code_out, std::string* url_out);
 
 /// True when a mode switch request is valid: browserx://modes?set=<mode-id>.
 /// Implemented here so the URL contract is testable without CEF.

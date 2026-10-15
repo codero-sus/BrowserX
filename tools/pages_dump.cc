@@ -149,6 +149,12 @@ int main(int argc, char** argv) {
                        "work", now_ms - 4 * 24 * hour);
   sample_bookmarks.Add("https://news.example/tea-harvest", "The tea harvest, explained", "",
                        now_ms - 30 * 60 * 1000);
+  // The error page needs a failure to show. Rather than break a connection on purpose,
+  // the dump renders a real explanation for a code the table knows, and the page says out
+  // loud that it is an example (error_is_sample).
+  data.error_code = -105;
+  data.error_url = "https://docs.example/guide/getting-started";
+  data.error_is_sample = true;
   data.history_json = sample_history.ToJson();
   data.bookmarks_json = sample_bookmarks.ToJson();
   data.now_ms = now_ms;
@@ -167,7 +173,7 @@ int main(int argc, char** argv) {
         browserx::web::PageKind::kShortcuts, browserx::web::PageKind::kCatalog,
         browserx::web::PageKind::kSession, browserx::web::PageKind::kAbout,
         browserx::web::PageKind::kHistory, browserx::web::PageKind::kBookmarks,
-        browserx::web::PageKind::kFind}) {
+        browserx::web::PageKind::kFind, browserx::web::PageKind::kError}) {
     const std::string path = output_dir + "/" + browserx::web::PageName(kind) + ".html";
     if (!WriteFile(path, browserx::web::RenderPage(kind, data))) return 1;
     std::printf("  wrote %s\n", path.c_str());
