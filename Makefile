@@ -176,7 +176,9 @@ help:
 	@echo "  make package         assemble a distributable in out/dist/"
 	@echo "  make sandbox-setup   chown/chmod chrome-sandbox (needs sudo)"
 	@echo "  make preview         serve the clickable UI preview on :8770"
-	@echo "  make clean / distclean"
+	@echo "  make space           where the disk went, and what is safe to remove"
+	@echo "  make space-apply     remove the rebuildable outputs (DEEP=1 for CEF too)"
+	@echo "  make clean / distclean   (make clean keeps out/profile: your data)"
 	@echo ""
 	@echo "  CEF root    : $(if $(CEF_ROOT),$(CEF_ROOT),<not downloaded yet>)"
 	@echo "  CEF headers : $(CHECK_CEF_ROOT)"
@@ -532,14 +534,43 @@ preview:
 	@$(PYTHON) $(ROOT)/preview/serve.py
 
 # -----------------------------------------------------------------------------
+# Disk space
+# -----------------------------------------------------------------------------
+# A browser build is not small (CEF is about 1 GB extracted), so the size is reported
+# rather than estimated, and the removal is separated from the measuring: `make space`
+# never deletes anything. What may be deleted is decided by tools/disk_report.py, which
+# refuses to touch the sources, the git history or the run profile.
+.PHONY: space space-apply
+space:
+	@$(PYTHON) $(ROOT)/tools/disk_report.py $(SPACE_ARGS)
+
+space-apply:
+	@$(PYTHON) $(ROOT)/tools/disk_report.py --apply $(if $(DEEP),--deep,) $(SPACE_ARGS)
+
+# -----------------------------------------------------------------------------
 # Clean
 # -----------------------------------------------------------------------------
 .PHONY: clean
+# The run profile (history, bookmarks, settings, caches) lives in out/profile when the
+# browser is used portably - a `profile` directory or a `portable_mode` file next to the
+# executable is what turns that on (see src/app/app_paths.cc). `rm -rf out` would delete
+# it, so this removes everything in out/ except that directory: the same rule the updater
+# follows when it refuses to run `git clean`. Nothing here is unrecoverable except the
+# profile, which is the only thing here that is not regenerable.
 clean:
-	@rm -rf $(OUT_DIR) $(OBJ_DIR) $(CHECK_OBJ_DIR) $(TEST_OBJ_DIR)
+	@for entry in $(OUT_DIR)/*; do \
+		[ -e "$$entry" ] || continue; \
+		case "$$(basename $$entry)" in \
+			profile) echo "  · kept    $(OUT_DIR)/profile (your history, bookmarks and settings)" ;; \
+			*) rm -rf "$$entry" ;; \
+		esac; \
+	done
+	@rm -rf $(OBJ_DIR) $(CHECK_OBJ_DIR) $(TEST_OBJ_DIR)
+	@rmdir $(OUT_DIR) 2>/dev/null || true
 	@echo "  ✔ cleaned build outputs"
 
 .PHONY: distclean
 distclean: clean
 	@rm -rf $(DEPS_DIR) $(HEADERS_DIR)
-	@echo "  ✔ removed downloaded CEF headers/binaries"
+	@echo "  ✔ removed the downloaded CEF headers and binaries"
+	@echo "    (getting them back: make deps - about 200 MB of download)"
