@@ -187,6 +187,17 @@ def find_msvc() -> dict:
         "  or install Visual Studio 2022 Community and tick that workload in the installer.")
 
 
+def sdk_version_key(name: str) -> list[int]:
+    """Sort key for a Windows SDK version directory ("10.0.26100.0" -> [10, 0, 26100, 0]).
+
+    Public because tools/check_build_requirements.py reports which SDK the build will use,
+    and a report that disagrees with the build about that is worse than no report. Two
+    copies of this comparison would eventually disagree: sorting the names as strings puts
+    "10.0.10000.0" before "10.0.9999.0".
+    """
+    return [int(part) if part.isdigit() else 0 for part in re.split(r"[.\-+]", name)]
+
+
 def find_windows_sdk() -> dict | None:
     """The newest Windows 10/11 SDK: include directories, and the x64 libraries."""
     kits = [Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
@@ -197,9 +208,7 @@ def find_windows_sdk() -> dict | None:
         if not include_root.is_dir():
             continue
         versions = sorted((p.name for p in include_root.iterdir() if p.is_dir()),
-                          key=lambda name: [int(part) if part.isdigit() else 0
-                                            for part in re.split(r"[.\-+]", name)],
-                          reverse=True)
+                          key=sdk_version_key, reverse=True)
         for version in versions:
             # The SDK must have all three, or a Windows build fails at an unrelated-looking
             # place (a missing windows.h, then a missing kernel32.lib).
