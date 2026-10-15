@@ -254,6 +254,33 @@ The build script finds MSVC itself (via `vswhere.exe`, then on disk), so it work
 plain `cmd.exe` without running `vcvarsall.bat` first — which is the usual reason a
 Windows build fails with "cl.exe is not recognized".
 
+### Or build it from a window
+
+```bat
+python tools\build_gui.py
+```
+
+A Tkinter front-end — nothing to pip install, because the window is meant to work on a
+machine that is already short of space. It shows what this machine has (compiler, SDK, CEF),
+greys out the buttons it cannot run and says why, and every button runs a command that
+exists on the command line: `tools\build_windows.py`, `tools\fetch_cef.py`,
+`tools\update.py`, `tools\disk_report.py`. It is a front-end, never a second build system,
+so it cannot disagree with `tools\build_windows.cmd` about how the browser is built.
+
+Output streams into the window as it runs, and **Stop** kills the whole process tree — a
+build that is stopped must not leave compilers running.
+
+On a machine with no display, or from a script, the same state prints instead:
+
+```bash
+python tools/build_gui.py --check        # exactly what the window would show
+python tools/build_gui.py --self-test    # the window's logic, no window
+```
+
+`make gui` and `make check-gui` do the same two things on the Linux side; `make check` runs
+`check-gui`, so the window's logic is checked on every build even though the window itself
+is only ever looked at by a person.
+
 ### Commands worth knowing
 
 ```bat
@@ -263,6 +290,7 @@ tools\build_windows.cmd --jobs 8            parallel compiles
 tools\build_windows.cmd --dry-run           print every compiler command, run none
 tools\build_windows.cmd --check-sources     prove it compiles the same files as the Linux build
 tools\build_windows.cmd --check-portability  find POSIX-only includes that would break this build
+python tools\build_gui.py                   the same build steps, as a window
 python tools\check_build_requirements.py --for windows   the tool table for your machine
 ```
 
