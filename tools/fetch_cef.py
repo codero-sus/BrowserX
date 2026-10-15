@@ -164,8 +164,25 @@ def human_bytes(count: int) -> str:
     return f"{value:.1f} GB"
 
 
+# Set by --platform. Fetching a platform other than this machine's is a real case: a
+# Windows build is often prepared from a Linux box (CI, or a phone-tethered laptop), and
+# the name of the thing must be sayable rather than guessed from the host.
+FORCED_PLATFORM = ""
+
+# Every platform directory CEF publishes binaries for. Keeping the list here means
+# --platform can reject a typo immediately instead of failing later with "no versions
+# found for windows65".
+KNOWN_PLATFORMS = ("linux64", "linux32", "linuxarm", "linuxarm64", "macosx64",
+                   "macosarm64", "windows32", "windows64", "windowsarm64")
+
+
 def platform_entry() -> str:
-    """CEF's platform directory name for this machine."""
+    """CEF's platform directory name for this machine, or the one --platform asked for."""
+    if FORCED_PLATFORM:
+        if FORCED_PLATFORM not in KNOWN_PLATFORMS:
+            raise FetchError(f"unknown platform '{FORCED_PLATFORM}'. CEF publishes: "
+                             + ", ".join(KNOWN_PLATFORMS))
+        return FORCED_PLATFORM
     system = platform.system().lower()
     machine = platform.machine().lower()
     arm = machine in ("arm64", "aarch64")
@@ -581,6 +598,7 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
     previous_comments = {key: value for key, value in lock.items() if key.startswith("//")}
     lock.update(
         {
+            "platform_entry": entry,
             "pin_mode": lock.get("pin_mode", "track-stable"),
             "platform_entry": entry,
             "version": version,
@@ -622,6 +640,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--headers-only", action="store_true", help="fetch only the CEF headers (for `make check`)")
     parser.add_argument("--print-path", action="store_true", help="print the CEF root that would be used and exit")
     parser.add_argument("--version", default="", help="install this exact CEF version (overrides the lock)")
+    parser.add_argument("--platform", default="",
+                        help="fetch for this platform instead of this machine's "
+                             f"({', '.join(KNOWN_PLATFORMS)})")
     parser.add_argument("--version-dir", action="store_true", help="use the per-version CDN path layout")
     parser.add_argument("--archive", default="", help="install from a local tar.bz2/zip instead of downloading")
     parser.add_argument("--url", default="", help="download exactly this URL (still SHA-1 verified)")
@@ -632,6 +653,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--force", action="store_true", help="re-download even when the tree already exists")
     parser.add_argument("--json", action="store_true", help="machine-readable summary")
     args = parser.parse_args(argv)
+    if args.platform:
+        # Set before anything calls platform_entry(): the lock file, the archive name and
+        # the install directory all derive from it.
+        globals()["FORCED_PLATFORM"] = args.platform
 
     global DEPS_DIR
     if args.dir:
@@ -643,7 +668,30 @@ def main(argv: list[str]) -> int:
     )
 
     lock = load_lock()
-    entry = lock.get("platform_entry") or platform_entry()
+    host_entry = platform_entry()
+    locked_entry = lock.get("platform_entry") or ""
+    if args.platform:
+        entry = host_entry
+        if locked_entry and locked_entry != entry:
+            log_plan(f"fetching {entry} (--platform); cef.lock.json records "
+                     f"{locked_entry}, whose SHA-1 does not apply to this archive")
+            lock["sha1"] = ""
+            lock["size_bytes"] = 0
+    elif locked_entry and locked_entry != host_entry:
+        # Do not silently download the wrong platform's build, and do not silently ignore
+        # a committed pin either: say what is happening and why.
+        if lock.get("pin_mode") == "hard":
+            raise FetchError(
+                f"cef.lock.json pins {locked_entry} and is in 'hard' pin mode, but this "
+                f"machine builds {host_entry}. Pass --platform {locked_entry} to fetch the "
+                "pinned build, or change pin_mode to 'track-stable' in cef.lock.json.")
+        log_plan(f"cef.lock.json was pinned on {locked_entry}; this machine builds "
+                 f"{host_entry}, so this fetch resolves and pins that instead")
+        entry = host_entry
+        lock["sha1"] = ""
+        lock["size_bytes"] = 0
+    else:
+        entry = locked_entry or host_entry
     flavour = release_type()
     base = (os.environ.get("BROWSERX_CEF_BASE") or DEFAULT_BASE).rstrip("/")
 

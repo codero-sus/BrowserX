@@ -187,6 +187,21 @@ make             # build out/BrowserX
 make run         # launch it
 ```
 
+**On Windows** (Visual Studio 2022 Build Tools with the C++ workload, the Windows
+SDK, Python 3 and Git — CEF is still a 200 MB download, still no CMake or solution
+file):
+
+```bat
+python tools\fetch_cef.py        :: the Chromium/CEF binaries, SHA-1 verified
+tools\build_windows.cmd --stage  :: build out\BrowserX.exe
+out\BrowserX.exe
+```
+
+The Windows build is the same sources and the same rules, compiled by MSVC instead of
+g++; `make check-windows` proves both, on any machine. The [Windows section of
+`BUILDING.md`](BUILDING.md) has the tool table with sizes, and says plainly what has
+and has not been verified so far.
+
 Want to see it before building? `make preview` serves a clickable mock of the
 window whose numbers come straight from the mode engine — the mode switcher, the
 real switch list with provenance, and the memory-pressure escalation ladder.
