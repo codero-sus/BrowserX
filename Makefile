@@ -157,6 +157,7 @@ help:
 	@echo "  make bench-page      write the offline benchmark page (browserx://bench)"
 	@echo "  make pages           render every browserx:// page to out/pages/"
 	@echo "  make ui-check        drive those pages and the preview in jsdom (needs node)"
+	@echo "  make update          pull, rebuild what this machine can build, verify"
 	@echo "  make requirements    what this machine has, per build target (FOR=core|browser|mobile|preview)"
 	@echo "  make improvements    verify every logged improvement against the code"
 	@echo "  make doctor          environment + capability report"
@@ -485,6 +486,22 @@ ui-check: pages $(BENCHPAGE_BIN)
 	echo "  the same pages through the preview server (start it with 'make preview'):"; \
 	BROWSERX_JSDOM="$$spec" node $(ROOT)/tools/ui_check/preview_check.mjs; \
 	[ $$status -eq 0 ] || exit $$status
+
+# -----------------------------------------------------------------------------
+# Update (the same updater on Linux and Windows: tools/update.sh / tools\update.cmd)
+# -----------------------------------------------------------------------------
+# One implementation (tools/update.py) behind both launchers, so the two platforms cannot
+# drift apart. Exit codes: 0 updated/current, 10 (with CHECK=1) an update is available,
+# 1 failed - so a script that runs `make update` can tell "nothing to do" from "something
+# broke". Nothing here runs `git clean`: the run profile (history, bookmarks) lives inside
+# this directory. A rollback only ever happens when you ask for it.
+.PHONY: update update-check
+update:
+	@$(PYTHON) $(ROOT)/tools/update.py $(UPDATE_ARGS)
+
+# Same thing, but it only looks: exits 10 when there is something to pull, 0 when not.
+update-check:
+	@$(PYTHON) $(ROOT)/tools/update.py --check $(UPDATE_ARGS)
 
 # -----------------------------------------------------------------------------
 # UI preview (clickable design preview; runs in any browser, no CEF needed)

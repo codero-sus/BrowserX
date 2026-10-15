@@ -98,6 +98,30 @@ make doctor         # runtime environment, not build requirements
 `check-improvements` (the improvement ledger, see `docs/IMPROVEMENTS.md`), so a failing
 ledger can never hide a compiler error, and vice versa.
 
+## Updating BrowserX
+
+```sh
+make update            # pull, rebuild what this machine can build, verify
+make update-check      # only look: exit 10 when there is something to pull, 0 when not
+```
+
+On Windows use `tools\update.cmd` with the same flags. It runs the identical
+`tools/update.py` inside WSL, so the two platforms cannot drift apart; without WSL it still
+updates the source and says plainly that building needs Linux or WSL. There is no `git
+clean` anywhere in it, because your run profile — history, bookmarks, settings — lives
+inside this directory, and a rollback happens only when you ask for one with `--rollback`.
+
+Exit codes are the useful part when you script this: **0** updated or already current,
+**10** with `--check` when an update is waiting, **1** when something failed. A pull is
+fast-forward only: if your branch has local commits the updater stops and tells you instead
+of merging something you did not ask for. With a dirty working tree it also stops, unless
+you pass `--stash`, which stashes your changes and prints the command that brings them back.
+
+Useful flags: `--dry-run` prints the plan and changes nothing, `--json` prints one machine
+readable object (the human log goes to stderr), `--no-build` and `--no-verify` skip the
+rebuild and the tests, `--jobs N` sets the compiler parallelism, and `--deps` fetches CEF
+(about 200 MB) if you actually want the browser build rather than the core.
+
 ## Container and sandbox notes
 
 Chromium's own sandbox needs privileges most containers do not have: use
