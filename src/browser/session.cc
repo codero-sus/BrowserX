@@ -4,6 +4,8 @@
 
 #include "browser/session.h"
 
+#include "core/url_utils.h"
+
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -283,6 +285,184 @@ int Session::CountKind(TabLifecycle kind) const {
     }
   }
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// Bulk tab operations
+// ---------------------------------------------------------------------------
+size_t Session::CloseOthers(int keep_id) {
+  if (Find(keep_id) == nullptr) return 0;
+  // Collect the victims first, then close them one by one, so CloseTab's activation
+  // rules keep running (and never leave the session without an active tab). Pinned tabs
+  // survive: pinning is how a person says "do not touch this one" (Chromium's semantics).
+  std::vector<int> victims;
+  for (const TabState& tab : tabs_) {
+    if (tab.id == keep_id || tab.pinned) continue;
+    victims.push_back(tab.id);
+  }
+  // Remembering every one of them means Ctrl+Shift+T can walk back through the whole
+  // group in reverse, which is what people expect after closing 20 tabs by accident.
+  for (const int id : victims) {
+    const TabState* tab = Find(id);
+    if (tab != nullptr) RememberClosed(*tab);
+  }
+  size_t closed = 0;
+  for (const int id : victims) {
+    if (CloseTab(id)) ++closed;
+  }
+  Activate(keep_id);
+  return closed;
+}
+
+size_t Session::CloseToTheRight(int id) {
+  const int index = IndexOf(id);
+  if (index < 0) return 0;
+  std::vector<int> victims;
+  for (size_t i = static_cast<size_t>(index) + 1; i < tabs_.size(); ++i) {
+    if (tabs_[i].pinned) continue;  // a pinned tab is never swept away
+    victims.push_back(tabs_[i].id);
+  }
+  size_t closed = 0;
+  for (const int victim : victims) {
+    const TabState* tab = Find(victim);
+    if (tab != nullptr) RememberClosed(*tab);
+    if (CloseTab(victim)) ++closed;
+  }
+  return closed;
+}
+
+size_t Session::CloseDuplicates() {
+  std::vector<int> victims;
+  std::vector<std::string> seen;
+  for (const TabState& tab : tabs_) {
+    if (tab.pinned) continue;  // a pinned tab is a deliberate second copy
+    // The same rule history uses: tracking parameters and the fragment are not part of
+    // a page's identity, so "?utm_source=newsletter" is not a second copy of an article.
+    const std::string key = core::url::NormalizeForCompare(core::url::StripTrackingParams(tab.url));
+    if (key.empty()) continue;
+    if (std::find(seen.begin(), seen.end(), key) != seen.end()) {
+      victims.push_back(tab.id);
+    } else {
+      seen.push_back(key);
+    }
+  }
+  size_t closed = 0;
+  for (const int id : victims) {
+    const TabState* tab = Find(id);
+    if (tab != nullptr) RememberClosed(*tab);
+    if (CloseTab(id)) ++closed;
+  }
+  return closed;
+}
+
+void Session::SortByHost() {
+  const int active = active_id_;
+  std::stable_sort(tabs_.begin(), tabs_.end(), [](const TabState& a, const TabState& b) {
+    if (a.pinned != b.pinned) return a.pinned;  // pinned tabs stay in front
+    const std::string host_a = core::url::HostOf(a.url);
+    const std::string host_b = core::url::HostOf(b.url);
+    if (host_a != host_b) return host_a < host_b;
+    return false;  // stable: tabs of one host keep their relative order
+  });
+  active_id_ = active;
+}
+
+bool Session::MoveToFront(int id) {
+  const int index = IndexOf(id);
+  if (index < 0) return false;
+  TabState tab = tabs_[static_cast<size_t>(index)];
+  tabs_.erase(tabs_.begin() + index);
+  // After the pinned block, which must stay where it is.
+  size_t insert_at = 0;
+  while (insert_at < tabs_.size() && tabs_[insert_at].pinned) ++insert_at;
+  tabs_.insert(tabs_.begin() + static_cast<long>(insert_at), std::move(tab));
+  return true;
+}
+
+void Session::RememberClosed(const TabState& tab) {
+  // A sleeping tab that gets reopened should come back awake: the user asked for it.
+  TabState remembered = tab;
+  remembered.sleeping = false;
+  recently_closed_.insert(recently_closed_.begin(), remembered);
+  if (recently_closed_.size() > kMaxRecentlyClosed) recently_closed_.resize(kMaxRecentlyClosed);
+}
+
+int Session::ReopenLastClosed(bool activate) {
+  if (recently_closed_.empty()) return 0;
+  const TabState tab = recently_closed_.front();
+  recently_closed_.erase(recently_closed_.begin());
+  const int id = AddTabAfter(active_id_, tab.url, activate);
+  // The reopened tab keeps what made it worth reopening: its title, group, zoom, mute and
+  // pinned state. Its old id is gone (ids are never reused), so everything else is copied
+  // by hand.
+  if (TabState* added = MutableFind(id)) {
+    added->title = tab.title;
+    added->group = tab.group;
+    added->zoom_percent = tab.zoom_percent;
+    added->muted = tab.muted;
+    added->pinned = tab.pinned;
+  }
+  return id;
+}
+
+std::vector<int> Session::RecentlyActive(int max_count) const {
+  if (max_count <= 0) return {};
+  const size_t wanted = static_cast<size_t>(max_count);
+  std::vector<const TabState*> sorted;
+  sorted.reserve(tabs_.size());
+  for (const TabState& tab : tabs_) sorted.push_back(&tab);
+  std::stable_sort(sorted.begin(), sorted.end(), [](const TabState* a, const TabState* b) {
+    return a->last_active_ms > b->last_active_ms;
+  });
+  std::vector<int> out;
+  for (const TabState* tab : sorted) {
+    if (out.size() >= wanted) break;
+    out.push_back(tab->id);
+  }
+  return out;
+}
+
+double Session::ZoomFactor(const TabState& tab) {
+  // Zoom is stored as a percentage and shown as one; a corrupt value (0, negative, or a
+  // number no browser would apply) is clamped instead of scaled into nonsense.
+  const int zoom = tab.zoom_percent <= 0 ? 100 : std::min(tab.zoom_percent, 500);
+  return static_cast<double>(zoom) / 100.0;
+}
+
+std::vector<int> Session::SleepBeyondLiveLimit(int max_live) {
+  std::vector<int> slept;
+  if (max_live <= 0) return slept;
+  // Candidates: awake, unpinned, silent, not active. Least recently used first, so the tab
+  // the user touched 5 minutes ago survives one they touched an hour ago.
+  std::vector<const TabState*> candidates;
+  for (const TabState& tab : tabs_) {
+    if (tab.sleeping || tab.pinned || tab.audible || tab.id == active_id_) continue;
+    candidates.push_back(&tab);
+  }
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const TabState* a, const TabState* b) {
+                     return a->last_active_ms < b->last_active_ms;
+                   });
+  // How many renderers are awake right now, counting the ones that are not candidates
+  // (active, pinned, audible, already awake and protected).
+  size_t awake = 0;
+  for (const TabState& tab : tabs_) {
+    const bool protected_tab = tab.pinned || tab.audible || tab.id == active_id_;
+    if (!tab.sleeping && (protected_tab || std::find_if(candidates.begin(), candidates.end(),
+                                                        [&](const TabState* c) {
+                                                          return c->id == tab.id;
+                                                        }) == candidates.end())) {
+      ++awake;
+    }
+  }
+  const size_t budget =
+      max_live > static_cast<int>(awake) ? static_cast<size_t>(max_live) - awake : 0;
+  // `candidates` is least-recently-used first, so the ones to sleep are at the *start*.
+  const size_t to_sleep = candidates.size() > budget ? candidates.size() - budget : 0;
+  for (size_t i = 0; i < to_sleep; ++i) {
+    if (SetSleeping(candidates[i]->id, true)) slept.push_back(candidates[i]->id);
+  }
+  return slept;
 }
 
 std::string Session::ActiveUrl() const {

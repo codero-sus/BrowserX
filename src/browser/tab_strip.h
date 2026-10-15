@@ -82,10 +82,6 @@ class TabStrip : public CefPanelDelegate, public CefButtonDelegate {
   /// Returns how many actually slept.
   int SleepTabs(const std::vector<int>& tab_ids);
 
-  /// Reopened tabs come from the strip's own stack, filled by every close.
-  void PushClosed(const std::string& url, const std::string& title);
-  bool ReopenLast();
-  size_t closed_count() const { return closed_.size(); }
 
   /// Drops every raw pointer held by the delegates (window teardown).
   void Invalidate();
@@ -104,7 +100,6 @@ class TabStrip : public CefPanelDelegate, public CefButtonDelegate {
 
   TabStripHost* host_ = nullptr;
   CefRefPtr<CefPanel> strip_;
-  std::vector<std::pair<std::string, std::string>> closed_;  // url, title
 
   IMPLEMENT_REFCOUNTING(TabStrip);
 };

@@ -278,4 +278,146 @@ TEST(Session, RestoredTabsWithMissingFieldsAreUsable) {
   EXPECT_EQ(other.LruCandidateId(), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Bulk tab operations: the ones people reach for after an hour of browsing
+// ---------------------------------------------------------------------------
+TEST(Session, CloseOthersLeavesTheKeptTabActiveAndReopenable) {
+  Session session;
+  const int a = session.AddTab("https://a.example/", true);
+  session.AddTab("https://b.example/", false);
+  session.AddTab("https://c.example/", false);
+  session.Activate(a);
+
+  EXPECT_EQ(session.CloseOthers(a), size_t{2});
+  EXPECT_EQ(session.count(), size_t{1});
+  EXPECT_EQ(session.active_id(), a);
+  // The whole group can be walked back with Ctrl+Shift+T, newest first.
+  EXPECT_EQ(session.recently_closed_count(), size_t{2});
+  const int reopened = session.ReopenLastClosed();
+  EXPECT_TRUE(reopened != 0);
+  EXPECT_EQ(session.count(), size_t{2});
+  const browserx::browser::TabState* tab = session.Find(reopened);
+  ASSERT_TRUE(tab != nullptr);
+  EXPECT_EQ(tab->url, std::string("https://c.example/"))
+      << "the most recently closed tab comes back first";
+  EXPECT_FALSE(tab->sleeping) << "a tab you asked for must not come back asleep";
+  EXPECT_EQ(session.CloseOthers(a), size_t{1});
+  EXPECT_EQ(session.CloseOthers(999), size_t{0}) << "an unknown id closes nothing";
+}
+
+TEST(Session, CloseToTheRightAndDuplicates) {
+  Session session;
+  const int a = session.AddTab("https://a.example/", true);
+  session.AddTab("https://b.example/", false);
+  session.AddTab("https://c.example/", false);
+  EXPECT_EQ(session.CloseToTheRight(a), size_t{2});
+  EXPECT_EQ(session.count(), size_t{1});
+  EXPECT_EQ(session.active_id(), a) << "closing to the right never changes the active tab";
+
+  // Duplicates: the same page reached twice is one tab; a pinned copy stays.
+  Session dupes;
+  dupes.AddTab("https://news.example/story", true);
+  dupes.AddTab("https://news.example/story#top", false);
+  dupes.AddTab("https://news.example/story?utm_source=x", false);
+  const int pinned = dupes.AddTab("https://news.example/story", false);
+  dupes.SetPinned(pinned, true);
+  EXPECT_EQ(dupes.count(), size_t{4});
+  EXPECT_EQ(dupes.CloseDuplicates(), size_t{2})
+      << "the fragment and the tracking variant are the same page";
+  EXPECT_EQ(dupes.count(), size_t{2}) << "the original and the pinned copy remain";
+  EXPECT_EQ(dupes.recently_closed_count(), size_t{2});
+}
+
+TEST(Session, SortingByHostAndMovingToFront) {
+  Session session;
+  session.AddTab("https://zebra.example/1", true);
+  const int docs = session.AddTab("https://docs.example/2", false);
+  const int pinned = session.AddTab("https://zebra.example/3", false);
+  session.SetPinned(pinned, true);
+  const int active = session.active_id();
+
+  session.SortByHost();
+  EXPECT_EQ(session.active_id(), active) << "sorting is not activation";
+  EXPECT_EQ(session.tabs()[0].id, pinned) << "pinned tabs stay in front";
+  EXPECT_EQ(session.tabs()[1].url, std::string("https://docs.example/2"))
+      << "then hosts in order: docs before zebra";
+  EXPECT_EQ(session.tabs()[2].url, std::string("https://zebra.example/1"));
+
+  // MoveToFront lands after the pinned block, and keeps the tab's state.
+  session.SetGroup(docs, "work");
+  EXPECT_TRUE(session.MoveToFront(docs));
+  EXPECT_EQ(session.IndexOf(docs), 1);
+  EXPECT_EQ(session.Find(docs)->group, std::string("work"));
+  EXPECT_FALSE(session.MoveToFront(999));
+}
+
+TEST(Session, RecentlyActiveAndZoomAreReadable) {
+  Session session;
+  const int a = session.AddTab("https://a.example/", true);
+  const int b = session.AddTab("https://b.example/", false);
+  const int c = session.AddTab("https://c.example/", false);
+  // Timestamps are set by hand: three activations inside the same millisecond would tie,
+  // and "most recently used" would then mean "in tab order", which proves nothing.
+  session.MutableFind(a)->last_active_ms = 3000;
+  session.MutableFind(b)->last_active_ms = 5000;
+  session.MutableFind(c)->last_active_ms = 4000;
+
+  const std::vector<int> recent = session.RecentlyActive(2);
+  ASSERT_TRUE(recent.size() == 2);
+  EXPECT_EQ(recent[0], b) << "most recently used first";
+  EXPECT_EQ(recent[1], c);
+  EXPECT_TRUE(session.RecentlyActive(0).empty());
+
+  session.SetZoom(a, 110);
+  EXPECT_NEAR(Session::ZoomFactor(*session.Find(a)), 1.1, 0.001);
+  EXPECT_FALSE(session.SetZoom(999, 200)) << "zooming a tab that is not there is a no-op";
+
+  // SetZoom clamps what it accepts (25%-500%: beyond that Chromium refuses to keep it).
+  session.SetZoom(a, 0);
+  EXPECT_EQ(session.Find(a)->zoom_percent, 25);
+  session.SetZoom(a, 10'000);
+  EXPECT_EQ(session.Find(a)->zoom_percent, 500);
+
+  // A corrupt value can only arrive from an old session file, and reading it must not
+  // scale a page to nothing: ZoomFactor reports 1.0 for anything unusable.
+  browserx::browser::TabState corrupt;
+  corrupt.zoom_percent = 0;
+  EXPECT_NEAR(Session::ZoomFactor(corrupt), 1.0, 0.001);
+  corrupt.zoom_percent = -50;
+  EXPECT_NEAR(Session::ZoomFactor(corrupt), 1.0, 0.001);
+}
+
+TEST(Session, SleepingBeyondTheLiveLimitProtectsWhatMatters) {
+  Session session;
+  const int active = session.AddTab("https://active.example/", true);
+  const int pinned = session.AddTab("https://pinned.example/", false);
+  session.SetPinned(pinned, true);
+  const int audible = session.AddTab("https://music.example/", false);
+  session.SetAudible(audible, true);
+  const int old_tab = session.AddTab("https://old.example/", false);
+  const int new_tab = session.AddTab("https://new.example/", false);
+  session.Activate(active);
+
+  // Known access times, so "least recently used" is a fact rather than a tie-break.
+  session.MutableFind(old_tab)->last_active_ms = 1000;
+  session.MutableFind(new_tab)->last_active_ms = 2000;
+  session.MutableFind(active)->last_active_ms = 3000;
+  session.MutableFind(pinned)->last_active_ms = 1500;
+  session.MutableFind(audible)->last_active_ms = 1200;
+
+  const std::vector<int> slept = session.SleepBeyondLiveLimit(4);
+  EXPECT_EQ(slept.size(), size_t{1}) << "one renderer over the budget of 4";
+  EXPECT_EQ(slept[0], old_tab) << "the least recently used tab sleeps first";
+  EXPECT_FALSE(session.Find(active)->sleeping) << "the active tab never sleeps";
+  EXPECT_FALSE(session.Find(pinned)->sleeping) << "a pinned tab is a deliberate choice";
+  EXPECT_FALSE(session.Find(audible)->sleeping) << "a tab playing sound is never discarded";
+  EXPECT_FALSE(session.Find(new_tab)->sleeping);
+
+  // A budget that is already met does nothing, and so does a nonsense budget.
+  EXPECT_TRUE(session.SleepBeyondLiveLimit(4).empty());
+  EXPECT_TRUE(session.SleepBeyondLiveLimit(0).empty());
+  EXPECT_TRUE(session.SleepBeyondLiveLimit(-3).empty());
+  EXPECT_EQ(session.CountKind(browserx::browser::TabLifecycle::kSleeping), 1);
+}
+
 }  // namespace

@@ -1,7 +1,8 @@
 # BrowserX — build products and local state only.
 # Anything that is part of the project (scripts, sources, headers, docs) is
 # tracked, including the CEF headers in .cef-headers/ so `make check` works
-# without a download.
+# without a download. `make headers` refreshes them; cef.lock.json pins the
+# distribution they belong to.
 
 # Build output
 /out/

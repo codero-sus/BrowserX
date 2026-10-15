@@ -6,7 +6,12 @@
 
 #include "web/bench_page.h"
 
+#include "core/format.h"
+#include "core/json.h"
 #include "core/mode_engine.h"
+#include "core/url_utils.h"
+
+#include <ctime>
 
 #include <algorithm>
 #include <cstdio>
@@ -224,6 +229,14 @@ p.lede strong { color: var(--text); font-weight: 650; }
 .search .go:hover { filter: brightness(1.08); }
 
 /* --- key/value, kpis, meters -------------------------------------------- */
+.tile .diff { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.library td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+table.library tr:first-child td { border-top: 0; }
+table.library .when { white-space: nowrap; color: var(--muted); width: 104px; }
+table.library .host { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+.field { display: block; }
+.field > span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-bottom: 6px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 12px; }
 .kpi {
   background: var(--sunken); border: 1px solid var(--line);
@@ -497,6 +510,11 @@ const char* kScript = R"JS(
 
   function open() {
     palette.classList.add('open');
+    // The class only decides what the eye sees. aria-hidden and the input's focus state are
+    // what a screen reader and a test can both rely on, and they are set together so the
+    // visual state can never disagree with the announced one.
+    palette.setAttribute('aria-hidden', 'false');
+    input.setAttribute('aria-expanded', 'true');
     input.value = '';
     filter();
     input.focus();
@@ -504,6 +522,8 @@ const char* kScript = R"JS(
 
   function close() {
     palette.classList.remove('open');
+    palette.setAttribute('aria-hidden', 'true');
+    input.setAttribute('aria-expanded', 'false');
   }
 
   function go() {
@@ -701,10 +721,14 @@ std::string JsString(std::string_view text) {
 std::string Palette() {
   std::string out;
   out += "<div class=\"palette\" id=\"palette\" role=\"dialog\" aria-modal=\"true\" ";
-  out += "aria-label=\"Command palette\">\n<div class=\"box\">\n";
+  // Closed by default, and it says so: a dialog that is closed but not marked hidden is
+  // invisible to sighted users and perfectly visible to a screen reader.
+  out += "aria-hidden=\"true\" aria-label=\"Command palette\">\n<div class=\"box\">\n";
   out += "<input id=\"palette-input\" type=\"text\" autocomplete=\"off\" spellcheck=\"false\" ";
-  out += "placeholder=\"Jump to a page, or type a mode name to switch to it\" aria-label=\"Command palette\">\n";
-  out += "<ul id=\"palette-list\" role=\"listbox\"></ul>\n";
+  out += "role=\"combobox\" aria-expanded=\"false\" aria-controls=\"palette-list\" ";
+  out += "aria-autocomplete=\"list\" placeholder=\"Jump to a page, or type a mode name to switch to it\" ";
+  out += "aria-label=\"Jump to a page or switch a mode\">\n";
+  out += "<ul id=\"palette-list\" role=\"listbox\" aria-label=\"Results\"></ul>\n";
   out += "<div class=\"hint\">Ctrl+K toggles this · &uarr;&darr; choose · Enter opens · Esc closes</div>\n";
   out += "</div>\n</div>\n";
   return out;
@@ -895,6 +919,21 @@ std::string RenderNewTab(const PageData& data) {
   return out;
 }
 
+/// The engine's summary of what switching to `mode_id` would change, or empty when there
+/// is nothing to say (unknown mode, no data, or the mode is already active).
+std::string ModeDiffSummary(const PageData& data, const std::string& mode_id) {
+  if (data.mode_diffs_json.empty() || mode_id.empty() || mode_id == data.active_mode_id) {
+    return std::string();
+  }
+  std::string error;
+  const auto parsed = core::json::Parse(data.mode_diffs_json, &error);
+  if (!parsed.has_value()) return std::string();
+  for (const core::json::Value& entry : parsed->AsArray()) {
+    if (entry.Get("id").AsString() == mode_id) return entry.Get("summary").AsString();
+  }
+  return std::string();
+}
+
 std::string RenderModes(const PageData& data) {
   std::string out;
   out += "<h1>Modes</h1>\n<p class=\"lede\">Each mode is a Chromium switch plan plus a runtime "
@@ -913,7 +952,15 @@ std::string RenderModes(const PageData& data) {
     out += "<div class=\"name\">" + EscapeImpl(info.label != nullptr ? info.label : id);
     if (active) out += " <span class=\"tag on\">active</span>";
     out += "</div><div class=\"sub\">" + EscapeImpl(info.tagline != nullptr ? info.tagline : "") +
-           "</div></a>\n";
+           "</div>";
+    // What clicking this would change, from the engine's own diff against the active mode:
+    // not "GAME is fast" but "adds 10 and removes 2 switches, and here they are".
+    const std::string diff_summary = ModeDiffSummary(data, id);
+    if (!diff_summary.empty()) {
+      out += "<div class=\"sub mono diff\">vs " + EscapeImpl(data.active_mode_label) + ": " +
+             EscapeImpl(diff_summary) + "</div>";
+    }
+    out += "</a>\n";
   }
   out += "</div>\n";
 
@@ -1161,12 +1208,176 @@ std::string RenderAbout(const PageData& data) {
 /// Pages whose data store exists but is not part of this build yet. They say so
 /// plainly rather than showing an empty list that looks like "you have no
 /// history", which would be a lie.
+
+// ---------------------------------------------------------------------------
+// History and bookmarks
+// ---------------------------------------------------------------------------
+// These two pages read the same JSON the store writes. The rows are rendered here, in
+// C++, rather than by script in the page, for one reason: BrowserX's own pages have to
+// work with JavaScript switched off. The script at the bottom only adds filtering.
+
+/// Milliseconds since the epoch, from the browser when it supplied one, otherwise from
+/// the system clock. Never negative, so a page can always say when something happened.
+int64_t PageNowMs(const PageData& data) {
+  if (data.now_ms > 0) return data.now_ms;
+  return static_cast<int64_t>(std::time(nullptr)) * 1000;
+}
+
+/// A readable host for a history row ("news.example"), falling back to the raw URL.
+std::string HostLabel(std::string_view url_text) {
+  const std::string host = core::url::HostOf(url_text);
+  return host.empty() ? std::string(url_text) : host;
+}
+
+/// One row of a library table: when, what, and one more column the caller chooses
+/// (visits for history, folder for bookmarks).
+std::string LibraryRow(const std::string& url_text, const std::string& title_text, int64_t when_ms,
+                      int64_t now_ms, const std::string& extra) {
+  const std::string label = title_text.empty() ? HostLabel(url_text) : title_text;
+  const std::string when = core::fmt::FormatRelativeTime(when_ms, now_ms);
+  std::string out = "<tr data-search=\"" +
+                    EscapeImpl(core::fmt::ToLower(url_text + " " + title_text + " " + extra)) + "\">";
+  out += "<td class=\"when\"><time datetime=\"" + std::to_string(when_ms / 1000) +
+         "\" title=\"" + EscapeImpl(when) + "\">" + EscapeImpl(when) + "</time></td>";
+  out += "<td><a href=\"" + EscapeImpl(url_text) + "\">" + EscapeImpl(label) + "</a>";
+  out += "<div class=\"host mono\">" + EscapeImpl(HostLabel(url_text)) + "</div></td>";
+  out += "<td class=\"num\">" + EscapeImpl(extra) + "</td>";
+  out += "</tr>\n";
+  return out;
+}
+
+std::string LibraryTable(const std::vector<std::string>& rows, const char* extra_header) {
+  std::string out = "<div class=\"card\"><table class=\"library\" id=\"library-table\">";
+  out += "<thead><tr><th>When</th><th>Page</th><th class=\"num\">" + std::string(extra_header) +
+         "</th></tr></thead><tbody>\n";
+  for (const std::string& row : rows) out += row;
+  out += "</tbody></table></div>\n";
+  return out;
+}
+
+/// The filter box. It reuses the page's existing `data-filter` mechanism, so there is
+/// exactly one filter implementation in the browser and it is covered by the page tests.
+/// The table below is complete before the script runs: with scripting off nothing is lost.
+std::string LibraryFilter(std::string_view placeholder, size_t total) {
+  std::string out = "<div class=\"card\"><label class=\"field\"><span>Filter</span>";
+  out += "<input type=\"search\" data-filter=\"#library-table\" placeholder=\"" +
+         EscapeImpl(placeholder) + "\" autocomplete=\"off\"></label>";
+  out += "<span class=\"pill\" data-filter-count=\"#library-table\">" +
+         EscapeImpl(core::fmt::Pluralize(static_cast<int64_t>(total), "row")) + "</span>";
+  out += "</div>\n";
+  return out;
+}
+
+std::string RenderHistory(const PageData& data) {
+  std::string out;
+  out += "<h1>History</h1>\n<p class=\"lede\">Every page BrowserX has recorded, newest "
+         "first. Tracking parameters are stripped before an address is stored, the list is "
+         "capped, and nothing here ever leaves this machine.</p>\n";
+
+  if (data.history_json.empty()) {
+    return out + Missing("History", "Browse a page, then open this page again.");
+  }
+  std::string parse_error;
+  auto parsed = core::json::Parse(data.history_json, &parse_error);
+  if (!parsed.has_value()) {
+    return out + Missing("History", "The history file could not be read: " + parse_error);
+  }
+  const core::json::Value& entries = parsed->Get("entries");
+  const int64_t now_ms = PageNowMs(data);
+
+  std::vector<std::string> rows;
+  int64_t visits = 0;
+  for (const core::json::Value& item : entries.AsArray()) {
+    const std::string url_text = item.Get("url").AsString();
+    if (url_text.empty()) continue;
+    const int64_t count = item.Get("visits").AsInt64(1);
+    visits += count;
+    rows.push_back(LibraryRow(url_text, item.Get("title").AsString(),
+                              item.Get("visited_ms").AsInt64(0), now_ms,
+                              core::fmt::FormatNumber(count)));
+  }
+
+  if (data.library_is_sample) {
+    out += "<p class=\"note warn\">Sample data: these rows are not this browser's history "
+           "yet — the reader below is live, the store behind it fills as you browse.</p>\n";
+  }
+  if (rows.empty()) {
+    return out + "<div class=\"card\"><p class=\"lede\">Nothing recorded yet. The first page "
+                 "you open will appear here.</p></div>\n";
+  }
+
+  std::string kpis = "<div class=\"kpis\">";
+  kpis += "<div class=\"kpi\"><span class=\"v\">" + EscapeImpl(core::fmt::FormatNumber(static_cast<int64_t>(rows.size()))) +
+          "</span><span class=\"k\">pages</span></div>";
+  kpis += "<div class=\"kpi\"><span class=\"v\">" + EscapeImpl(core::fmt::FormatNumber(visits)) +
+          "</span><span class=\"k\">visits</span></div>";
+  kpis += "</div>\n";
+  out += kpis;
+  out += LibraryFilter("Filter history", rows.size());
+  out += LibraryTable(rows, "Visits");
+  return out;
+}
+
+std::string RenderBookmarks(const PageData& data) {
+  std::string out;
+  out += "<h1>Bookmarks</h1>\n<p class=\"lede\">Pages you kept. Exported in the Netscape "
+         "bookmark format, the one every browser still reads, so your list is yours and can "
+         "leave with you.</p>\n";
+
+  if (data.bookmarks_json.empty()) {
+    return out + Missing("Bookmarks", "Press the star in the toolbar on a page you want to keep.");
+  }
+  std::string parse_error;
+  auto parsed = core::json::Parse(data.bookmarks_json, &parse_error);
+  if (!parsed.has_value()) {
+    return out + Missing("Bookmarks", "The bookmarks file could not be read: " + parse_error);
+  }
+  const core::json::Value& entries = parsed->Get("entries");
+  const int64_t now_ms = PageNowMs(data);
+
+  std::vector<std::string> rows;
+  std::vector<std::string> folders;
+  for (const core::json::Value& item : entries.AsArray()) {
+    const std::string url_text = item.Get("url").AsString();
+    if (url_text.empty()) continue;
+    const std::string folder = item.Get("folder").AsString();
+    if (!folder.empty() &&
+        std::find(folders.begin(), folders.end(), folder) == folders.end()) {
+      folders.push_back(folder);
+    }
+    rows.push_back(LibraryRow(url_text, item.Get("title").AsString(),
+                              item.Get("added_ms").AsInt64(0), now_ms,
+                              folder.empty() ? std::string("\u2014") : folder));
+  }
+
+  if (data.library_is_sample) {
+    out += "<p class=\"note warn\">Sample data: these rows are not this browser's bookmarks "
+           "yet — the reader below is live, the store behind it fills as you bookmark.</p>\n";
+  }
+  if (rows.empty()) {
+    return out + "<div class=\"card\"><p class=\"lede\">No bookmarks yet. Anything you keep "
+                 "shows up here, with its folder if it has one.</p></div>\n";
+  }
+
+  std::string kpis = "<div class=\"kpis\">";
+  kpis += "<div class=\"kpi\"><span class=\"v\">" + EscapeImpl(core::fmt::FormatNumber(static_cast<int64_t>(rows.size()))) +
+          "</span><span class=\"k\">bookmarks</span></div>";
+  kpis += "<div class=\"kpi\"><span class=\"v\">" + EscapeImpl(core::fmt::FormatNumber(static_cast<int64_t>(folders.size()))) +
+          "</span><span class=\"k\">folders</span></div>";
+  kpis += "</div>\n";
+  out += kpis;
+  out += LibraryFilter("Filter bookmarks", rows.size());
+  out += LibraryTable(rows, "Folder");
+  return out;
+}
+
 std::string RenderNotWired(PageKind kind) {
   std::string out = "<h1>";
   out += EscapeImpl(PageTitle(kind));
-  out += "</h1>\n<p class=\"lede\">This page is part of the v1 feature set but its store is not "
-         "wired up in this build yet — the browser is being built stage by stage, and the storage "
-         "layer lands with the history/bookmark service.</p>\n";
+  out += "</h1>\n<p class=\"lede\">This page is part of the v1 feature set but its download item store is "
+         "not wired up in this build yet — the browser is being built stage by stage, and the "
+         "download list needs the CEF download callbacks, which the current build does not "
+         "subscribe to yet.</p>\n";
   out += "<div class=\"card\"><p class=\"note\">Nothing is hidden from you here: this page "
          "intentionally does not render an empty list, because an empty list would look like "
          "\"you have no ";
@@ -1347,8 +1558,8 @@ std::string RenderPage(PageKind kind, const PageData& data) {
     // the same bytes have to work standalone in another browser, so it carries its own
     // styling. --write-bench-page writes exactly this.
     case PageKind::kBench: return BenchPageDocument();
-    case PageKind::kHistory:
-    case PageKind::kBookmarks:
+    case PageKind::kHistory: return Shell(kind, data, RenderHistory(data));
+    case PageKind::kBookmarks: return Shell(kind, data, RenderBookmarks(data));
     case PageKind::kDownloads: return Shell(kind, data, RenderNotWired(kind));
     case PageKind::kUnknown: break;
   }

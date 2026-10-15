@@ -323,3 +323,52 @@ were exercised in a headless DOM against the live server — Ctrl+K opens, filte
 closes; the mode links are `browserx://modes?set=<id>` and nothing else; the tab list
 renders from JSON; the shortcut filter narrows 20 rows to 9; and no page makes a network
 request.
+
+## 13. The improvement programme: 200+ changes, each one checked (added with the ledger)
+
+"Add 200+ improvements" is only meaningful if the number can be audited, so the number
+itself is machine-checked. `docs/IMPROVEMENTS.md` is a ledger whose every row names the
+file the change lives in and a string that must be found there; `tools/check_improvements.py`
+verifies all of them, and `make check` runs it with `--min 200`. A row whose code has been
+reverted fails the build, and the count cannot be inflated by writing prose.
+
+```bash
+python3 tools/check_improvements.py            # verify every row against the code
+python3 tools/check_improvements.py --min 200  # the ratchet make check enforces
+python3 tools/check_improvements.py --list     # read the ledger
+python3 tools/check_improvements.py --json     # the same data, for the preview
+make improvements                              # the ledger, listed
+```
+
+Rules the ledger follows, so the count means something:
+
+| Rule | Why |
+|------|-----|
+| One row = one change a user (or a maintainer) can point at | No "updated several files" rows: unverifiable and unfalsifiable. |
+| Every row names an anchor that exists in the code it claims | A row cannot outlive what it describes. Duplicate ids, missing files and malformed rows are errors too. |
+| Bugs found by the new tests count, and are marked *bug fix* | Four of the first seventy rows are defects the tests found in the code beside them — the honest way to count them is as fixes, not as features. |
+| Honesty and Accessibility are areas, not adjectives | A row may claim "the page says what it cannot yet do" or "a screen reader can read this state", and both are checkable. |
+| Nothing is recorded that is not shipped | The ledger describes `main`. A planned-but-absent change is a plan item, not a row. |
+
+Two of the checker's own findings are worth remembering, because they are the reason the
+mechanism exists rather than a spreadsheet:
+
+* **A parameter name was being enabled as a feature.** LOW RAM's advanced path emitted
+  `--enable-features=ProcessPerSiteMainFrameThreshold/1`; that is a *parameter* of
+  `ProcessPerSiteUpToMainFrameThreshold`, and the slash form is not Chromium's syntax
+  (`base/feature_list.h` uses `FeatureName:param/value`). Chromium ignored the token, so
+  the mode promised process sharing it never applied. `ValidatePlan()` now refuses any
+  plan naming a switch or feature that is not in the verified catalogue, and `make bench`
+  refuses to print an invalid plan.
+* **The ledger check caught its own blind spot.** Entries whose prose contained `<title>`
+  broke the preview's ledger table (unescaped insertion into HTML), and two rows silently
+  disappeared from the page while the headline still counted them. The table now asserts
+  that it rendered as many rows as the checker returned.
+
+**Verification:** `make test` (unit tests, including the store, the engine and the pages),
+`make check-compile` (every source file against the real CEF headers), `make perf`,
+`make pages`, `python3 tools/check_improvements.py`, and `make ui-check`, which drives the
+rendered pages and the preview in a headless DOM: palette open/close with ARIA state,
+filters, the history and bookmark readers, the mode diff lines, the page picker, and the
+ledger panel.
+
