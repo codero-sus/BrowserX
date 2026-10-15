@@ -38,6 +38,9 @@ enum TabStripId {
   kTabCloseIdBase = 20000,   // + tab id
   kTabStripId = 30000,
   kNewTabButtonId = 30001,
+  /// The per-tab status dot. One id for every tab: it is a label, not a command, so
+  /// nothing dispatches on it.
+  kTabStateDotId = 30002,
   kTabTitleMaxWidth = 190,
   kTabStripHeight = 32,
 };

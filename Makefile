@@ -154,6 +154,7 @@ help:
 	@echo "  make bench           print the resolved flag plan for all modes"
 	@echo "  make perf            measure BrowserX's own overhead against budgets"
 	@echo "  make bench-page      write the offline benchmark page (browserx://bench)"
+	@echo "  make pages           render every browserx:// page to out/pages/"
 	@echo "  make doctor          environment + capability report"
 	@echo "  make run             build and launch BrowserX"
 	@echo "  make run-nosandbox   launch without the Chromium sandbox (dev)"
@@ -326,12 +327,21 @@ bench: $(BENCH_BIN)
 doctor: $(DOCTOR_BIN)
 	@$(DOCTOR_BIN) $(ARGS)
 
+PAGES_BIN      := $(OUT_DIR)/browserx-pages
 BENCHPAGE_BIN  := $(OUT_DIR)/browserx-benchpage
 # The Android edition ships the same page as an asset (it cannot compile C++), so the
 # asset is generated from src/web/bench_page.cc and checked against it below.
 ANDROID_BENCH  := $(ROOT)/mobile-edition/app/src/main/assets/bench.html
 
 PERF_BIN       := $(OUT_DIR)/browserx-perf
+
+# Renders every browserx:// page to a file, with live engine data. This is what makes
+# the UI reviewable - and the preview clickable - without a CEF build.
+$(PAGES_BIN): $(TOOLS_DIR)/pages_dump.cc $(CORE_SRCS) $(SRC_DIR)/web/internal_pages.cc \
+              $(SRC_DIR)/web/bench_page.cc $(SRC_DIR)/web/internal_pages.h
+	@mkdir -p $(OUT_DIR)
+	@echo "  CXX+LD tools/pages_dump.cc"
+	@$(CXX) $(CXX_STD) -O2 -pthread -I$(ROOT)/src $(DEFINES) $^ -o $@
 
 $(BENCHPAGE_BIN): $(TOOLS_DIR)/benchpage.cc $(SRC_DIR)/web/bench_page.cc
 	@mkdir -p $(OUT_DIR)
@@ -342,6 +352,10 @@ $(PERF_BIN): $(TOOLS_DIR)/perf.cc $(CORE_SRCS)
 	@mkdir -p $(OUT_DIR)
 	@echo "  CXX+LD tools/perf.cc"
 	@$(CXX) $(CXX_STD) -O2 -pthread -I$(ROOT)/src $^ -o $@
+
+.PHONY: pages
+pages: $(PAGES_BIN)
+	@$(PAGES_BIN) $(OUT_DIR)/pages --with-sample-session
 
 .PHONY: bench-page
 bench-page: $(BENCHPAGE_BIN)

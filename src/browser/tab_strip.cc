@@ -18,16 +18,35 @@ namespace browserx {
 namespace browser {
 namespace {
 
-constexpr cef_color_t kColorChrome = 0xFF1B1D22;
-constexpr cef_color_t kColorChip = 0xFF23262E;
-constexpr cef_color_t kColorChipActive = 0xFF303542;
-constexpr cef_color_t kColorText = 0xFFE6E8EE;
-constexpr cef_color_t kColorTextDim = 0xFF9AA1AE;
-constexpr cef_color_t kColorAccent = 0xFF5AC8FA;
+// Same tokens as the internal pages and the rest of the chrome: one palette for the
+// whole product, so the UI cannot look like two different browsers.
+constexpr cef_color_t kColorChrome = 0xFF0B0F16;
+constexpr cef_color_t kColorChip = 0xFF141B26;
+constexpr cef_color_t kColorChipActive = 0xFF1E2735;
+constexpr cef_color_t kColorText = 0xFFE9EFF7;
+constexpr cef_color_t kColorTextDim = 0xFF94A3B8;
+constexpr cef_color_t kColorAccent = 0xFF3DDC84;
+constexpr cef_color_t kColorAmber = 0xFFE3B341;
 
-constexpr int kChipHeight = 28;
-constexpr int kCloseWidth = 22;
-constexpr int kNewTabWidth = 30;
+constexpr int kChipHeight = 30;
+constexpr int kCloseWidth = 24;
+constexpr int kNewTabWidth = 32;
+constexpr int kStateDotWidth = 18;
+
+/// The state dot every chip leads with: the place a favicon will go once the browser
+/// has one, and until then the honest answer to "what is this tab doing?" -
+/// hollow for a sleeping tab, a dot for a live one, amber while muted.
+struct TabStateGlyph {
+  const char* text;
+  cef_color_t color;
+};
+
+TabStateGlyph GlyphFor(const TabState& tab, bool active) {
+  if (tab.sleeping) return {"\xE2\x97\x8B", kColorTextDim};   // ○ renderer gone
+  if (tab.muted) return {"\xE2\x97\x8F", kColorAmber};        // ● muted
+  if (tab.pinned) return {"\xE2\x96\xAA", kColorTextDim};     // ▪ pinned
+  return {"\xE2\x97\x8F", active ? kColorAccent : kColorTextDim};
+}
 
 }  // namespace
 
@@ -73,6 +92,7 @@ CefSize TabStrip::GetMaximumSize(CefRefPtr<CefView> view) {
   const int id = view->GetID();
   if (id >= kTabCloseIdBase) return CefSize(kCloseWidth, kChipHeight);
   if (id == kNewTabButtonId) return CefSize(kNewTabWidth, kChipHeight);
+  if (id == kTabStateDotId) return CefSize(kStateDotWidth, kChipHeight);
   return CefSize(kTabTitleMaxWidth, kChipHeight);
 }
 
@@ -93,6 +113,19 @@ void TabStrip::Rebuild() {
     CefRefPtr<CefPanel> chip = CefPanel::CreatePanel(this);
     chip->SetBackgroundColor(active ? kColorChipActive : kColorChip);
 
+    // A non-interactive label: it is a status light, not a button, so it must not
+    // swallow the click that activates the tab.
+    const TabStateGlyph glyph = GlyphFor(tab, active);
+    CefRefPtr<CefLabelButton> state =
+        CefLabelButton::CreateLabelButton(nullptr, glyph.text);
+    state->SetID(kTabStateDotId);
+    state->SetEnabled(false);
+    state->SetFocusable(false);
+    state->SetHorizontalAlignment(CEF_HORIZONTAL_ALIGNMENT_CENTER);
+    state->SetEnabledTextColors(glyph.color);
+    state->SetInkDropEnabled(false);
+    chip->AddChildView(state);
+
     CefRefPtr<CefLabelButton> title =
         CefLabelButton::CreateLabelButton(this, TabLabelFor(tab));
     title->SetID(kTabTitleIdBase + tab.id);
@@ -100,6 +133,7 @@ void TabStrip::Rebuild() {
     title->SetAccessibleName(TabLabelFor(tab, 64));
     title->SetHorizontalAlignment(CEF_HORIZONTAL_ALIGNMENT_LEFT);
     title->SetEnabledTextColors(active ? kColorText : kColorTextDim);
+    if (tab.sleeping) title->SetEnabledTextColors(kColorTextDim);
     title->SetInkDropEnabled(true);
     title->SetFocusable(true);
     chip->AddChildView(title);
@@ -117,9 +151,9 @@ void TabStrip::Rebuild() {
     {
       CefBoxLayoutSettings settings;
       settings.horizontal = 1;
-      settings.inside_border_horizontal_spacing = 2;
+      settings.inside_border_horizontal_spacing = 7;
       settings.inside_border_vertical_spacing = 1;
-      settings.between_child_spacing = 0;
+      settings.between_child_spacing = 2;
       CefRefPtr<CefBoxLayout> layout = chip->SetToBoxLayout(settings);
       if (layout.get() != nullptr) layout->SetFlexForView(title, 1);
     }
@@ -131,7 +165,9 @@ void TabStrip::Rebuild() {
   add->SetTooltipText("New tab (Ctrl+T)");
   add->SetAccessibleName("New tab");
   add->SetHorizontalAlignment(CEF_HORIZONTAL_ALIGNMENT_CENTER);
-  add->SetEnabledTextColors(kColorAccent);
+  add->SetTextColor(CEF_BUTTON_STATE_NORMAL, kColorTextDim);
+  add->SetTextColor(CEF_BUTTON_STATE_HOVERED, kColorAccent);
+  add->SetInkDropEnabled(true);
   add->SetInkDropEnabled(true);
   strip_->AddChildView(add);
 }

@@ -661,12 +661,14 @@ class MainActivity : Activity(), ModeController.Listener, TabController.Listener
         const val TAG = "BrowserX"
         const val KEY_MODE = "mode"
         const val KEY_AUTOPILOT = "autopilot"
-        const val BACKGROUND = 0xFF101318.toInt()
-        const val SURFACE = 0xFF1B1D22.toInt()
-        const val SURFACE_ALT = 0xFF23262E.toInt()
-        const val FIELD = 0xFF2C3039.toInt()
-        const val TEXT = 0xFFE6E8EE.toInt()
-        const val TEXT_DIM = 0xFF9AA1AE.toInt()
-        const val ACCENT = 0xFF5AC8FA.toInt()
+        // Same tokens as the desktop chrome, the internal pages and the preview: one
+        // palette across the product, so the editions look like one browser.
+        const val BACKGROUND = 0xFF0B0F16.toInt()
+        const val SURFACE = 0xFF121821.toInt()
+        const val SURFACE_ALT = 0xFF1E2735.toInt()
+        const val FIELD = 0xFF18202B.toInt()
+        const val TEXT = 0xFFE9EFF7.toInt()
+        const val TEXT_DIM = 0xFF94A3B8.toInt()
+        const val ACCENT = 0xFF3DDC84.toInt()
     }
 }

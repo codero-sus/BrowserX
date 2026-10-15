@@ -41,6 +41,8 @@ FLAGPLAN = REPO_ROOT / "out" / "browserx-flagplan"
 # The offline benchmark page. It lives in the Android edition's assets because that
 # edition cannot compile C++, and `make check` verifies it is byte-identical to what
 # BrowserX serves at browserx://bench - so serving it here is honest.
+# Every internal page, rendered by the browser's own renderer (`make pages`).
+PAGES_DIR = REPO_ROOT / "out" / "pages"
 BENCH_PAGE = (
     REPO_ROOT / "mobile-edition" / "app" / "src" / "main" / "assets" / "bench.html"
 )
@@ -111,6 +113,15 @@ class PreviewHandler(BaseHTTPRequestHandler):
         try:
             if route in ("/", "/index.html"):
                 self.serve_file(PREVIEW_DIR / "index.html")
+            elif route == "/pages":
+                # Same listing as /api/pages: readable by a human, parseable by the UI.
+                self.serve_pages_index()
+            elif route.startswith("/pages/"):
+                name = route[len("/pages/"):]
+                if "/" in name or not name.endswith(".html"):
+                    self.send_error_json(404, "no such page")
+                else:
+                    self.serve_file(PAGES_DIR / name)
             elif route in ("/bench", "/bench.html"):
                 # The same file the browser serves at browserx://bench, generated from
                 # src/web/bench_page.cc by `make bench-page`. Serving it here means the
@@ -145,8 +156,28 @@ class PreviewHandler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self.send_bytes(200, body, content_type)
 
+    def serve_pages_index(self) -> None:
+        """Lists the rendered internal pages, so the preview can show a picker.
+
+        The files come from `make pages`, which renders them with the same function
+        the browser uses. Nothing here is hand-written HTML: if this list is empty,
+        the honest answer is "run make pages".
+        """
+        if not PAGES_DIR.is_dir():
+            self.send_error_json(503, "no rendered pages yet; run: make pages")
+            return
+        pages = []
+        for path in sorted(PAGES_DIR.glob("*.html")):
+            pages.append({"name": path.stem, "url": "/pages/" + path.name,
+                          "bytes": path.stat().st_size})
+        self.send_json({"ok": True, "count": len(pages), "pages": pages,
+                        "note": "rendered by src/web/internal_pages.cc; the tab list "
+                                "is sample data (there is no live browser process here)"})
+
     def serve_api(self, route: str, query: dict[str, list[str]]) -> None:
-        if route == "/api/plans":
+        if route == "/api/pages":
+            self.serve_pages_index()
+        elif route == "/api/plans":
             self.send_json(run_json(tool_path(FLAGPLAN, ["make bench"]), ["--json"]))
         elif route == "/api/catalog":
             self.send_json(run_json(tool_path(FLAGPLAN, ["make bench"]), ["--catalog", "--json"]))
