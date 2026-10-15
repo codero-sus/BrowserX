@@ -178,3 +178,8 @@ were written beside.
 | 155 | Docs | BUILDING.md separates installing the compiler from installing the extras, with the space each one costs and which are not needed | BUILDING.md | `### Trimming Visual Studio` |
 | 156 | UX | The Windows install instructions use the Visual Studio Installer first, with the exact components to keep ticked and the ones to untick | BUILDING.md | `Untick CMake, vcpkg, Clang, ATL/MFC` |
 | 157 | Honesty | The documented winget commands carry the agreement flags, because without them the first run stops at a prompt and the following commands become that prompt's answers | BUILDING.md | `Paste one line, wait for it to finish` |
+| 158 | Docs | The Windows SDK question is answered directly: any one works, take the newest, take exactly one, and the installer's three offerings are ranked | BUILDING.md | `Exactly one.` |
+| 159 | Honesty | BUILDING.md states that the SDK does not set the oldest Windows the browser runs on - Chromium does, and that floor has been Windows 10 since Chromium 110 | BUILDING.md | `Windows 10 or later** (Chrome 109 was` |
+| 160 | Robustness | The requirements report and the build share one SDK ordering, so the report cannot name a different SDK than the build will use | tools/build_windows.py | `def sdk_version_key(name: str) -> list[int]:` |
+| 161 | Tooling | The report names which installed SDK will be used, and how many extra ones are taking up space | tools/check_build_requirements.py | `the build uses only` |
+| 162 | Tooling | The requirements report answers the SDK question even on a machine that has no Windows toolchain, by naming what to tick | tools/check_build_requirements.py | `Install exactly one - the build uses the newest` |
