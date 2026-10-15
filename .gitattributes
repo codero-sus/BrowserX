@@ -1,0 +1,17 @@
+# BrowserX — line endings, so a script behaves the same whoever clones it.
+#
+# Windows batch has to be CRLF: cmd.exe treats a bare LF as part of the command in
+# some constructs, which turns a working script into "The syntax of the command is
+# incorrect". Shell scripts and every source file stay LF, so a shebang is never read
+# as '/bin/sh\r' ("bad interpreter: No such file or directory"), and the tools that
+# read these files (make, python, g++) keep seeing plain Unix endings.
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.mjs   text eol=lf
+*.cc    text eol=lf
+*.h     text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+Makefile text eol=lf

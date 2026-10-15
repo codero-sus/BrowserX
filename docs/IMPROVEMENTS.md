@@ -118,3 +118,19 @@ were written beside.
 | 95 | Robustness | make ui-check says the preview is not running and skips the drive-through, instead of failing with a stack trace | tools/ui_check/preview_check.mjs | `preview not running at ${base} — skipping the drive-through.` |
 | 96 | Hygiene | The CEF header cache is tracked on purpose so make check runs with no network, and make headers refreshes it | .gitignore | `distribution they belong to.` |
 | 97 | Honesty | The requirements report states where the CEF headers came from and that they are enough for make check but not for linking | tools/check_build_requirements.py | `headers cached in .cef-headers/ (enough for make check)` |
+| 98 | Tooling | One updater implementation behind a Linux launcher and a Windows launcher, so the two platforms cannot drift into two versions of update | tools/update.py | `The Windows launcher cannot be executed from here` |
+| 99 | Honesty | An available update and a failure have different exit codes - 10 with --check, 1 for anything that failed - so a script can tell them apart | tools/update.py | `EXIT_UPDATE_AVAILABLE = 10` |
+| 100 | Robustness | The updater refuses to pull over a dirty working tree and lists the files it would have lost | tools/update.py | `refusing to update: a pull over local changes can lose them.` |
+| 101 | Robustness | A failed build still records the commit the update moved to, so a broken update can always be rolled back | tools/update.py | `The state file is what makes --rollback possible` |
+| 102 | Hygiene | The updater never runs git clean, because the run profile - history, bookmarks, settings - lives inside the checkout | tools/update.py | `ever runs git clean` |
+| 103 | Robustness | The core rebuild is make pages rather than make test, so a suite does not run twice: verification runs the tests once, afterwards, over the new tree | tools/update.py | `targets = ["all"] if step == "browser" else ["pages"]` |
+| 104 | Hygiene | The Windows launcher is checked as code instead of trusted: the self-test rejects a stale %ERRORLEVEL% inside a block and a single & joining two commands | tools/update.py | `no command in update.cmd uses %ERRORLEVEL%` |
+| 105 | Robustness | The Windows launcher checks every step and passes the exit code through, so the 10 that means update available survives to the caller | tools/update.cmd | `endlocal & exit /b %RC%` |
+| 106 | Honesty | Without WSL the Windows updater updates the source only, and says the browser build needs Linux or WSL instead of implying it built something | tools/update.cmd | `Source updated. The browser itself builds on Linux or in WSL` |
+| 107 | Hygiene | gitattributes pins CRLF for the batch file and LF for sources, so a Windows checkout gets a launcher cmd.exe can actually read | .gitattributes | `*.cmd` |
+| 108 | Tooling | make update and make update-check give the same updater a make entry point, with UPDATE_ARGS passed straight through | Makefile | `tools/update.py` |
+| 109 | Robustness | A rollback with --stash stashes local changes first, instead of letting reset --hard discard the very changes the flag promised to keep | tools/update.py | `stashing local changes before the rollback (--stash)` |
+| 110 | Honesty | A rollback rebuilds and verifies, and says so when the commit it rolled back to does not build here either | tools/update.py | `the rolled-back commit does not build here either` |
+| 111 | Tests | The updater self-test covers the plan decision logic, the state file and the batch-script rules | tools/update.py | `self-test passed` |
+| 112 | Docs | BUILDING.md documents updating, the exit codes and what each flag does | BUILDING.md | `## Updating BrowserX` |
+| 113 | Honesty | A dry run prints the exact plan - pull, build, verify - and changes nothing | tools/update.py | `nothing was changed. The plan:` |
