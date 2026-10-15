@@ -84,6 +84,10 @@ struct PageData {
   std::string session_json;
   /// Escape hatch for the app: extra HTML appended to the About page.
   std::string extra_about_html;
+  /// The user's search template (core::Settings::search_template). The start page
+  /// searches where the omnibox searches; the default is only a fallback for callers
+  /// that render pages without settings (tests, the preview).
+  std::string search_template = "https://duckduckgo.com/?q=%s";
   /// The host that was actually requested. Only used by the "no such page" view,
   /// so the user sees the address they typed instead of a generic message.
   std::string requested_host;
