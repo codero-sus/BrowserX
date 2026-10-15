@@ -442,7 +442,9 @@ def check_windows(report: Report) -> None:
                           key=sdk_version_key, reverse=True) if kits.is_dir() else []
         if versions:
             report.add(group, "Windows 10/11 SDK", "ok",
-                       f"{versions[0]} will be used (x64 libraries present)")
+                       f"{versions[0]} will be used (the newest installed; x64 libraries "
+                       "present). Any one Windows 10/11 SDK builds BrowserX - 10.0.26100 "
+                       "is the one BrowserX.vsconfig asks for")
             if len(versions) > 1:
                 # The build uses the newest and ignores the rest, so extra SDKs are pure
                 # disk cost - and on a machine that is short of space, that is worth

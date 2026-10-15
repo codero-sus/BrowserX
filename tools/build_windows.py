@@ -363,6 +363,31 @@ def link_command(cl: Path, objects: list[Path], output: Path, libs: list[str],
     return command
 
 
+def is_wrapper_source(source: Path, cef_root: Path) -> bool:
+    """True for CEF's own binding layer rather than BrowserX code.
+
+    These two kinds of file are not compiled the same way, and getting it wrong is not a
+    style problem: see defines_for_source.
+    """
+    return cef_root in source.parents
+
+
+def defines_for_source(source: Path, cef_root: Path,
+                       app_defines: list[str] | None = None) -> list[str]:
+    if is_wrapper_source(source, cef_root):
+        return list(WRAPPER_DEFINES)
+    return list(APP_DEFINES if app_defines is None else app_defines)
+
+
+def includes_for_source(source: Path, cef_root: Path,
+                        app_includes: list[str] | None = None) -> list[str]:
+    if is_wrapper_source(source, cef_root):
+        # The wrapper sees CEF's headers and nothing of ours: it must not be able to see
+        # our code at all, which is exactly the rule the Makefile enforces for it.
+        return [str(cef_root)]
+    return list(app_includes or [str(SRC_DIR), str(cef_root)])
+
+
 def cef_includes(cef_root: Path) -> list[Path]:
     return [cef_root]
 
@@ -493,16 +518,10 @@ def build(args) -> int:
     objects = [object_path(source) for source in sources]
 
     def defines_for(source: Path) -> list[str]:
-        if cef_root in source.parents:
-            return list(WRAPPER_DEFINES)
-        return defines
+        return defines_for_source(source, cef_root, defines)
 
     def includes_for(source: Path) -> list[str]:
-        if cef_root in source.parents:
-            # The wrapper sees CEF's headers and nothing of ours: it must not be able to
-            # see our code at all, which is exactly the rule the Makefile enforces.
-            return [str(cef_root)]
-        return [str(path) for path in includes]
+        return includes_for_source(source, cef_root, [str(path) for path in includes])
     output = OUT_DIR / "BrowserX.exe"
 
     say("")
@@ -765,6 +784,72 @@ def check_sources(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+def self_test() -> int:
+    """Checks the parts of the Windows build that do not need Windows.
+
+    The compiler and the linker can only be exercised on a Windows machine, but the
+    decisions around them - which SDK wins, which files are compiled the wrapper's way,
+    which sources are compiled at all - are where a second build system usually goes
+    wrong, and all of those are checkable anywhere.
+    """
+    failures = 0
+
+    def expect(condition: bool, what: str) -> None:
+        nonlocal failures
+        print(f"    {'✔' if condition else '✘'} {what}")
+        if not condition:
+            failures += 1
+
+    print("\n  BrowserX — Windows build self-test\n")
+
+    # --- choosing an SDK, which is what the user is asked to install ---------------
+    offered = ["10.0.22621.0", "10.0.26100.8249", "10.0.28000.2705"]
+    expect(max(offered, key=sdk_version_key) == "10.0.28000.2705",
+           "the newest SDK wins by version, not by name order")
+    # The bug that makes this worth a test: "10.0.10000.0" < "10.0.9999.0" as text.
+    expect(max(["10.0.9999.0", "10.0.10000.0"], key=sdk_version_key) == "10.0.10000.0",
+           "10.0.10000.0 beats 10.0.9999.0 (string sorting would pick the wrong one)")
+    expect(sdk_version_key("10.0.26100.0") == [10, 0, 26100, 0],
+           "a version parses into its numeric parts")
+    expect(sdk_version_key("nonsense") == [0], "an unparsable version does not crash the sort")
+
+    # --- CEF's wrapper is not compiled like our code -------------------------------
+    cef = Path("/tmp/fake-cef")
+    wrapper = cef / "libcef_dll" / "wrapper" / "cef_client.cc"
+    ours = REPO_ROOT / "src" / "core" / "format.cc"
+    expect(is_wrapper_source(wrapper, cef) and not is_wrapper_source(ours, cef),
+           "CEF's wrapper is recognised as CEF's, and our sources are not")
+    wrapper_defines = defines_for_source(wrapper, cef, ["USING_CEF_SHARED", "UNICODE"])
+    expect("WRAPPING_CEF_SHARED" in wrapper_defines,
+           "the wrapper is compiled with WRAPPING_CEF_SHARED (linking fails without it)")
+    expect("USING_CEF_SHARED" not in wrapper_defines,
+           "the wrapper is not given the application's defines")
+    expect(defines_for_source(ours, cef, ["USING_CEF_SHARED"]) == ["USING_CEF_SHARED"],
+           "our sources keep the application defines")
+    expect(includes_for_source(wrapper, cef, ["src", "cef"]) == [str(cef)],
+           "the wrapper cannot see our headers at all")
+
+    # --- the source rule -----------------------------------------------------------
+    sources = app_sources()
+    expect(bool(sources), "the source rule finds the browser's sources")
+    expect(not any(p.name.endswith("_unittest.cc") for p in sources),
+           "no *_unittest.cc is compiled into the browser")
+    expect(all(p.suffix == ".cc" for p in sources), "only .cc files are compiled")
+
+    # --- the runtime that has to sit beside the exe --------------------------------
+    expect("libcef.dll" in CEF_RUNTIME_FILES,
+           "libcef.dll is staged: Windows has no rpath, so the exe needs it next to it")
+    expect(any(name.endswith("v8_context_snapshot.bin") for name in CEF_RUNTIME_FILES),
+           "the V8 snapshot and ICU data are staged too (no snapshot, no JavaScript)")
+
+    print()
+    if failures:
+        print(f"  {failures} self-test failure(s)\n")
+        return EXIT_FAILED
+    print("  self-test passed\n")
+    return EXIT_OK
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="build_windows.py",
@@ -781,6 +866,8 @@ def main(argv: list[str]) -> int:
                         help="prove this build compiles the same sources as the Makefile")
     parser.add_argument("--check-portability", action="store_true",
                         help="find POSIX-only includes that would break this build")
+    parser.add_argument("--self-test", action="store_true",
+                        help="check the platform-independent build logic (no MSVC needed)")
     parser.add_argument("--verbose", action="store_true", help="name every file as it compiles")
     parser.add_argument("--quiet", action="store_true", help="less output")
     parser.add_argument("--max-errors", type=int, default=5,
@@ -788,6 +875,8 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.self_test:
+            return self_test()
         if args.check_sources:
             return check_sources(args)
         if args.check_portability:
