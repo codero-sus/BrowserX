@@ -57,7 +57,7 @@ were written beside.
 | 34 | Tests | The store is tested against a real temporary profile, including the damaged-file path | tests/unit/library_store_test.cc | `TEST(LibraryStore, ADamagedFileIsPreservedNotOverwritten)` |
 | 35 | Robustness | One HTML escaper in core, shared by the bookmark export and the internal pages | src/core/format.cc | `std::string HtmlEscape(std::string_view text)` |
 | 36 | UX | Every finished navigation is recorded once, then refined with the page's real title | src/browser/browser_shell.cc | `void BrowserShellImpl::NoteVisit(BrowserWindow* window, const std::string& url,` |
-| 37 | Tooling | make pages writes 11 pages, including the history and bookmark readers, built from the real stores | tools/pages_dump.cc | `data.library_is_sample = true;` |
+| 37 | Tooling | make pages writes every internal page, including the history and bookmark readers, built from the real stores (the count is asserted by make ui-check rather than written here, because a number in prose goes stale) | tools/pages_dump.cc | `data.library_is_sample = true;` |
 | 38 | Tooling | check-compile is separate from the ledger gate, so a failing ledger can never hide a compiler error | Makefile | `check-compile: check-headers check-core-purity check-bench-page $(CHECK_OBJS)` |
 | 39 | Robustness | bug fix: imported bookmark URLs are normalised, so a duplicate in the file collapses instead of showing twice | src/core/library.cc | `bookmark.url = url::NormalizeForCompare(StringOf(item, "url"));` |
 | 40 | Robustness | bug fix: the importer popped its folder stack on </H3>, which left every imported bookmark unfiled | src/core/library.cc | `// Only a closing DL ends a folder.` |
@@ -134,3 +134,17 @@ were written beside.
 | 111 | Tests | The updater self-test covers the plan decision logic, the state file and the batch-script rules | tools/update.py | `self-test passed` |
 | 112 | Docs | BUILDING.md documents updating, the exit codes and what each flag does | BUILDING.md | `## Updating BrowserX` |
 | 113 | Honesty | A dry run prints the exact plan - pull, build, verify - and changes nothing | tools/update.py | `nothing was changed. The plan:` |
+| 114 | Honesty | The error page prints the code and the address that failed, because a paraphrase without them cannot be searched or reported | src/web/internal_pages.cc | `What Chromium reported` |
+| 115 | Honesty | A failure code this build cannot explain is reported as unknown, with its number, instead of being explained by guesswork | src/core/net_errors.cc | `cannot explain that failure` |
+| 116 | Tests | Every error code is pinned to upstream's number in a test - which caught three certificate codes first drafted from memory in the wrong order | tests/unit/net_errors_test.cc | `{"CERT_COMMON_NAME_INVALID", -200}` |
+| 117 | Security | Every certificate failure is marked as a trust problem, and the test asserts that nothing else is, so the marking keeps meaning something | tests/unit/net_errors_test.cc | `CertificateFailuresAreMarkedAsSecurityRelevant` |
+| 118 | Security | The error page says out loud that it offers no way past a trust failure, rather than leaving that to be discovered | src/web/internal_pages.cc | `This one is about trust` |
+| 119 | Honesty | The error explanations say when BrowserX itself made the decision, so the network is not blamed for the shield | src/core/net_errors.cc | `caused_by_browser` |
+| 120 | Robustness | Stopping a load and a cache miss are not failures worth a page, so the browser does not train people to dismiss its error pages | src/core/net_errors.cc | `bool NetErrorWarrantsPage(int code)` |
+| 121 | Honesty | The error page lists every code it can explain, so what it does not know is visible rather than implied | src/web/internal_pages.cc | `Every failure code this build can explain` |
+| 122 | Security | A failed browserx page is reported as a bug in this build rather than as a network failure that did not happen | src/browser/browser_window.cc | `This browserx:// page could not be built` |
+| 123 | UX | A failed load opens a page that explains it, instead of only flashing the status bar | src/browser/browser_window.cc | `browserx://error?code=` |
+| 124 | Security | The error page escapes the address and wording the network supplied, and never renders the failed address as a link to click | tests/unit/internal_pages_test.cc | `ErrorPageEscapesWhatTheNetworkGaveIt` |
+| 125 | UX | The page dump renders the error page as a labelled example, so its layout can be read without breaking a connection on purpose | tools/pages_dump.cc | `data.error_is_sample = true;` |
+| 126 | Docs | The README names every internal page that exists, and the UI check fails when one of them stops rendering | README.md | `fails if one of them stops rendering` |
+| 127 | Honesty | The ledger no longer states a page count in prose, which had already gone stale - the count is asserted by a check instead | docs/IMPROVEMENTS.md | `the count is asserted by make ui-check rather than written here` |
