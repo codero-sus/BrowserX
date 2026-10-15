@@ -9,6 +9,7 @@
 #include "core/format.h"
 #include "core/json.h"
 #include "core/mode_engine.h"
+#include "core/net_errors.h"
 #include "core/url_utils.h"
 
 #include <ctime>
@@ -649,6 +650,7 @@ const std::vector<HostEntry>& HostTable() {
       {"bookmarks", PageKind::kBookmarks, "Bookmarks"},
       {"downloads", PageKind::kDownloads, "Downloads"},
       {"find", PageKind::kFind, "Find in page"},
+      {"error", PageKind::kError, "What went wrong"},
       {"bench", PageKind::kBench, "Benchmark"},
   };
   return table;
@@ -1402,6 +1404,80 @@ std::string RenderNotFound(std::string_view host) {
   return out;
 }
 
+/// The error page. It exists because "ERR_CONNECTION_REFUSED" is not an answer: the
+/// user gets a sentence, what it usually means, and the two or three things worth trying.
+/// Everything shown comes from core::ExplainNetError, so the wording is unit tested, and
+/// an unknown code is reported as unknown with its number rather than guessed at.
+std::string RenderError(const PageData& data) {
+  const core::NetErrorHelp help = core::ExplainNetError(data.error_code);
+  const bool known = help.family != core::NetErrorFamily::kUnknown;
+
+  std::string out;
+  out += "<h1>" + EscapeImpl(help.headline) + "</h1>\n";
+  out += "<p class=\"lede\">" + EscapeImpl(help.explanation) + "</p>\n";
+
+  // The address that failed, shown as it came: without it, an error page is a complaint
+  // about nothing in particular.
+  out += "<div class=\"card\"><table><tbody>";
+  if (!data.error_url.empty()) {
+    out += "<tr><th>Address</th><td><code>" + EscapeImpl(data.error_url) + "</code></td></tr>";
+  }
+  out += "<tr><th>What Chromium reported</th><td><code>" +
+         EscapeImpl(core::FormatNetErrorCode(data.error_code)) + "</code></td></tr>";
+  if (!data.error_text.empty()) {
+    out += "<tr><th>Its own wording</th><td>" + EscapeImpl(data.error_text) + "</td></tr>";
+  }
+  out += "<tr><th>Kind of failure</th><td><code>" +
+         EscapeImpl(core::NetErrorFamilyName(help.family)) + "</code></td></tr>";
+  out += "</tbody></table></div>\n";
+
+  out += "<div class=\"card\"><h2>What to try</h2><ol>";
+  for (const std::string& step : help.try_first) {
+    out += "<li>" + EscapeImpl(step) + "</li>";
+  }
+  out += "</ol></div>\n";
+
+  // Two things must never be implied wrongly: that a security failure is a formality, and
+  // that BrowserX is blameless when the browser itself made the decision.
+  if (help.security_relevant) {
+    out += "<div class=\"card warn\"><p class=\"note\"><strong>This one is about trust, "
+           "not convenience.</strong> The connection could not be proven to be the site you "
+           "asked for. BrowserX does not offer a \"continue anyway\" button for this, on "
+           "purpose: the only safe next step is the one in the list above.</p></div>\n";
+  }
+  if (help.caused_by_browser) {
+    out += "<div class=\"card\"><p class=\"note\">BrowserX made this decision, not the "
+           "network and not the site - so it is also the thing you can change.</p></div>\n";
+  }
+  if (!known) {
+    out += "<div class=\"card\"><p class=\"note\">This build has no explanation for that "
+           "code, which is why none is offered: the number and Chromium's own wording are "
+           "printed instead, because a wrong explanation would send you looking in the wrong "
+           "place. browserx://about lists the version to report it against.</p></div>\n";
+  }
+  if (data.error_is_sample) {
+    out += "<div class=\"card\"><p class=\"note\">This is an example page, not a real "
+           "failure: nothing failed while rendering it. It is here so the layout can be read "
+           "and checked without breaking a connection on purpose.</p></div>\n";
+  }
+  // The list of everything this build can explain, on the page itself: a promise that the
+  // full list is "somewhere else" is how a page ends up describing a page that does not
+  // exist. Codes the table does not know are absent here and are reported as unknown above.
+  out += "<details class=\"card\"><summary>Every failure code this build can explain (" +
+         std::to_string(core::KnownNetErrorCodes().size()) + ")</summary><table>"
+         "<thead><tr><th>Code</th><th>Means</th></tr></thead><tbody>";
+  for (int code : core::KnownNetErrorCodes()) {
+    const core::NetErrorHelp help = core::ExplainNetError(code);
+    out += "<tr><td><code>" + EscapeImpl(help.name) + "</code></td><td>" +
+           EscapeImpl(help.headline) + "</td></tr>";
+  }
+  out += "</tbody></table><p class=\"note\">Anything not in this list is shown as its "
+         "code and Chromium's wording, with no invented explanation.</p></details>\n";
+  out += "<p class=\"note\">Errors are also written to the log with the URL and the code, "
+         "so a report can name both.</p>\n";
+  return out;
+}
+
 std::string RenderFind(const PageData& data) {
   std::string out;
   out += "<h1>Find in page</h1>\n<p class=\"lede\">Press Ctrl+F for the find bar, or use the "
@@ -1504,6 +1580,66 @@ std::string ContentTypeFor(PageKind kind) {
 
 std::string EscapeHtml(std::string_view text) { return EscapeImpl(text); }
 
+namespace {
+/// Percent-decodes a query value. Same rules as ParseModeSwitchRequest: a query string is
+/// not text until it has been decoded once.
+std::string DecodeQueryValue(std::string_view value) {
+  std::string decoded;
+  decoded.reserve(value.size());
+  for (size_t i = 0; i < value.size(); ++i) {
+    if (value[i] == '%' && i + 2 < value.size()) {
+      const auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+      };
+      const int high = hex(value[i + 1]);
+      const int low = hex(value[i + 2]);
+      if (high >= 0 && low >= 0) {
+        decoded += static_cast<char>(high * 16 + low);
+        i += 2;
+        continue;
+      }
+    }
+    decoded += value[i] == '+' ? ' ' : value[i];
+  }
+  return decoded;
+}
+}  // namespace
+
+bool ParseErrorRequest(const InternalUrl& url, int* code_out, std::string* url_out) {
+  if (KindForHost(url.host) != PageKind::kError) return false;
+  bool found = false;
+  for (const std::string& pair : core::fmt::Split(url.query, '&')) {
+    const size_t equals = pair.find('=');
+    if (equals == std::string::npos) continue;
+    const std::string key = pair.substr(0, equals);
+    const std::string value = DecodeQueryValue(pair.substr(equals + 1));
+    if (key == "code" && !value.empty()) {
+      // Three spellings reach here: the number Chromium reports, "ERR_" plus a name, and
+      // the bare name. All three are how people and logs refer to the same failure.
+      int64_t number = 0;
+      if (core::fmt::ParseInt(value, &number) && number < 0) {
+        // A negative number outside the table is still a real code, and showing it as
+        // unknown is the honest answer; only a positive or malformed value is a
+        // parse failure.
+        if (code_out != nullptr) *code_out = static_cast<int>(number);
+        found = true;
+      } else {
+        const int by_name = core::NetErrorCodeForName(value);
+        if (by_name != 0) {
+          if (code_out != nullptr) *code_out = by_name;
+          found = true;
+        }
+      }
+    } else if (key == "url" && url_out != nullptr) {
+      *url_out = value;
+    }
+  }
+  return found;
+}
+
 bool ParseModeSwitchRequest(const InternalUrl& url, std::string* mode_id_out) {
   if (KindForHost(url.host) != PageKind::kModes) return false;
   const size_t key = url.query.find("set=");
@@ -1554,6 +1690,7 @@ std::string RenderPage(PageKind kind, const PageData& data) {
     case PageKind::kSession: return Shell(kind, data, RenderSession(data));
     case PageKind::kAbout: return Shell(kind, data, RenderAbout(data));
     case PageKind::kFind: return Shell(kind, data, RenderFind(data));
+    case PageKind::kError: return Shell(kind, data, RenderError(data));
     // The benchmark is served as its own complete document, not wrapped in Shell():
     // the same bytes have to work standalone in another browser, so it carries its own
     // styling. --write-bench-page writes exactly this.
