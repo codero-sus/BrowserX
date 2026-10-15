@@ -49,6 +49,7 @@ function toast(message) {
 
 /* ------------------------------------------------------------------- data */
 async function load() {
+  loadPages();
   try {
     const response = await fetch('api/plans');
     if (!response.ok) throw new Error((await response.json()).error || response.statusText);
@@ -354,6 +355,53 @@ function catalogRow(entry, prefix) {
     `<td class="prov">${entry.provenance || ''}</td>` +
     `<td class="why">${entry.summary || ''}</td>`;
   return row;
+}
+
+/* ------------------------------------------- the browser's own pages ----- */
+/* Fetches the list `make pages` produced, then loads each page into the frame.
+ * The pages are the real renderer's output - if this list is empty, the preview
+ * says so instead of showing a mock-up. */
+async function loadPages() {
+  const picker = $('#pages-picker');
+  if (!picker) return;
+  let listing;
+  try {
+    listing = await (await fetch('/api/pages')).json();
+  } catch (error) {
+    picker.innerHTML = '<p class="note">Could not read the page list: ' + error + '</p>';
+    return;
+  }
+  if (listing.error) {
+    picker.innerHTML = '<p class="note">' + listing.error + '</p>';
+    return;
+  }
+  const titles = {
+    newtab: 'New tab', modes: 'Modes', telemetry: 'Telemetry', settings: 'Settings',
+    shortcuts: 'Keyboard shortcuts', catalog: 'Switch catalogue', session: 'Session',
+    about: 'About BrowserX', find: 'Find in page',
+  };
+  picker.innerHTML = listing.pages.map((page) =>
+    `<button class="page-chip" data-page-url="${page.url}" data-page-name="${page.name}">` +
+    `<strong>${titles[page.name] || page.name}</strong>` +
+    `<span>browserx://${page.name} · ${(page.bytes / 1024).toFixed(1)} KB</span></button>`
+  ).join('');
+
+  const frame = $('#pages-frame');
+  const urlLabel = $('#pages-frame-url');
+  const openLink = $('#pages-frame-open');
+  const show = (url, name) => {
+    frame.src = url;
+    urlLabel.textContent = 'browserx://' + name;
+    openLink.href = url;
+    $$('#pages-picker .page-chip').forEach((chip) => {
+      chip.classList.toggle('active', chip.dataset.pageUrl === url);
+    });
+  };
+  picker.addEventListener('click', (event) => {
+    const chip = event.target.closest('.page-chip');
+    if (chip) show(chip.dataset.pageUrl, chip.dataset.pageName);
+  });
+  if (listing.pages.length) show(listing.pages[0].url, listing.pages[0].name);
 }
 
 /* ------------------------------------------------------------------- wire */

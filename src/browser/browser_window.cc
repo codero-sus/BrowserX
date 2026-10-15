@@ -22,6 +22,7 @@
 #include "core/format.h"
 #include "core/log.h"
 #include "core/url_utils.h"
+#include "web/internal_pages.h"
 
 namespace browserx {
 namespace browser {
@@ -29,18 +30,19 @@ namespace {
 
 // --- palette (fixed on purpose: a performance browser must not re-skin itself
 //     mid-game, and a fixed palette costs no theme lookups) ------------------
-constexpr cef_color_t kColorChrome = 0xFF1B1D22;
-constexpr cef_color_t kColorChromeAlt = 0xFF23262E;
-constexpr cef_color_t kColorField = 0xFF2C3039;
-constexpr cef_color_t kColorText = 0xFFE6E8EE;
-constexpr cef_color_t kColorTextDim = 0xFF9AA1AE;
-constexpr cef_color_t kColorAccent = 0xFF5AC8FA;
+constexpr cef_color_t kColorChrome = 0xFF0B0F16;
+constexpr cef_color_t kColorChromeAlt = 0xFF111721;
+constexpr cef_color_t kColorField = 0xFF18202B;
+constexpr cef_color_t kColorText = 0xFFE9EFF7;
+constexpr cef_color_t kColorTextDim = 0xFF94A3B8;
+constexpr cef_color_t kColorAccent = 0xFF3DDC84;
+constexpr cef_color_t kColorAccentAlt = 0xFF4AA8FF;
 
-constexpr int kToolbarHeight = 46;
+constexpr int kToolbarHeight = 48;
 constexpr int kStatusHeight = 24;
-constexpr int kButtonWidth = 36;
-constexpr int kButtonHeight = 32;
-constexpr int kOmniboxWidth = 480;
+constexpr int kButtonWidth = 38;
+constexpr int kButtonHeight = 34;
+constexpr int kOmniboxWidth = 520;
 
 // Virtual key codes CEF uses for accelerators (Windows convention).
 constexpr int kKeyTab = 0x09;
@@ -198,7 +200,7 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
 
   omnibox_ = CefTextfield::CreateTextfield(omnibox_delegate_);
   omnibox_->SetID(kIdOmnibox);
-  omnibox_->SetPlaceholderText("Search the web or type a URL");
+  omnibox_->SetPlaceholderText("Search the web, or type an address");
   omnibox_->SetAccessibleName("Address and search bar");
   omnibox_->SetBackgroundColor(kColorField);
 
@@ -224,9 +226,9 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   {
     CefBoxLayoutSettings settings;
     settings.horizontal = 1;
-    settings.inside_border_horizontal_spacing = 6;
-    settings.inside_border_vertical_spacing = 6;
-    settings.between_child_spacing = 4;
+    settings.inside_border_horizontal_spacing = 8;
+    settings.inside_border_vertical_spacing = 7;
+    settings.between_child_spacing = 3;
     CefRefPtr<CefBoxLayout> layout = toolbar_->SetToBoxLayout(settings);
     if (layout.get() != nullptr) layout->SetFlexForView(omnibox_, 1);
   }
@@ -243,7 +245,8 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   // --- status bar ----------------------------------------------------------
   status_bar_ = CefPanel::CreatePanel(panel_delegate_);
   status_bar_->SetBackgroundColor(kColorChromeAlt);
-  status_left_ = MakeStatusLabel(kIdStatusLeft, "Ready", CEF_HORIZONTAL_ALIGNMENT_LEFT, kColorTextDim);
+  status_left_ = MakeStatusLabel(kIdStatusLeft, "Ready \xE2\x80\x94 Ctrl+K jumps to any page or mode",
+                                    CEF_HORIZONTAL_ALIGNMENT_LEFT, kColorTextDim);
   status_right_ = MakeStatusLabel(kIdStatusRight, "", CEF_HORIZONTAL_ALIGNMENT_RIGHT, kColorTextDim);
   status_bar_->AddChildView(status_left_);
   status_bar_->AddChildView(status_right_);
@@ -318,6 +321,8 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   // The benchmark page is the on-machine measuring stick, so it gets a key of its own -
   // running the same file in another browser is the whole point of it.
   bind(kIdOpenBench, 'B', true, true, false);
+  // The jump list: every page and every mode, from anywhere, on one key.
+  bind(kIdJumpTo, 'K', false, true, false);
   // Only one more is worth a key: PRIVACY is the other mode people reach for in a
   // hurry. The remaining six live in the mode menu, browserx://modes and --mode=,
   // which is the honest place for fifteen options on a keyboard.
@@ -361,6 +366,18 @@ void BrowserWindow::Navigate(const std::string& input) {
 void BrowserWindow::OpenInternalPage(const std::string& path) { Navigate("browserx://" + path); }
 
 void BrowserWindow::OnToolbarCommand(int command_id) {
+  // Jump-list page ids are a range, not enumerators: the list is generated from the
+  // page table, so a new page appears in the jump list without a new constant.
+  if (command_id >= kIdJumpPageBase && command_id < kIdJumpPageBase + 64) {
+    const size_t index = static_cast<size_t>(command_id - kIdJumpPageBase);
+    const std::vector<std::string>& hosts = browserx::web::AllInternalHosts();
+    if (index < hosts.size()) OpenInternalPage(hosts[index]);
+    return;
+  }
+  if (command_id == kIdJumpTo) {
+    ShowJumpMenu();
+    return;
+  }
   if (shell_ == nullptr) return;
   switch (command_id) {
     case kIdBack:
@@ -447,6 +464,7 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
     case kIdOpenTelemetry: OpenInternalPage("telemetry"); return;
     case kIdOpenModes: OpenInternalPage("modes"); return;
     case kIdOpenBench: OpenInternalPage("bench"); return;
+    case kIdOpenShortcuts: OpenInternalPage("shortcuts"); return;
     case kIdOpenHistory: OpenInternalPage("history"); return;
     case kIdOpenBookmarks: OpenInternalPage("bookmarks"); return;
     case kIdOpenDownloads: OpenInternalPage("downloads"); return;
@@ -632,9 +650,8 @@ void BrowserWindow::OnChromeMenuPressed(CefRefPtr<CefMenuButton> button,
 
 void BrowserWindow::OnChromeMenuCommand(int command_id) { OnToolbarCommand(command_id); }
 
-void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
-  if (menu_button_.get() == nullptr || !menu_button_->IsValid()) return;
-  CefRefPtr<CefMenuModel> model = CefMenuModel::CreateMenuModel(menu_delegate_);
+void BrowserWindow::AddModeMenuItems(CefRefPtr<CefMenuModel> model) {
+  if (model.get() == nullptr) return;  // a menu the platform refused to create
   model->AddItem(kIdModeUltra, "ULTRA - balanced (Ctrl+1)");
   model->AddItem(kIdModeGaming, "GAME - maximum frame rate (Ctrl+2)");
   model->AddItem(kIdModeHighPerformance, "HIGH PERFORMANCE - maximum throughput (Ctrl+3)");
@@ -651,9 +668,52 @@ void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
   model->AddItem(kIdModeReader, "READER - long-form reading");
   model->AddItem(kIdModeBenchmark, "BENCHMARK - measure, do not browse");
   model->AddItem(kIdModeKiosk, "KIOSK - unattended screen");
+}
+
+void BrowserWindow::ShowModeMenu(const CefPoint& screen_point) {
+  if (menu_button_.get() == nullptr || !menu_button_->IsValid()) return;
+  CefRefPtr<CefMenuModel> model = CefMenuModel::CreateMenuModel(menu_delegate_);
+  AddModeMenuItems(model);
   model->AddSeparator();
   model->AddItem(kIdAutoPilotCycle, "Auto-Pilot: off / ask / auto");
   mode_button_->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_TOPLEFT);
+}
+
+/// The jump list behind Ctrl+K: every page the browser serves and every mode, in one
+/// menu, reachable from anywhere - including ordinary web pages, where the internal
+/// pages' own command palette cannot run. Items reuse the same command ids as the
+/// menus and the toolbar, so there is exactly one implementation of each action.
+void BrowserWindow::ShowJumpMenu() {
+  if (menu_button_.get() == nullptr || !menu_button_->IsValid()) return;
+  CefRefPtr<CefMenuModel> model = CefMenuModel::CreateMenuModel(menu_delegate_);
+
+  model->AddItem(kIdNewTab, "New tab\tCtrl+T");
+  model->AddSeparator();
+
+  // Pages, generated from the page table so this menu cannot drift from the browser.
+  // AddSubMenu() creates and returns the submenu; its items report through the same
+  // delegate with their own command ids.
+  const std::vector<std::string>& hosts = browserx::web::AllInternalHosts();
+  CefRefPtr<CefMenuModel> pages = model->AddSubMenu(kIdJumpPagesMenu, "BrowserX pages");
+  if (pages.get() != nullptr) {
+    for (size_t i = 0; i < hosts.size() && i < 64; ++i) {
+      const std::string title = browserx::web::PageTitle(browserx::web::KindForHost(hosts[i]));
+      pages->AddItem(kIdJumpPageBase + static_cast<int>(i),
+                     title + "  (browserx://" + hosts[i] + ")");
+    }
+  }
+
+  // Modes: the same items, ids and labels as the mode menu, built by the same
+  // function, so the two menus can never drift apart.
+  CefRefPtr<CefMenuModel> modes = model->AddSubMenu(kIdJumpModesMenu, "Performance mode");
+  AddModeMenuItems(modes);
+
+  model->AddSeparator();
+  model->AddItem(kIdToggleShield, "Tracker shield on / off");
+  model->AddItem(kIdOpenBench, "Benchmark page (browserx://bench)\tCtrl+Shift+B");
+  model->AddItem(kIdOpenShortcuts, "Keyboard shortcuts");
+  model->AddItem(kIdDevTools, "Developer tools\tCtrl+Shift+I");
+  menu_button_->ShowMenu(model, CefPoint(), CEF_MENU_ANCHOR_TOPRIGHT);
 }
 
 void BrowserWindow::ShowMainMenu(const CefPoint& screen_point) {

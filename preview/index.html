@@ -26,6 +26,7 @@
     <button class="tab" data-tab="telemetry"><span class="dot"></span>Telemetry<span class="x">×</span></button>
     <button class="tab sleeping" data-tab="catalog"><span class="dot"></span>Switch catalogue<span class="x">×</span></button>
     <button class="tab" data-tab="about"><span class="dot"></span>About BrowserX<span class="x">×</span></button>
+    <button class="tab" data-tab="pages"><span class="dot"></span>BrowserX pages<span class="x">×</span></button>
     <a class="tab bench-tab" href="/bench" target="_blank" rel="noopener"
        title="The offline benchmark page BrowserX serves at browserx://bench — open it here and in BrowserX on the same machine, one at a time"><span class="dot"></span>Benchmark<span class="x">↗</span></a>
     <button class="newtab" title="New tab">+</button>
@@ -148,6 +149,26 @@
             <tbody></tbody>
           </table>
         </article>
+      </div>
+    </section>
+
+    <section class="page" data-page="pages" hidden>
+      <h1>The browser's own pages</h1>
+      <p class="lede">
+        Rendered by <code>src/web/internal_pages.cc</code> — the same code the running browser
+        uses, not a mock-up. Pick one and it loads below, exactly as it comes out of the renderer:
+        self-contained, no network, and clickable (Ctrl+K opens the command palette in there).
+        <strong>Sample data:</strong> the tab list is a fixture, because there is no live browser
+        process in this preview; everything else (the mode plans, the catalogue, the machine
+        profile) comes from the real engine.
+      </p>
+      <div class="pages-picker" id="pages-picker"></div>
+      <div class="pages-frame">
+        <div class="pages-frame-bar">
+          <span class="pill" id="pages-frame-url">browserx://</span>
+          <a class="pill" id="pages-frame-open" href="#" target="_blank" rel="noopener">open in a new tab ↗</a>
+        </div>
+        <iframe id="pages-frame" title="A rendered browserx:// page" loading="lazy"></iframe>
       </div>
     </section>
 

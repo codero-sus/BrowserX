@@ -249,6 +249,93 @@ TEST(InternalPages, PagesAreSelfContained) {
   }
 }
 
+// --- the modern shell -------------------------------------------------------
+// These pin the behaviour the browser's own UI now depends on. They are cheap
+// string assertions on purpose: the alternative is a browser to click, and the
+// rules below are exactly the ones that break silently.
+
+TEST(InternalPages, EveryPageCarriesTheModernShell) {
+  const PageData data = SampleData();
+  for (const std::string& host : AllInternalHosts()) {
+    if (KindForHost(host) == PageKind::kBench) continue;  // own standalone document
+    const std::string html = RenderPage(KindForHost(host), data);
+    EXPECT_TRUE(Contains(html, "<header class=\"topbar\">")) << host;
+    EXPECT_TRUE(Contains(html, "class=\"brand\"")) << host;
+    EXPECT_TRUE(Contains(html, "<span class=\"mark\">X</span>")) << host;
+    EXPECT_TRUE(Contains(html, "Browser<span>X</span>")) << host;
+    EXPECT_TRUE(Contains(html, "id=\"palette\"")) << host;
+    EXPECT_TRUE(Contains(html, "id=\"palette-input\"")) << host;
+    EXPECT_TRUE(Contains(html, "id=\"palette-open\"")) << host;
+    EXPECT_TRUE(Contains(html, "class=\"pill mode\"")) << host;
+    EXPECT_TRUE(Contains(html, "window.__browserxNav")) << host;
+    EXPECT_TRUE(Contains(html, "window.__browserxModes")) << host;
+  }
+}
+
+TEST(InternalPages, ThePaletteKnowsEveryPageAndEveryMode) {
+  // Ctrl+K is only honest if it can reach what it claims to. The data block is
+  // generated from the same tables the browser serves and the engine exposes.
+  const std::string html = RenderPage(PageKind::kNewTab, SampleData());
+  for (const std::string& host : AllInternalHosts()) {
+    EXPECT_TRUE(Contains(html, "browserx://" + host)) << "palette is missing " << host;
+  }
+  for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
+    EXPECT_TRUE(Contains(html, std::string("id:\"") + info.id + "\""))
+        << "palette is missing mode " << info.id;
+    EXPECT_TRUE(Contains(html, std::string("browserx://modes?set=") + info.id))
+        << "palette cannot switch to " << info.id;
+  }
+  // The active mode is marked as such, so the palette can show where you are.
+  EXPECT_TRUE(Contains(html, "active:true"));
+}
+
+TEST(InternalPages, TheStartPageSearchesWhereTheOmniboxDoes) {
+  PageData data = SampleData();
+  data.search_template = "https://search.example/?q=%s";
+  const std::string html = RenderPage(PageKind::kNewTab, data);
+  EXPECT_TRUE(Contains(html, "id=\"search-form\""));
+  EXPECT_TRUE(Contains(html, "window.__browserxSearchTemplate = \"https://search.example/?q=%s\""));
+
+  // A template is user data: it must be escaped into the script context, never
+  // concatenated raw. One with a quote and a </script> is the classic escape test.
+  data.search_template = "https://x.example/?q=%s\"></script><script>alert(1)</script>";
+  const std::string hostile = RenderPage(PageKind::kNewTab, data);
+  EXPECT_FALSE(Contains(hostile, "</script><script>alert(1)"));
+  EXPECT_TRUE(Contains(hostile, "\\u003c/script\\u003e") ||
+              Contains(hostile, "\\u003c"));
+}
+
+TEST(InternalPages, ModesAreClickableTilesNotJustChips) {
+  const std::string html = RenderPage(PageKind::kModes, SampleData());
+  // Every mode is a .tile, and each one carries the data attribute the page script
+  // turns into a browserx://modes?set= navigation.
+  size_t tiles = 0;
+  size_t search_from = 0;
+  while (true) {
+    const size_t found = html.find("class=\"tile\" data-set-mode=", search_from);
+    if (found == std::string::npos) break;
+    ++tiles;
+    search_from = found + 1;
+  }
+  EXPECT_EQ(tiles, browserx::core::AllModes().size());
+  EXPECT_TRUE(Contains(html, "aria-current=\"true\"")) << "the active mode is marked";
+}
+
+TEST(InternalPages, TelemetryAndSessionRenderTheTabListClientSide) {
+  const std::string telemetry = RenderPage(PageKind::kTelemetry, SampleData());
+  EXPECT_TRUE(Contains(telemetry, "id=\"tab-list\""));
+  EXPECT_TRUE(Contains(telemetry, "id=\"tab-counters\""));
+  EXPECT_TRUE(Contains(telemetry, "window.__browserxSession"));
+  // The raw JSON stays readable with scripting off, and says so.
+  EXPECT_TRUE(Contains(telemetry, "Session JSON"));
+
+  const std::string shortcut_filter = RenderPage(PageKind::kShortcuts, SampleData());
+  EXPECT_TRUE(Contains(shortcut_filter, "data-filter=\"#shortcut-table\""));
+  EXPECT_TRUE(Contains(shortcut_filter, "id=\"shortcut-table\""));
+  EXPECT_TRUE(Contains(shortcut_filter, "data-filter-count"));
+  EXPECT_TRUE(Contains(shortcut_filter, "Ctrl+K")) << "the palette shortcut is documented";
+}
+
 TEST(InternalPages, CreditsAppearOnEveryPageAndOnAbout) {
   const PageData data = SampleData();
   for (const std::string& host : AllInternalHosts()) {
