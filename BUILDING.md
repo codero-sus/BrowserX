@@ -168,13 +168,17 @@ details** pane on the right and leave ticked only:
 
 | SDK offered | Take it? |
 |-------------|----------|
-| **Windows 11 SDK (10.0.26100)** | **Yes** — the released one, and the workload marks it *Recommended* |
-| Windows 11 SDK (10.0.28000) | Also fine, if your installer offers it: it is simply newer. Keep whichever of the two you prefer — but only one |
+| **Windows 11 SDK (10.0.26100)** | **Yes** — the released SDK this project targets, and the one the workload marks *Recommended* |
+| Windows 11 SDK (10.0.28000) | **Not needed.** It is a Windows Insider **preview** SDK (Canary channel, the 26H1-era builds), not a released one. It *would* build BrowserX — the APIs used are ancient — but a preview toolchain is a strange thing to ship a browser against, for no gain. Take it only if it is the only SDK you have |
 | Windows 11 SDK (10.0.22621) or (10.0.22000) | Older duplicates: not needed if you have 26100 |
 | Windows 10 SDK (10.0.19041) | The safe fallback: it installs on any Windows 10 |
 
-**Exactly one.** The build uses the newest SDK it finds and ignores the rest, so extra SDKs
-cost disk and change nothing. BrowserX calls no version-specific API — the entire Windows surface it
+**Exactly one.** The build uses the newest SDK it finds, and when that is newer than
+10.0.26100 it says so rather than choosing in silence — because *newer is not better here*:
+nothing in this browser calls an API that has changed since Windows XP, so a newer SDK adds
+nothing, and one numbered above the released build is usually an Insider preview.
+
+BrowserX calls no version-specific API — the entire Windows surface it
 uses is `CreateMutexA`, `CloseHandle`, `GetModuleFileNameA` and `GetFileAttributesA`, all
 of which have existed since Windows XP — so the SDK version does not affect what can be
 built or what the binary runs on. Two SDKs are the same build plus wasted disk. `make
