@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+import platform
 import sys
 from pathlib import Path
 
@@ -179,7 +180,6 @@ def check_browser(report: Report) -> None:
     group = "browser"
 
     # --- path/toolchain the CEF distribution is built for -------------------
-    import platform
     machine = platform.machine()
     if machine in ("x86_64", "amd64"):
         report.add(group, "Architecture", "ok", f"{machine} (CEF linux64/linux32 builds exist)")
@@ -367,14 +367,127 @@ def check_preview(report: Report) -> None:
     report.add(group, "preview server", "ok", "stdlib-only Python (preview/serve.py)")
 
 
-GROUPS = ("core", "browser", "mobile", "preview")
+def check_windows(report: Report) -> None:
+    """What building the browser on Windows needs - the question, answered directly.
+
+    Two things are careful here. First, the CEF Windows distribution is not the Linux one:
+    fetching the wrong platform's build produces a tree that looks right and cannot link,
+    so the distribution is described by name and the platform is stated. Second, when this
+    report runs on Linux (which is where it is usually written and reviewed) it says so
+    rather than reporting a Windows machine's toolchain as "missing" - a Linux machine is
+    not a broken Windows machine.
+    """
+    group = "windows"
+    on_windows = sys.platform.startswith("win")
+
+    # --- the compiler -------------------------------------------------------
+    # MSVC v143 (Visual Studio 2022). The free Build Tools are enough; the IDE is a
+    # convenience, not a requirement, and saying so saves several GB.
+    if not on_windows:
+        report.add(group, "MSVC v143", "info",
+                   "Windows-only: not checkable from here",
+                   "Visual Studio 2022 Build Tools, workload 'Desktop development with C++'")
+    else:
+        vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / \
+            "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+        found_msvc = False
+        if vswhere.is_file():
+            code, text = run([str(vswhere), "-latest", "-products", "*", "-requires",
+                              "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                              "-property", "installationPath"])
+            found_msvc = code == 0 and bool(text.strip())
+        if not found_msvc:
+            # A compiler inside a Visual Studio tree is the same compiler, however the
+            # installer was driven; looking for it directly avoids a false "missing".
+            for root in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                         os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+                if list(Path(root, "Microsoft Visual Studio").glob("2022/*/VC/Tools/MSVC/*")):
+                    found_msvc = True
+                    break
+        if found_msvc:
+            report.add(group, "MSVC v143", "ok", "Visual Studio 2022 C++ toolset found")
+        else:
+            report.add(group, "MSVC v143", "missing",
+                       "no Visual Studio 2022 C++ toolset found (vswhere found none)",
+                       'winget install --id Microsoft.VisualStudio.2022.BuildTools --override '
+                       '"--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"')
+
+    # --- the Windows SDK ----------------------------------------------------
+    if not on_windows:
+        report.add(group, "Windows 10/11 SDK", "info", "Windows-only: not checkable from here",
+                   "comes with the workload above (ucrt, um, shared + x64 libraries)")
+    else:
+        kits = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / \
+            "Windows Kits" / "10" / "Include"
+        versions = sorted(p.name for p in kits.iterdir() if p.is_dir()) if kits.is_dir() else []
+        if versions:
+            report.add(group, "Windows 10/11 SDK", "ok", f"{versions[-1]} (x64 libraries present)")
+        else:
+            report.add(group, "Windows 10/11 SDK", "missing",
+                       "no Windows SDK include tree found",
+                       "the Build Tools workload installs it; tick 'Windows 10/11 SDK' if it did not")
+
+    # --- the CEF Windows distribution --------------------------------------
+    deps = REPO_ROOT / ".cef-deps"
+    distributions = sorted(p.name for p in deps.glob("cef_binary_*")) if deps.is_dir() else []
+    windows_dist = [name for name in distributions if "windows" in name]
+    linux_dist = [name for name in distributions if "linux" in name]
+    if windows_dist:
+        report.add(group, "CEF (windows64)", "ok", windows_dist[-1])
+    elif linux_dist:
+        # The trap worth naming: a Linux CEF build in the tree looks like "CEF is here".
+        report.add(group, "CEF (windows64)", "missing",
+                   f"only {linux_dist[-1]} is present - a Linux build, which cannot link here",
+                   "python tools\\fetch_cef.py --platform windows64")
+    else:
+        report.add(group, "CEF (windows64)", "missing",
+                   "not downloaded (~200 MB download, ~1 GB extracted)",
+                   "python tools\\fetch_cef.py        (fetches windows64 automatically on Windows)")
+
+    # --- the things that are not the compiler -------------------------------
+    python = shutil.which("python") or shutil.which("py") or shutil.which("python3")
+    if python:
+        _, text = run([python, "--version"])
+        report.add(group, "Python 3.8+", "ok", text.strip() or python)
+    else:
+        report.add(group, "Python 3.8+", "missing",
+                   "Python runs the CEF fetcher, the build script and every tool here",
+                   "winget install --id Python.Python.3.12")
+
+    git = shutil.which("git")
+    if git:
+        _, text = run([git, "--version"])
+        report.add(group, "Git", "ok", text.strip() or git)
+    else:
+        report.add(group, "Git", "missing", "needed for the checkout and for tools\\update.cmd",
+                   "winget install --id Git.Git")
+
+    # --- the build path itself ---------------------------------------------
+    builder = REPO_ROOT / "tools" / "build_windows.py"
+    if builder.is_file():
+        report.add(group, "the build itself", "ok",
+                   "tools\\build_windows.py builds out\\BrowserX.exe with MSVC "
+                   "(no CMake, no Visual Studio project files to keep in sync)")
+    else:
+        report.add(group, "the build itself", "missing", "tools/build_windows.py is absent",
+                   "this checkout is incomplete")
+
+    if not on_windows:
+        report.add(group, "this machine", "info",
+                   f"this report is running on {platform.system() or 'a non-Windows system'}, "
+                   "so the Windows checks above cannot probe a real toolchain",
+                   "run it on the Windows machine: python tools\\check_build_requirements.py --for windows")
+
+
+GROUPS = ("core", "browser", "windows", "mobile", "preview")
 MARK = {"ok": "✔", "missing": "✘", "warn": "›", "info": "·"}
 
 
 def render(report: Report, only: list[str]) -> None:
     titles = {
         "core": "core + tests + tools   (no CEF needed)",
-        "browser": "the full browser      (CEF, X11/GTK, a display)",
+        "browser": "the full browser      (CEF, X11/GTK, a display)   — Linux",
+        "windows": "the full browser      (MSVC, Windows SDK, CEF)     — Windows",
         "mobile": "the Android edition   (JDK, SDK, NDK, Gradle)",
         "preview": "preview + DOM checks  (node, optional)",
     }
@@ -404,6 +517,13 @@ def render(report: Report, only: list[str]) -> None:
         else:
             print("    the full browser needs: " +
                   ", ".join(row["name"] for row in report.blocking("browser")))
+    if "windows" in only:
+        if report.ok("windows"):
+            print("    tools\\build_windows.cmd               build out\\BrowserX.exe")
+            print("    tools\\build_windows.cmd --stage       and copy the CEF runtime beside it")
+        else:
+            print("    building on Windows needs: " +
+                  ", ".join(row["name"] for row in report.blocking("windows")))
     if "mobile" in only:
         if report.ok("mobile"):
             print("    mobile-edition/tools/build-native.sh  cross-compiles the shared core")
@@ -427,6 +547,8 @@ def main(argv: list[str]) -> int:
     check_core(report)
     if "browser" in only:
         check_browser(report)
+    if "windows" in only:
+        check_windows(report)
     if "mobile" in only:
         check_mobile(report)
     if "preview" in only:

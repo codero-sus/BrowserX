@@ -1,0 +1,800 @@
+#!/usr/bin/env python3
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
+"""Builds the BrowserX browser on Windows, with MSVC.
+
+The rest of this project builds with `make`, which is a POSIX tool: the Makefile's
+`find`, `rm`, `ln -sfn` and `-lX11` are not Windows. Rather than ship a second build
+system that can disagree with the first, this script uses the *same source rule* as the
+Makefile - every .cc under src/, and CEF's own libcef_dll wrapper - and only swaps the
+compiler and the linker inputs. `--check-sources` proves that the two builds compile the
+same files, which is the part a second build system usually gets wrong.
+
+What it needs on the machine (see `python tools/check_build_requirements.py FOR=windows`):
+
+  * Visual Studio 2022 Build Tools with "Desktop development with C++" (MSVC v143)
+    and a Windows 10/11 SDK. The free Build Tools are enough; the full IDE is not
+    needed unless you want to debug in it.
+  * Python 3.8+ (already required: it fetches CEF and runs the other tools).
+  * Git for Windows.
+  * The CEF Windows binary distribution:  .cef-deps\\cef_binary_<version>_windows64\\
+    fetched by tools/fetch_cef.py. There is no building Chromium here - CEF is a
+    prebuilt binary distribution of Chromium, which is the entire point of CEF.
+
+Usage (from the repository root, in cmd.exe or PowerShell):
+
+  python tools\\build_windows.py                    # build out\\BrowserX.exe
+  python tools\\build_windows.py --dry-run          # print every command, run none
+  python tools\\build_windows.py --jobs 8           # parallel compiles
+  python tools\\build_windows.py --check-sources    # prove it matches the POSIX build
+  python tools\\build_windows.py --stage            # copy the CEF runtime next to the exe
+
+Exit codes: 0 built, 1 failed, 3 nothing to do (--check-sources with no Makefile to read).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_DIR = REPO_ROOT / "src"
+OUT_DIR = REPO_ROOT / "out"
+OBJ_DIR = REPO_ROOT / "build" / "obj-win"
+DEPS_DIR = REPO_ROOT / ".cef-deps"
+
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_NOTHING_LEARNED = 3
+
+# CEF's Windows runtime files, straight from the distribution layout. The Linux build
+# stages .so files; Windows stages these. Anything absent is skipped rather than
+# failing: a CEF build may legitimately ship fewer of them, and inventing a file would
+# break the "the browser starts" promise that staging exists to keep.
+CEF_RUNTIME_FILES = (
+    "libcef.dll",
+    "chrome_elf.dll",
+    "libEGL.dll",
+    "libGLESv2.dll",
+    "d3dcompiler_47.dll",
+    "vk_swiftshader.dll",
+    "vulkan-1.dll",
+    "vk_swiftshader_icd.json",
+    "v8_context_snapshot.bin",
+    "icudtl.dat",
+    "resources.pak",
+    "chrome_100_percent.pak",
+    "chrome_200_percent.pak",
+)
+CEF_RUNTIME_DIRS = ("locales", "swiftshader")
+
+# The libraries CEF documents for a Windows client (libcef.lib plus the system ones it
+# calls through). libcef_dll_wrapper is built here from the distribution's own sources -
+# CEF does not ship a prebuilt wrapper, and linking libcef.lib without it fails at
+# runtime, not at link time, which is the sort of failure worth designing out.
+SYSTEM_LIBS = (
+    "user32.lib",
+    "gdi32.lib",
+    "ole32.lib",
+    "oleaut32.lib",
+    "shlwapi.lib",
+    "advapi32.lib",
+    "comdlg32.lib",
+    "winmm.lib",
+    "imm32.lib",
+    "dbghelp.lib",
+    "version.lib",
+    "ws2_32.lib",
+    "wininet.lib",
+    "bcrypt.lib",
+    "crypt32.lib",
+)
+
+
+class BuildError(Exception):
+    """Something the script can explain to a human, rather than a traceback."""
+
+
+def say(message: str = "") -> None:
+    print(message, flush=True)
+
+
+def step(message: str) -> None:
+    print(f"  → {message}", flush=True)
+
+
+def ok(message: str) -> None:
+    print(f"    ✔ {message}", flush=True)
+
+
+def warn(message: str) -> None:
+    print(f"    › {message}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Locating the toolchain and CEF, by reading the filesystem rather than by
+# hoping `cl.exe` is on PATH. Visual Studio does not put its compiler on PATH -
+# that is what vcvarsall.bat is for - and a build script that needs vcvarsalls
+# to have been run first is a build script that fails with "cl.exe not found"
+# the first time someone opens a fresh shell.
+# ---------------------------------------------------------------------------
+def find_vswhere() -> Path | None:
+    candidates = [
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_msvc() -> dict:
+    """The newest MSVC toolchain installed, with its directory in the environment."""
+    vswhere = find_vswhere()
+    installations: list[Path] = []
+    if vswhere is not None:
+        code, text = run([str(vswhere), "-latest", "-products", "*", "-property",
+                          "installationPath"], capture=True)
+        if code == 0:
+            for line in text.splitlines():
+                line = line.strip()
+                if line:
+                    installations.append(Path(line))
+    # Without vswhere (or with it reporting nothing) the directories still tell the truth.
+    for root in (Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
+                 Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))):
+        for edition in ("BuildTools", "Community", "Professional", "Enterprise",
+                        "Preview"):
+            candidate = root / "Microsoft Visual Studio" / "2022" / edition
+            if candidate.is_dir():
+                installations.append(candidate)
+
+    for installation in installations:
+        tools_root = installation / "VC" / "Tools" / "MSVC"
+        if not tools_root.is_dir():
+            continue
+        versions = sorted((p for p in tools_root.iterdir() if p.is_dir()),
+                          key=lambda p: p.name, reverse=True)
+        if not versions:
+            continue
+        msvc = versions[0]
+        host_arch = "x64"
+        cl = msvc / "bin" / f"Host{host_arch}" / "x64" / "cl.exe"
+        if not cl.is_file():
+            continue
+        sdk = find_windows_sdk()
+        return {"installation": installation, "msvc": msvc, "cl": cl, "sdk": sdk,
+                "host_arch": host_arch}
+    raise BuildError(
+        "MSVC was not found. Install Visual Studio 2022 Build Tools with the "
+        "'Desktop development with C++' workload:\n"
+        "    winget install --id Microsoft.VisualStudio.2022.BuildTools ^\n"
+        "        --override \"--quiet --add Microsoft.VisualStudio.Workload.VCTools "
+        "--includeRecommended\"\n"
+        "  or install Visual Studio 2022 Community and tick that workload in the installer.")
+
+
+def find_windows_sdk() -> dict | None:
+    """The newest Windows 10/11 SDK: include directories, and the x64 libraries."""
+    kits = [Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+            / "Windows Kits" / "10"]
+    for kit in kits:
+        include_root = kit / "Include"
+        lib_root = kit / "Lib"
+        if not include_root.is_dir():
+            continue
+        versions = sorted((p.name for p in include_root.iterdir() if p.is_dir()),
+                          key=lambda name: [int(part) if part.isdigit() else 0
+                                            for part in re.split(r"[.\-+]", name)],
+                          reverse=True)
+        for version in versions:
+            # The SDK must have all three, or a Windows build fails at an unrelated-looking
+            # place (a missing windows.h, then a missing kernel32.lib).
+            needed = [include_root / version / part for part in ("ucrt", "shared", "um")]
+            if all(p.is_dir() for p in needed):
+                libs = lib_root / version
+                if (libs / "um" / "x64").is_dir() and (libs / "ucrt" / "x64").is_dir():
+                    return {"version": version, "include_root": include_root,
+                            "lib_root": lib_root}
+        return None
+    return None
+
+
+def find_cef_root() -> Path:
+    """The extracted CEF Windows distribution under .cef-deps/."""
+    override = os.environ.get("BROWSERX_CEF_DIR")
+    if override:
+        root = Path(override)
+        if (root / "include" / "cef_app.h").is_file():
+            return root
+        raise BuildError(f"BROWSERX_CEF_DIR={override} does not look like a CEF "
+                         "distribution (no include/cef_app.h)")
+
+    if DEPS_DIR.is_dir():
+        # Newest first, and prefer a distribution whose platform is windows.
+        candidates = sorted((p for p in DEPS_DIR.glob("cef_binary_*") if p.is_dir()),
+                            key=lambda p: p.name, reverse=True)
+        for candidate in candidates:
+            if "windows" in candidate.name and (candidate / "include" / "cef_app.h").is_file():
+                return candidate
+        for candidate in candidates:
+            if (candidate / "include" / "cef_app.h").is_file() and (
+                    (candidate / "Release" / "libcef.lib").is_file()
+                    or (candidate / "libcef.lib").is_file()):
+                return candidate
+    raise BuildError(
+        "no CEF Windows distribution in .cef-deps/.\n"
+        "  Fetch it (about 200 MB download, ~1 GB extracted):\n"
+        "    python tools\\fetch_cef.py\n"
+        "  On a machine without network access, point at an archive:\n"
+        "    set BROWSERX_CEF_ARCHIVE=cef_binary_<version>_windows64.tar.bz2\n"
+        "    python tools\\fetch_cef.py")
+
+
+def cef_lib_dirs(cef_root: Path) -> list[Path]:
+    """Where libcef.lib actually is: the layout moved around between CEF versions."""
+    dirs = [cef_root / "Release", cef_root / "libcef_dll_wrapper" / "Release",
+            cef_root / "libcef_dll_wrapper", cef_root]
+    return [d for d in dirs if d.is_dir()]
+
+
+def find_libcef_lib(cef_root: Path) -> Path:
+    for directory in cef_lib_dirs(cef_root):
+        candidate = directory / "libcef.lib"
+        if candidate.is_file():
+            return candidate
+    raise BuildError(f"libcef.lib is not in {cef_root} - the distribution looks "
+                     "incomplete; re-fetch it with tools/fetch_cef.py --force")
+
+
+# ---------------------------------------------------------------------------
+# Source lists: the same rule as the Makefile, on purpose.
+# ---------------------------------------------------------------------------
+def app_sources() -> list[Path]:
+    """Every C++ source the browser is built from.
+
+    The Makefile says: find src -name '*.cc' -not -name '*_unittest.cc'. Keeping the
+    identical rule means the Windows build cannot quietly miss a file that the Linux
+    build compiles (or the reverse), which --check-sources then proves against a real
+    Makefile.
+    """
+    sources = sorted(p for p in SRC_DIR.rglob("*.cc") if not p.name.endswith("_unittest.cc"))
+    return sources
+
+
+def wrapper_sources(cef_root: Path) -> list[Path]:
+    """CEF's own binding layer, which every CEF client must compile."""
+    root = cef_root / "libcef_dll"
+    if not root.is_dir():
+        # Very old distributions kept the wrapper elsewhere; the error is worth naming.
+        raise BuildError(f"{root} is missing: the CEF distribution should contain "
+                         "libcef_dll/ sources; re-fetch it")
+    sources = sorted(p for p in root.rglob("*.cc") if "tests" not in p.parts)
+    return sources
+
+
+def tool_sources() -> list[Path]:
+    return sorted((REPO_ROOT / "tools").glob("*.cc"))
+
+
+# ---------------------------------------------------------------------------
+# Command construction. Kept as pure functions so --dry-run prints exactly what
+# a real run would execute: a dry run that takes a different path through the
+# code is a dry run that proves nothing.
+# ---------------------------------------------------------------------------
+APP_DEFINES = (
+    "UNICODE", "_UNICODE", "WIN32_LEAN_AND_MEAN", "NOMINMAX", "USING_CEF_SHARED",
+    "_FILE_OFFSET_BITS=64",
+)
+# CEF's own binding layer is compiled with its own flag and nothing else - matching the
+# Makefile's rule for it. This is not a style choice: the wrapper is what turns the C API
+# libcef.dll exports into the C++ classes the browser uses, and it only does that when it
+# is compiled this way.
+WRAPPER_DEFINES = ("UNICODE", "_UNICODE", "WIN32_LEAN_AND_MEAN", "NOMINMAX",
+                   "WRAPPING_CEF_SHARED")
+
+
+def compile_command(cl: Path, source: Path, obj: Path, includes: list[Path],
+                    defines: list[str], debug: bool, sdk: dict | None) -> list[str]:
+    command = [
+        str(cl), "/nologo", "/c", "/std:c++20", "/EHsc", "/W4",
+        # /permissive-: MSVC's strict mode. The code is written for C++20 and built with
+        # -Wall -Wextra on g++, so the same intent has to hold here.
+        "/permissive-", "/Zc:__cplusplus", "/Zc:preprocessor",
+        # /MD (dynamic runtime) is what CEF itself is built with on Windows. Mixing
+        # runtimes is undefined behaviour that usually shows up as a crash in
+        # libcef.dll rather than as a link error, so it is not a choice here.
+        "/MD",
+    ]
+    if debug:
+        command += ["/Od", "/Zi", "/FS"]
+    else:
+        command += ["/O2", "/GL", "/Gy", "/DNDEBUG"]
+    for define in defines:
+        command.append(f"/D{define}")
+    for include in includes:
+        command.append(f"/I{include}")
+    command += [f"/Fo{obj}", str(source)]
+    return command
+
+
+def link_command(cl: Path, objects: list[Path], output: Path, libs: list[str],
+                 lib_paths: list[Path], debug: bool, subsystem: str = "windows") -> list[str]:
+    # cl.exe is used as the linker driver, exactly as a Visual Studio project does: it
+    # finds link.exe beside itself and passes the object files through.
+    command = [str(cl), "/nologo", "/Fe:" + str(output)]
+    if debug:
+        command += ["/DEBUG"]
+    else:
+        command += ["/LTCG", "/OPT:REF", "/OPT:ICF"]
+    command += ["/SUBSYSTEM:" + subsystem.upper()]
+    if subsystem == "windows":
+        # src/app/main.cc has main(), not WinMain, and /SUBSYSTEM:WINDOWS looks for
+        # WinMain by default - so the entry point is named explicitly. Without this the
+        # link fails with "unresolved external symbol WinMain", which reads like a coding
+        # mistake rather than a linker setting.
+        command += ["/ENTRY:mainCRTStartup"]
+    for path in lib_paths:
+        command.append(f"/LIBPATH:{path}")
+    command += [str(obj) for obj in objects]
+    command += libs
+    return command
+
+
+def cef_includes(cef_root: Path) -> list[Path]:
+    return [cef_root]
+
+
+def base_includes(cef_root: Path) -> list[Path]:
+    return [SRC_DIR, cef_root]
+
+
+# ---------------------------------------------------------------------------
+# Running things
+# ---------------------------------------------------------------------------
+def run(command: list[str], capture: bool = True, cwd: Path | None = None,
+        env: dict | None = None) -> tuple[int, str]:
+    try:
+        completed = subprocess.run(
+            command, cwd=str(cwd or REPO_ROOT), env=env,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.STDOUT if capture else None,
+            text=True, errors="replace")
+    except FileNotFoundError as error:
+        return 127, f"{error}"
+    return completed.returncode, (completed.stdout or "") if capture else ""
+
+
+def tail(text: str, lines: int = 12) -> str:
+    kept = [line for line in text.splitlines() if line.strip()]
+    return "\n".join(kept[-lines:])
+
+
+def toolchain_environment(toolchain: dict) -> dict:
+    """PATH with the compiler and SDK tools on it.
+
+    cl.exe invokes link.exe from its own directory, but the Windows SDK's rc.exe and the
+    CEF DLL's dependency resolution still want the SDK on PATH - so the environment is
+    built here rather than inherited and hoped for.
+    """
+    env = dict(os.environ)
+    parts = [str(toolchain["cl"].parent)]
+    sdk = toolchain.get("sdk")
+    if sdk:
+        for version in (sdk["version"],):
+            for sub in ("bin",):
+                for arch in ("x64",):
+                    candidate = sdk["include_root"].parent / "bin" / version / arch
+                    if candidate.is_dir():
+                        parts.append(str(candidate))
+                del sub, arch
+    env["PATH"] = os.pathsep.join(parts + [env.get("PATH", "")])
+    return env
+
+
+# ---------------------------------------------------------------------------
+# The build itself
+# ---------------------------------------------------------------------------
+def plan_build(args) -> dict:
+    """Everything the build needs, resolved and explained - before anything runs."""
+    try:
+        cef_root = find_cef_root()
+    except BuildError:
+        if not args.dry_run:
+            raise
+        # A dry run exists so the build can be inspected before anything is installed.
+        # Printing the commands with a placeholder keeps that promise; failing here would
+        # make --dry-run useless exactly when it is most useful.
+        warn("no CEF distribution found: using a placeholder path below. Fetch it with"
+             "  python tools\\fetch_cef.py  before a real build.")
+        cef_root = DEPS_DIR / "cef_binary_<version>_windows64"
+    sources = app_sources()
+    if not sources:
+        raise BuildError(f"no C++ sources found under {SRC_DIR}")
+    if args.dry_run and not (cef_root / "libcef_dll").is_dir():
+        wrapper = [cef_root / "libcef_dll" / "wrapper" / "cef_client.cc"]
+    else:
+        wrapper = wrapper_sources(cef_root)
+    tools = tool_sources()
+    if args.dry_run and not cef_lib_dirs(cef_root):
+        libcef = cef_root / "Release" / "libcef.lib"
+    else:
+        libcef = find_libcef_lib(cef_root)
+    return {"cef_root": cef_root, "sources": sources, "wrapper": wrapper, "tools": tools,
+            "libcef": libcef}
+
+
+def object_path(source: Path, root: Path = REPO_ROOT, obj_root: Path = OBJ_DIR) -> Path:
+    return obj_root / source.relative_to(root).with_suffix(".obj")
+
+
+def build(args) -> int:
+    started = time.time()
+    if platform.system() != "Windows" and not args.dry_run:
+        raise BuildError(
+            "this builds Windows binaries with MSVC, and this machine is "
+            f"{platform.system()}. On Linux use `make`; to inspect the Windows build "
+            "without running it, use --dry-run.")
+
+    plan = plan_build(args)
+    cef_root: Path = plan["cef_root"]
+    toolchain = {}
+    cl = Path("cl.exe")
+    if args.dry_run:
+        # A dry run still needs a believable compiler path, so that the printed commands
+        # are the ones that would run on a real Windows machine.
+        toolchain = {
+            "cl": Path(r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools"
+                       r"\VC\Tools\MSVC\14.4x.x\bin\Hostx64\x64\cl.exe"),
+            "msvc": Path(r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools"
+                         r"\VC\Tools\MSVC\14.4x.x"),
+            "sdk": {"version": "10.0.26100.0",
+                    "include_root": Path(r"C:\Program Files (x86)\Windows Kits\10\Include"),
+                    "lib_root": Path(r"C:\Program Files (x86)\Windows Kits\10\Lib")}}
+        cl = toolchain["cl"]
+    else:
+        toolchain = find_msvc()
+        cl = toolchain["cl"]
+
+    defines = list(APP_DEFINES) + [f'BROWSERX_VERSION="{version_string()}"']
+    includes = base_includes(cef_root) if args.dry_run else base_includes(cef_root)
+    sdk = toolchain.get("sdk")
+
+    # The SDK's um/shared/ucrt include roots are what make <windows.h> and <cstdint> work;
+    # MSVC's own include directory covers the standard library.
+    if sdk:
+        includes = includes + [sdk["include_root"] / sdk["version"] / part
+                               for part in ("ucrt", "shared", "um")]
+        includes = includes + [toolchain["msvc"] / "include"]
+
+    sources = plan["sources"] + plan["wrapper"]
+    objects = [object_path(source) for source in sources]
+
+    def defines_for(source: Path) -> list[str]:
+        if cef_root in source.parents:
+            return list(WRAPPER_DEFINES)
+        return defines
+
+    def includes_for(source: Path) -> list[str]:
+        if cef_root in source.parents:
+            # The wrapper sees CEF's headers and nothing of ours: it must not be able to
+            # see our code at all, which is exactly the rule the Makefile enforces.
+            return [str(cef_root)]
+        return [str(path) for path in includes]
+    output = OUT_DIR / "BrowserX.exe"
+
+    say("")
+    say("  BrowserX — Windows build (MSVC)")
+    say(f"  repository : {REPO_ROOT}")
+    say(f"  CEF        : {cef_root}")
+    say(f"  compiler   : {cl}")
+    if sdk:
+        say(f"  Windows SDK: {sdk.get('version', 'unknown')}")
+    say(f"  sources    : {len(plan['sources'])} browser + {len(plan['wrapper'])} CEF wrapper"
+        f" + {len(plan['tools'])} tools")
+    say(f"  config     : {'debug' if args.debug else 'release'}, jobs {args.jobs}")
+    say("")
+
+    if args.dry_run:
+        warn("dry run: nothing below this line is executed")
+        # One of each kind, because they are not compiled the same way: an application
+        # source, a tool, and CEF's wrapper (whose flags differ on purpose). Printing
+        # three app sources would hide the difference a reader most needs to see.
+        sample = sources[:2] + ([sources[-1]] if len(sources) > 2 else []) + plan["wrapper"][:1]
+        for source in sample:
+            say("  " + " ".join(compile_command(cl, source, object_path(source),
+                                                [Path(p) for p in includes_for(source)],
+                                                defines_for(source), args.debug, sdk)))
+        say(f"  … and the same for the other {len(sources) - len(sample)} sources")
+        link_libs = [str(plan["libcef"])] + list(SYSTEM_LIBS)
+        link_paths = list(cef_lib_dirs(cef_root))
+        if sdk:
+            link_paths += [sdk["lib_root"] / sdk["version"] / part / "x64"
+                           for part in ("ucrt", "um")]
+        say("  " + " ".join(link_command(cl, objects, output, link_libs, link_paths,
+                                         args.debug)))
+        say("")
+        say("  finished (dry run)")
+        return EXIT_OK
+
+    # --- compile -----------------------------------------------------------
+    env = toolchain_environment(toolchain)
+    OBJ_DIR.mkdir(parents=True, exist_ok=True)
+    for obj in objects:
+        obj.parent.mkdir(parents=True, exist_ok=True)
+
+    failures: list[tuple[Path, str]] = []
+    done = 0
+
+    def compile_one(source: Path) -> tuple[Path, int, str]:
+        command = compile_command(cl, source, object_path(source),
+                                  [Path(p) for p in includes_for(source)],
+                                  defines_for(source), args.debug, sdk)
+        return source, *run(command, capture=True, env=env)
+
+    step(f"compiling {len(sources)} sources with {args.jobs} job(s)")
+    with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        for source, code, text in pool.map(compile_one, sources):
+            done += 1
+            if code != 0:
+                failures.append((source, text))
+            elif args.verbose:
+                say(f"      [{done}/{len(sources)}] {source.relative_to(REPO_ROOT)}")
+
+    if failures:
+        for source, text in failures[: args.max_errors]:
+            say("")
+            say(f"    ✘ {source.relative_to(REPO_ROOT)}")
+            for line in tail(text, 10).splitlines():
+                say(f"      {line}")
+        say("")
+        raise BuildError(f"{len(failures)} source file(s) failed to compile "
+                         f"(showing up to {args.max_errors})")
+    ok(f"{len(sources)} sources compiled")
+
+    # --- link --------------------------------------------------------------
+    lib_paths = cef_lib_dirs(cef_root)
+    if sdk:
+        lib_paths += [sdk["lib_root"] / sdk["version"] / part / "x64"
+                      for part in ("ucrt", "um")]
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    step("linking out\\BrowserX.exe")
+    code, text = run(link_command(cl, objects, output,
+                                  [str(plan["libcef"])] + list(SYSTEM_LIBS),
+                                  lib_paths, args.debug), capture=True, env=env)
+    if code != 0:
+        say("")
+        for line in tail(text, 20).splitlines():
+            say(f"    {line}")
+        say("")
+        raise BuildError("the link failed - the messages above are from link.exe")
+    ok(f"out\\BrowserX.exe ({human_size(output.stat().st_size)})")
+
+    # --- stage the runtime next to the exe --------------------------------
+    if args.stage:
+        staged = stage_runtime(cef_root, OUT_DIR, quiet=args.quiet)
+        if staged:
+            ok(f"{staged} CEF runtime file(s)/folder(s) staged next to the exe")
+        else:
+            warn("nothing staged: no CEF runtime files were found in the distribution")
+    else:
+        warn("not staged: run with --stage so libcef.dll sits next to the exe, or the "
+             "browser will not start")
+
+    say("")
+    say(f"  built in {time.time() - started:.1f}s → {output}")
+    say(f"  run it:        out\\BrowserX.exe")
+    say(f"  then update:   tools\\update.cmd")
+    say("")
+    return EXIT_OK
+
+
+def stage_runtime(cef_root: Path, out_dir: Path, quiet: bool = False) -> int:
+    """Copies the CEF runtime next to the executable, because Windows has no rpath."""
+    staged = 0
+    # Where the distribution keeps these varies: some versions have Release/ with the
+    # DLLs, others put them at the top level.
+    search_dirs = [cef_root / "Release", cef_root]
+    resources = cef_root / "Resources"
+    if resources.is_dir():
+        search_dirs.append(resources)
+
+    for name in CEF_RUNTIME_FILES:
+        for directory in search_dirs:
+            candidate = directory / name
+            if candidate.is_file():
+                shutil.copy2(candidate, out_dir / name)
+                staged += 1
+                if not quiet:
+                    say(f"      {name}")
+                break
+    for name in CEF_RUNTIME_DIRS:
+        for directory in search_dirs:
+            candidate = directory / name
+            if candidate.is_dir():
+                target = out_dir / name
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(candidate, target)
+                staged += 1
+                if not quiet:
+                    say(f"      {name}\\")
+                break
+    return staged
+
+
+def human_size(count: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if count < 1024 or unit == "GB":
+            return f"{count:.0f} {unit}" if unit == "B" else f"{count:.1f} {unit}"
+        count /= 1024
+    return f"{count:.1f} GB"
+
+
+def version_string() -> str:
+    """The version the binary reports, taken from the same pin the POSIX build reads."""
+    lock = REPO_ROOT / "cef.lock.json"
+    if lock.is_file():
+        try:
+            data = json.loads(lock.read_text(encoding="utf-8"))
+            if data.get("version"):
+                return str(data["version"])
+        except (OSError, ValueError):
+            pass
+    return "dev"
+
+
+# ---------------------------------------------------------------------------
+# --check-portability: the other way a Windows build fails. A POSIX header
+# included outside a platform guard compiles on Linux and dies on Windows at
+# the first line that uses it, in a file that looks fine.
+# ---------------------------------------------------------------------------
+POSIX_ONLY_HEADERS = (
+    "unistd.h", "sys/", "pthread.h", "dirent.h", "dlfcn.h", "netinet/", "arpa/",
+    "termios.h", "syslog.h", "poll.h", "spawn.h", "grp.h", "pwd.h",
+)
+PLATFORM_GUARD = re.compile(r"_WIN32|__linux__|_POSIX|__APPLE__|WIN32_LEAN_AND_MEAN")
+
+
+def check_portability(args) -> int:
+    """Finds POSIX-only includes that are not inside a platform guard.
+
+    Deliberately narrow: it reports what cannot compile on Windows, not style. A check
+    that cried wolf about `snprintf` (which MSVC has had since 2015) would be turned off
+    within a week, and then it would catch nothing.
+    """
+    problems: list[tuple[str, int, str]] = []
+    files = app_sources() + tool_sources()
+    for path in files:
+        stack: list[str] = []
+        for number, line in enumerate(path.read_text(errors="replace").splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                directive = re.match(r"#\s*(if|ifdef|ifndef|endif)\b(.*)", stripped)
+                if directive:
+                    if directive.group(1) == "endif":
+                        if stack:
+                            stack.pop()
+                    else:
+                        stack.append(directive.group(2))
+                    continue
+                included = re.match(r'#\s*include\s*[<"]([^">]+)[">]', stripped)
+                if included:
+                    header = included.group(1)
+                    if any(header == posix or header.startswith(posix)
+                           for posix in POSIX_ONLY_HEADERS):
+                        if not any(PLATFORM_GUARD.search(frame) for frame in stack):
+                            problems.append((str(path.relative_to(REPO_ROOT)), number, header))
+
+    say("")
+    if not problems:
+        ok(f"no POSIX-only include outside a platform guard in {len(files)} file(s)")
+        say("")
+        return EXIT_OK
+    say(f"    ✘ {len(problems)} POSIX-only include(s) that would break the Windows build:")
+    for name, number, header in problems:
+        say(f"        {name}:{number}  {header}")
+    say("")
+    say("      Wrap each one in #if !defined(_WIN32), with the Windows path beside it.")
+    say("")
+    return EXIT_FAILED
+
+
+# ---------------------------------------------------------------------------
+# --check-sources: the honest part. A second build system's usual failure is
+# compiling a different set of files from the first one.
+# ---------------------------------------------------------------------------
+def check_sources(args) -> int:
+    mine = {p.relative_to(REPO_ROOT).as_posix() for p in app_sources()}
+
+    makefile = REPO_ROOT / "Makefile"
+    if not makefile.is_file():
+        warn("no Makefile here: nothing to compare against, so this check cannot say "
+             "anything useful")
+        return EXIT_NOTHING_LEARNED
+
+    # Run the Makefile's own discovery rule rather than a copy of it: if the two ever
+    # diverge, this check must notice, and a copy would diverge with it.
+    code, output = run(["make", "-s", "print-app-sources"], capture=True)
+    if code != 0 or not output.strip():
+        warn("this Makefile has no 'print-app-sources' target, so the POSIX source list "
+             "cannot be read; add it, or compare by hand")
+        return EXIT_NOTHING_LEARNED
+    theirs = {line.strip() for line in output.splitlines() if line.strip()}
+
+    missing_here = sorted(theirs - mine)
+    missing_there = sorted(mine - theirs)
+
+    say("")
+    if not missing_here and not missing_there:
+        ok(f"both builds compile the same {len(mine)} source files")
+        say("")
+        return EXIT_OK
+    if missing_here:
+        say(f"    ✘ {len(missing_here)} file(s) the POSIX build compiles and this one does not:")
+        for name in missing_here[:20]:
+            say(f"        {name}")
+    if missing_there:
+        say(f"    ✘ {len(missing_there)} file(s) this build compiles and the POSIX one does not:")
+        for name in missing_there[:20]:
+            say(f"        {name}")
+    say("")
+    return EXIT_FAILED
+
+
+# ---------------------------------------------------------------------------
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="build_windows.py",
+        description="Build BrowserX on Windows with MSVC (same sources as the POSIX "
+                    "build, different compiler).")
+    parser.add_argument("--debug", action="store_true", help="debug build (/Od /Zi)")
+    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2)),
+                        help="parallel compilations (default: one per CPU)")
+    parser.add_argument("--stage", action="store_true",
+                        help="copy the CEF runtime files next to the exe")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the commands instead of running them")
+    parser.add_argument("--check-sources", action="store_true",
+                        help="prove this build compiles the same sources as the Makefile")
+    parser.add_argument("--check-portability", action="store_true",
+                        help="find POSIX-only includes that would break this build")
+    parser.add_argument("--verbose", action="store_true", help="name every file as it compiles")
+    parser.add_argument("--quiet", action="store_true", help="less output")
+    parser.add_argument("--max-errors", type=int, default=5,
+                        help="how many failing files to show in full (default 5)")
+    args = parser.parse_args(argv)
+
+    try:
+        if args.check_sources:
+            return check_sources(args)
+        if args.check_portability:
+            return check_portability(args)
+        return build(args)
+    except BuildError as error:
+        say("")
+        lines = str(error).splitlines()
+        for index, line in enumerate(lines):
+            say(f"  {'✘' if index == 0 else ' '} {line}")
+        say("")
+        return EXIT_FAILED
+    except KeyboardInterrupt:
+        say("\n  interrupted")
+        return EXIT_FAILED
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
