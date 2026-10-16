@@ -51,6 +51,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tools"))       # so argv_notes is importable however we are called
 import argv_notes                                  # noqa: E402  (path is set up just above)
+import fetch_cef                                   # noqa: E402  (same directory)
+
+# The version helpers live in fetch_cef.py and are used from here, so the tool that
+# decides which build is on disk and the tool that decides which one to compile cannot
+# drift apart about what "newer" or "pre-release" means.
+PRE_RELEASE_WORDS = fetch_cef.PRE_RELEASE_WORDS
+cef_tree_version_key = fetch_cef.cef_tree_version_key
 SRC_DIR = REPO_ROOT / "src"
 OUT_DIR = REPO_ROOT / "out"
 OBJ_DIR = REPO_ROOT / "build" / "obj-win"
@@ -89,8 +96,8 @@ CEF_RUNTIME_DIRS = ("locales", "swiftshader")
 RECOMMENDED_SDK = "10.0.26100"
 
 # The libraries CEF documents for a Windows client (libcef.lib plus the system ones it
-# calls through). libcef_dll_wrapper is built here from the distribution's own sources -
-# CEF does not ship a prebuilt wrapper, and linking libcef.lib without it fails at
+# calls through). libcef_dll_wrapper is used prebuilt when the distribution ships it and
+# built from the distribution's own sources otherwise - linking libcef.lib without it fails at
 # runtime, not at link time, which is the sort of failure worth designing out.
 SYSTEM_LIBS = (
     "user32.lib",
@@ -164,13 +171,20 @@ def find_msvc() -> dict:
                 if line:
                     installations.append(Path(line))
     # Without vswhere (or with it reporting nothing) the directories still tell the truth.
+    # The year in the path is not a constant: Build Tools 2022 lives under "2022", and a
+    # newer Visual Studio lives under its own version number ("18"), so every version
+    # directory is scanned rather than one hard-coded year.
     for root in (Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
                  Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))):
-        for edition in ("BuildTools", "Community", "Professional", "Enterprise",
-                        "Preview"):
-            candidate = root / "Microsoft Visual Studio" / "2022" / edition
-            if candidate.is_dir():
-                installations.append(candidate)
+        visual_studio = root / "Microsoft Visual Studio"
+        version_dirs = sorted((p for p in visual_studio.iterdir() if p.is_dir()),
+                              key=lambda p: p.name, reverse=True) if visual_studio.is_dir() else []
+        for version_dir in version_dirs:
+            for edition in ("BuildTools", "Community", "Professional", "Enterprise",
+                            "Preview", "WDExpress"):
+                candidate = version_dir / edition
+                if candidate.is_dir():
+                    installations.append(candidate)
 
     for installation in installations:
         tools_root = installation / "VC" / "Tools" / "MSVC"
@@ -234,10 +248,34 @@ def sdk_note(chosen: str) -> str:
     return ""
 
 
+def sdk_search_paths() -> list[Path]:
+    """Everywhere a Windows SDK is looked for, in order.
+
+    Kept as a function so the failure can say where it looked: "no SDK found" is only
+    useful if it comes with a list of places the answer was not, otherwise the person
+    cannot tell a missing SDK from a search that was looking in the wrong directory.
+    """
+    paths: list[Path] = []
+    for variable in ("WindowsSdkDir", "WindowsSdkVerBinPath"):
+        value = os.environ.get(variable)
+        if value:
+            candidate = Path(value)
+            paths.append(candidate if candidate.name == "10" else candidate.parent)
+    for root in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")):
+        if root:
+            paths.append(Path(root) / "Windows Kits" / "10")
+    paths.append(Path(r"C:\Program Files (x86)\Windows Kits\10"))
+    paths.append(Path(r"C:\Program Files\Windows Kits\10"))
+    unique: list[Path] = []
+    for path in paths:
+        if path not in unique:
+            unique.append(path)
+    return unique
+
+
 def find_windows_sdk() -> dict | None:
     """The newest Windows 10/11 SDK: include directories, and the x64 libraries."""
-    kits = [Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
-            / "Windows Kits" / "10"]
+    kits = sdk_search_paths()
     for kit in kits:
         include_root = kit / "Include"
         lib_root = kit / "Lib"
@@ -254,8 +292,17 @@ def find_windows_sdk() -> dict | None:
                 if (libs / "um" / "x64").is_dir() and (libs / "ucrt" / "x64").is_dir():
                     return {"version": version, "include_root": include_root,
                             "lib_root": lib_root}
-        return None
     return None
+
+
+def locked_cef_version() -> str:
+    """The version cef.lock.json pins, or "" - read defensively, this only picks a tree."""
+    try:
+        data = json.loads((REPO_ROOT / "cef.lock.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    version = data.get("version")
+    return version if isinstance(version, str) else ""
 
 
 def find_cef_root() -> Path:
@@ -269,16 +316,40 @@ def find_cef_root() -> Path:
                          "distribution (no include/cef_app.h)")
 
     if DEPS_DIR.is_dir():
-        # Newest first, and prefer a distribution whose platform is windows.
-        candidates = sorted((p for p in DEPS_DIR.glob("cef_binary_*") if p.is_dir()),
-                            key=lambda p: p.name, reverse=True)
-        for candidate in candidates:
-            if "windows" in candidate.name and (candidate / "include" / "cef_app.h").is_file():
-                return candidate
-        for candidate in candidates:
-            if (candidate / "include" / "cef_app.h").is_file() and (
-                    (candidate / "Release" / "libcef.lib").is_file()
-                    or (candidate / "libcef.lib").is_file()):
+        candidates = [p for p in sorted(DEPS_DIR.glob("cef_binary_*")) if p.is_dir()]
+        usable = [candidate for candidate in candidates
+                  if (candidate / "include" / "cef_app.h").is_file()]
+
+        # 1. The version cef.lock.json pins, when it is here. This is the same tree
+        #    fetch_cef.py will use, so the build and the fetch cannot disagree - and it
+        #    is what stops a leftover pre-release from being built by accident.
+        pinned = locked_cef_version()
+        if pinned:
+            for candidate in usable:
+                if pinned in candidate.name and "windows" in candidate.name:
+                    return candidate
+
+        # 2. Otherwise the newest released Windows distribution. A pre-release is only
+        #    used if there is nothing else, because building a browser on a beta is a
+        #    choice a person should make deliberately, not by directory sort order.
+        def windows_ok(candidate: Path) -> bool:
+            return "windows" in candidate.name
+
+        def pre_release_tree(candidate: Path) -> bool:
+            # Same list, same tokenising, as the fetch tool: one definition of what a
+            # pre-release is, imported rather than copied (see fetch_cef.py).
+            return bool(fetch_cef.name_channel_marker(candidate.name))
+
+        # Released trees first, pre-releases only if that is all there is. The order of
+        # this loop is the whole rule, and the self-test asserts it.
+        for wants_pre_release in (False, True):
+            pool = [c for c in usable
+                    if windows_ok(c) and pre_release_tree(c) is wants_pre_release]
+            if pool:
+                return max(pool, key=lambda c: cef_tree_version_key(c.name))
+        for candidate in usable:
+            if (candidate / "Release" / "libcef.lib").is_file() or \
+                    (candidate / "libcef.lib").is_file():
                 return candidate
     raise BuildError(
         "no CEF Windows distribution in .cef-deps/.\n"
@@ -318,6 +389,26 @@ def app_sources() -> list[Path]:
     """
     sources = sorted(p for p in SRC_DIR.rglob("*.cc") if not p.name.endswith("_unittest.cc"))
     return sources
+
+
+# Compiling CEF's binding layer by hand needs the define upstream's CMake sets for it.
+# Without it the wrapper exports nothing and the link fails with unresolved CefApp,
+# CefClient and so on - a message that points nowhere near the cause.
+WRAPPER_DEFINE = "WRAPPING_CEF_SHARED"
+
+
+def prebuilt_wrapper_lib(cef_root: Path) -> Path | None:
+    """CEF's binding layer already built, when the distribution ships it.
+
+    A CEF Windows distribution contains libcef_dll/ *sources* and expects CMake to build
+    them, but some distributions and every hand-assembled one carry the library as well.
+    Using it turns a 246-file build into a 38-file one, so it is worth looking for. It is
+    also the difference between "rebuild the browser" being quick and being a coffee break.
+    """
+    for candidate in sorted(cef_root.rglob("libcef_dll_wrapper*.lib")):
+        if "symbols" not in candidate.name.lower():
+            return candidate
+    return None
 
 
 def wrapper_sources(cef_root: Path) -> list[Path]:
@@ -602,26 +693,83 @@ def tail(text: str, lines: int = 12) -> str:
     return "\n".join(kept[-lines:])
 
 
-def toolchain_environment(toolchain: dict) -> dict:
-    """PATH with the compiler and SDK tools on it.
+def msvc_include_dirs(msvc: Path) -> list[Path]:
+    """The compiler's own include directories - where <string> and <cstdint> live."""
+    return [d for d in (msvc / "include",
+                        msvc / "include" / "experimental",
+                        msvc / "atlmfc" / "include") if d.is_dir()]
 
-    cl.exe invokes link.exe from its own directory, but the Windows SDK's rc.exe and the
-    CEF DLL's dependency resolution still want the SDK on PATH - so the environment is
-    built here rather than inherited and hoped for.
+
+def sdk_include_dirs(sdk: dict) -> list[Path]:
+    """The Windows SDK's include directories, in the order the SDK expects."""
+    if not sdk:
+        return []
+    root = sdk["include_root"] / sdk["version"]
+    return [d for d in (root / "ucrt", root / "shared", root / "um",
+                        root / "winrt", root / "cppwinrt") if d.is_dir()]
+
+
+def sdk_lib_dirs(sdk: dict) -> list[Path]:
+    """The SDK's x64 import libraries (kernel32.lib and friends)."""
+    if not sdk:
+        return []
+    root = sdk["lib_root"] / sdk["version"]
+    return [d for d in (root / "ucrt" / "x64", root / "um" / "x64") if d.is_dir()]
+
+
+def toolchain_environment(toolchain: dict) -> dict:
+    """The environment cl.exe needs: INCLUDE, LIB and PATH, built rather than hoped for.
+
+    A fresh shell has none of these - that is what vcvarsall.bat sets up - so a build
+    script that inherits the environment and hopes gets
+
+        fatal error C1083: Cannot open include file: 'string': No such file or directory
+
+    for every file in the project, which is a confusing way to be told that INCLUDE was
+    never set. This function is the whole of vcvarsall.bat for our purposes: where the
+    compiler's own headers and libraries are, and where the SDK's are. Anything already in
+    the environment is kept, after ours, so a deliberate override still wins.
     """
     env = dict(os.environ)
-    parts = [str(toolchain["cl"].parent)]
+    msvc: Path = toolchain["msvc"]
     sdk = toolchain.get("sdk")
+
+    include = [str(d) for d in msvc_include_dirs(msvc)] + \
+              [str(d) for d in sdk_include_dirs(sdk)]
+    if include:
+        inherited = env.get("INCLUDE", "")
+        env["INCLUDE"] = os.pathsep.join(include + ([inherited] if inherited else []))
+
+    lib = [str(msvc / "lib" / "x64")] + [str(d) for d in sdk_lib_dirs(sdk)]
+    lib = [d for d in lib if Path(d).is_dir()]
+    if lib:
+        inherited = env.get("LIB", "")
+        env["LIB"] = os.pathsep.join(lib + ([inherited] if inherited else []))
+
+    path_parts = [str(toolchain["cl"].parent)]
     if sdk:
-        for version in (sdk["version"],):
-            for sub in ("bin",):
-                for arch in ("x64",):
-                    candidate = sdk["include_root"].parent / "bin" / version / arch
-                    if candidate.is_dir():
-                        parts.append(str(candidate))
-                del sub, arch
-    env["PATH"] = os.pathsep.join(parts + [env.get("PATH", "")])
+        sdk_bin = sdk["include_root"].parent / "bin" / sdk["version"] / "x64"
+        if sdk_bin.is_dir():
+            path_parts.append(str(sdk_bin))
+    env["PATH"] = os.pathsep.join(path_parts + [env.get("PATH", "")])
     return env
+
+
+def environment_problems(toolchain: dict) -> list[str]:
+    """What is missing from the toolchain, in words, before any compiling happens."""
+    problems: list[str] = []
+    if not msvc_include_dirs(toolchain["msvc"]):
+        problems.append(f"{toolchain['msvc']} has no include directory")
+    if not toolchain.get("sdk"):
+        looked = ", ".join(str(path) for path in sdk_search_paths()[:4])
+        problems.append("no Windows 10/11 SDK was found (it needs the ucrt, shared and um "
+                        f"include directories and the x64 libraries). Looked in: {looked}")
+    else:
+        for part in ("ucrt", "shared", "um"):
+            if not (toolchain["sdk"]["include_root"] / toolchain["sdk"]["version"] / part).is_dir():
+                problems.append(f"the Windows SDK {toolchain['sdk']['version']} has no "
+                                f"{part} include directory")
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +791,13 @@ def plan_build(args) -> dict:
     sources = app_sources()
     if not sources:
         raise BuildError(f"no C++ sources found under {SRC_DIR}")
-    if args.dry_run and not (cef_root / "libcef_dll").is_dir():
+    # Prefer the binding layer already built, when this distribution carries it: that is
+    # 213 files not compiled on every clean build. Compiling it from sources is the
+    # documented CEF workflow and stays the fallback, not the first choice.
+    wrapper_lib = prebuilt_wrapper_lib(cef_root)
+    if wrapper_lib is not None:
+        wrapper: list[Path] = []
+    elif args.dry_run and not (cef_root / "libcef_dll").is_dir():
         wrapper = [cef_root / "libcef_dll" / "wrapper" / "cef_client.cc"]
     else:
         wrapper = wrapper_sources(cef_root)
@@ -653,7 +807,7 @@ def plan_build(args) -> dict:
     else:
         libcef = find_libcef_lib(cef_root)
     return {"cef_root": cef_root, "sources": sources, "wrapper": wrapper, "tools": tools,
-            "libcef": libcef}
+            "libcef": libcef, "wrapper_lib": wrapper_lib}
 
 
 def object_path(source: Path, root: Path = REPO_ROOT, obj_root: Path = OBJ_DIR) -> Path:
@@ -689,15 +843,34 @@ def build(args) -> int:
         cl = toolchain["cl"]
 
     defines = list(APP_DEFINES) + [f'BROWSERX_VERSION="{version_string()}"']
-    includes = base_includes(cef_root) if args.dry_run else base_includes(cef_root)
+    # Before anything is compiled, say what is missing - a missing SDK used to appear as
+    # 246 failures about standard headers, which points at the wrong thing entirely.
+    problems = [] if args.dry_run else environment_problems(toolchain)
+    if problems:
+        detail = "\n".join(f"      - {problem}" for problem in problems)
+        raise BuildError(
+            "this machine's C++ toolchain is incomplete:\n"
+            f"{detail}\n"
+            "    Install (or repair) these two things in the Visual Studio Installer:\n"
+            "      - MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)\n"
+            "      - Windows 11 SDK (10.0.26100)   [exactly one SDK is enough]\n"
+            "    Then check the machine with:  python tools\\check_build_requirements.py"
+            " --for windows")
+
+    includes = base_includes(cef_root)
     sdk = toolchain.get("sdk")
 
-    # The SDK's um/shared/ucrt include roots are what make <windows.h> and <cstdint> work;
-    # MSVC's own include directory covers the standard library.
-    if sdk:
-        includes = includes + [sdk["include_root"] / sdk["version"] / part
-                               for part in ("ucrt", "shared", "um")]
-        includes = includes + [toolchain["msvc"] / "include"]
+    # The compiler's own include directory, always - that is where <string>, <optional>
+    # and the rest of the C++ standard library live. This line used to sit inside the
+    # `if sdk:` below, so a machine whose SDK was not found compiled without it and every
+    # file in the project failed with
+    #     fatal error C1083: Cannot open include file: 'string': No such file or directory
+    # which reads like a broken source file and is really a missing /I.
+    msvc_includes = msvc_include_dirs(toolchain["msvc"])
+    includes = includes + msvc_includes
+
+    # Then the SDK's ucrt/shared/um roots: <windows.h> and the Win32 headers.
+    includes = includes + sdk_include_dirs(sdk)
 
     sources = plan["sources"] + plan["wrapper"]
     objects = [object_path(source) for source in sources]
@@ -719,7 +892,9 @@ def build(args) -> int:
         note = sdk_note(str(sdk.get("version", "")))
         if note:
             warn(note)
-    say(f"  sources    : {len(plan['sources'])} browser + {len(plan['wrapper'])} CEF wrapper"
+    wrapper_note = (f"{plan['wrapper_lib'].name} (prebuilt - not compiled here)"
+                    if plan.get("wrapper_lib") else f"{len(plan['wrapper'])} CEF wrapper")
+    say(f"  sources    : {len(plan['sources'])} browser + {wrapper_note}"
         f" + {len(plan['tools'])} tools")
     say(f"  config     : {'debug' if args.debug else 'release'}, jobs {args.jobs}")
     say("")
@@ -818,15 +993,15 @@ def build(args) -> int:
        + (f", {reused} reused from the last build" if reused else ""))
 
     # --- link --------------------------------------------------------------
-    lib_paths = cef_lib_dirs(cef_root)
-    if sdk:
-        lib_paths += [sdk["lib_root"] / sdk["version"] / part / "x64"
-                      for part in ("ucrt", "um")]
+    lib_paths = cef_lib_dirs(cef_root) + sdk_lib_dirs(sdk)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     step("linking out\\BrowserX.exe")
-    code, text = run(link_command(cl, objects, output,
-                                  [str(plan["libcef"])] + list(SYSTEM_LIBS),
-                                  lib_paths, args.debug), capture=True, env=env)
+    inputs = [str(plan["libcef"])]
+    if plan.get("wrapper_lib"):
+        inputs.append(str(plan["wrapper_lib"]))       # CEF's binding layer, prebuilt
+    inputs += list(SYSTEM_LIBS)
+    code, text = run(link_command(cl, objects, output, inputs, lib_paths, args.debug),
+                     capture=True, env=env)
     if code != 0:
         say("")
         for line in tail(text, 20).splitlines():
@@ -1158,6 +1333,128 @@ def self_test() -> int:
            "libcef.dll is staged: Windows has no rpath, so the exe needs it next to it")
     expect(any(name.endswith("v8_context_snapshot.bin") for name in CEF_RUNTIME_FILES),
            "the V8 snapshot and ICU data are staged too (no snapshot, no JavaScript)")
+
+    # --- the environment cl.exe needs -----------------------------------------------
+    # This is the bug that stopped a real build on a real machine: PATH was set and
+    # INCLUDE was not, so every one of 246 files failed with
+    #     fatal error C1083: Cannot open include file: 'string': No such file or directory
+    # because cl.exe could not find the standard library that ships inside its own
+    # installation. INCLUDE is the whole difference between a working build and that.
+    with tempfile.TemporaryDirectory() as scratch:
+        fake = Path(scratch)
+        msvc = fake / "Microsoft Visual Studio" / "18" / "Community" / "VC" / "Tools" / "MSVC" / "14.51.36231"
+        for relative in ("include", "include/experimental", "lib/x64",
+                         "bin/Hostx64/x64"):
+            (msvc / relative).mkdir(parents=True, exist_ok=True)
+        (msvc / "bin" / "Hostx64" / "x64" / "cl.exe").write_text("")
+        kit = fake / "Windows Kits" / "10"
+        version = "10.0.26100.0"
+        for part in ("ucrt", "shared", "um"):
+            (kit / "Include" / version / part).mkdir(parents=True, exist_ok=True)
+        for part in ("ucrt", "um"):
+            (kit / "Lib" / version / part / "x64").mkdir(parents=True, exist_ok=True)
+        (kit / "bin" / version / "x64").mkdir(parents=True, exist_ok=True)
+        sdk = {"version": version, "include_root": kit / "Include", "lib_root": kit / "Lib"}
+        toolchain = {"cl": msvc / "bin" / "Hostx64" / "x64" / "cl.exe", "msvc": msvc,
+                     "sdk": sdk, "installation": fake}
+        env = toolchain_environment(toolchain)
+        include_parts = env.get("INCLUDE", "").split(os.pathsep)
+        expect(str(msvc / "include") in include_parts,
+               "INCLUDE carries the compiler's own headers - the C1083 fix")
+        expect(str(kit / "Include" / version / "ucrt") in include_parts
+               and str(kit / "Include" / version / "um") in include_parts,
+               "INCLUDE carries the SDK's ucrt and um headers, in that order")
+        expect(include_parts.index(str(msvc / "include"))
+               < include_parts.index(str(kit / "Include" / version / "ucrt")),
+               "the compiler's headers come before the SDK's, as vcvarsall orders them")
+        lib_parts = env.get("LIB", "").split(os.pathsep)
+        expect(str(msvc / "lib" / "x64") in lib_parts
+               and str(kit / "Lib" / version / "um" / "x64") in lib_parts,
+               "LIB carries the x64 libraries from both the compiler and the SDK")
+        expect(str(kit / "bin" / version / "x64") in env.get("PATH", "").split(os.pathsep)[:2],
+               "PATH carries the SDK tools (rc.exe) after the compiler")
+        expect(environment_problems(toolchain) == [],
+               "a complete toolchain reports no problems")
+
+        # A machine with the compiler but no SDK is the shape of most broken setups: it
+        # should be told before 246 compilations, not by a missing windows.h later.
+        missing = environment_problems({"msvc": msvc, "sdk": None, "cl": toolchain["cl"]})
+        expect(len(missing) == 1 and "no Windows 10/11 SDK was found" in missing[0],
+               "a missing SDK is named before anything is compiled")
+        expect("Looked in:" in missing[0] and "Windows Kits" in missing[0],
+               "and the message says where the SDK was looked for, so it can be acted on")
+        (kit / "Include" / version / "um").rename(kit / "Include" / version / "um-moved")
+        expect(any("um" in problem for problem in environment_problems(toolchain)),
+               "an SDK missing one of its include directories is named too")
+        (kit / "Include" / version / "um-moved").rename(kit / "Include" / version / "um")
+
+        # Visual Studio 2022 is not the only version, and the newest one is not called
+        # 2022: a real machine had "Microsoft Visual Studio\18\Community" (MSVC 14.51).
+        real_vswhere = find_vswhere
+        real_pf = os.environ.get("ProgramFiles")
+        try:
+            globals()["find_vswhere"] = lambda: None
+            os.environ["ProgramFiles"] = scratch
+            found = find_msvc()
+            expect(found["msvc"].name == "14.51.36231",
+                   "a Visual Studio install that is not in a 2022 directory is still found")
+        finally:
+            globals()["find_vswhere"] = real_vswhere
+            if real_pf is None:
+                os.environ.pop("ProgramFiles", None)
+            else:
+                os.environ["ProgramFiles"] = real_pf
+
+    # --- which CEF tree is built against ---------------------------------------------
+    # Fetching the right build is not enough if the build keeps using the wrong one. A
+    # leftover pre-release sorts above the release it is meant to replace
+    # ("cef_binary_156...beta" > "cef_binary_154..."), which is exactly why the lock
+    # file is consulted first and pre-releases are only a last resort.
+    with tempfile.TemporaryDirectory() as scratch:
+        deps = Path(scratch) / ".cef-deps"
+        stable = deps / "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64"
+        beta = deps / "cef_binary_156.0.7+g47dbc1d+chromium-156.0.8078.17_windows64_beta"
+        for tree in (stable, beta):
+            (tree / "include").mkdir(parents=True, exist_ok=True)
+            (tree / "include" / "cef_app.h").write_text("")
+            (tree / "Release").mkdir(parents=True, exist_ok=True)
+            (tree / "Release" / "libcef.lib").write_text("")
+        real_deps = DEPS_DIR
+        real_override = os.environ.pop("BROWSERX_CEF_DIR", None)
+        real_pinned = locked_cef_version
+        try:
+            globals()["DEPS_DIR"] = deps
+            globals()["locked_cef_version"] = lambda: "154.0.34"
+            expect(find_cef_root() == stable,
+                   "the tree cef.lock.json pins wins over a newer-looking directory")
+            globals()["locked_cef_version"] = lambda: ""
+            expect(find_cef_root() == stable,
+                   "with nothing pinned, a released build is chosen over a newer beta")
+            globals()["locked_cef_version"] = lambda: "156.0.7"
+            expect(find_cef_root() == beta,
+                   "a lock that really does pin a pre-release is still honoured")
+            globals()["locked_cef_version"] = lambda: ""
+            beta.rename(deps / "cef_binary_155.0.1+g1+chromium-155.0.1.1_windows64_beta")
+            expect(find_cef_root().name.startswith("cef_binary_154"),
+                   "a beta numbered below the release is still not preferred")
+        finally:
+            globals()["DEPS_DIR"] = real_deps
+            globals()["locked_cef_version"] = real_pinned
+            if real_override is not None:
+                os.environ["BROWSERX_CEF_DIR"] = real_override
+        expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64") == (154, 0, 34),
+               "a distribution directory sorts by its version numbers")
+
+    # --- the prebuilt binding layer --------------------------------------------------
+    with tempfile.TemporaryDirectory() as scratch:
+        tree = Path(scratch) / "cef_binary_154_windows64"
+        (tree / "libcef_dll" / "wrapper").mkdir(parents=True, exist_ok=True)
+        (tree / "libcef_dll" / "wrapper" / "cef_client.cc").write_text("")
+        expect(prebuilt_wrapper_lib(tree) is None,
+               "no prebuilt wrapper is reported when there is none")
+        (tree / "libcef_dll_wrapper.lib").write_text("")
+        expect(prebuilt_wrapper_lib(tree) == tree / "libcef_dll_wrapper.lib",
+               "a prebuilt binding layer is found when the distribution ships one")
 
     # The bug this catches: the incremental build used a local named `plan`, which is
     # already the resolved build plan (CEF root, sources, libcef). The linker then asked

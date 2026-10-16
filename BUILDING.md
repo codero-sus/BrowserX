@@ -109,6 +109,17 @@ make space-apply           # remove the rebuildable outputs (keeps your profile)
 make space-apply DEEP=1    # also the fetched CEF trees: 200 MB of download again
 ```
 
+A wrong CEF build is the largest thing this project can waste: one extracted distribution
+is about 1.4 GB. If a build other than the pinned one is sitting in `.cef-deps`, remove it
+with the tool that put it there:
+
+```bat
+python tools\fetch_cef.py --prune
+rem lists the trees that are not the pinned one, and what each is costing
+python tools\fetch_cef.py --prune --apply
+rem removes them; the pinned tree is never touched
+```
+
 The figures for this checkout, measured rather than guessed: `build/` (object files) about
 **94 MB**, `out/` (the test binary alone is 37 MB of it) about **40 MB**, and the committed
 CEF headers **1.9 MB**. The CEF *binary* distribution is the big one: **~200 MB downloaded,
@@ -232,6 +243,23 @@ for the versions published for your platform and takes the **newest one by numbe
 the first or the last line of the index, because a list's order is not a fact about a
 version. It then uses the exact file name and SHA-1 the index publishes for that build.
 
+Two rules decide which build that is, and both exist because of a real failure:
+
+* **The numbers decide, never the order of the list.** The index lists builds newest
+  first; taking its first or last line is how a Windows machine was once offered a 2016
+  build of Chromium 51.
+* **A released build is chosen, not just the newest one.** The newest entry can be a
+  beta: that same machine then started downloading
+  `cef_binary_156.0.7+..._windows64_beta.tar.bz2`. Pre-releases (beta, dev, canary) are
+  skipped and the skip is reported; if there is nothing but pre-releases, the newest is
+  used and the tool says so rather than pretending. This is the same rule the Windows SDK
+  section states — newer is not better.
+
+The sources in this repository are compile-checked against the headers of
+**CEF 154.0.34 (Chromium 154.0.8037)** — the build a plain fetch resolves to today — so a
+green `make check` here means the same code compiles against the CEF version you are
+about to download, not merely against whatever headers happened to be around.
+
 If you want to see what it would take before it downloads anything:
 
 ```bat
@@ -241,9 +269,10 @@ python tools\fetch_cef.py --version 141.0.12+g3f1c9a2+chromium-141.0.7390.55
 rem exactly that build instead
 ```
 
-An older build is never chosen for you because it happened to be listed last: that was a
-real failure, on a real machine, and `make check-fetch` now replays the captured index
-record that caused it on every build.
+An older build is never chosen for you because it happened to be listed last, and a
+pre-release is never chosen because it happened to be newest: both were real failures, on
+a real machine, and `make check-fetch` replays the captured index data that caused them on
+every build.
 
 ### Step 3 — build
 
@@ -257,6 +286,34 @@ out\BrowserX.exe
 
 `--stage` copies `libcef.dll` and its data files next to the executable, which Windows
 needs because it has nothing like `rpath`: an exe and its DLLs must sit together.
+
+### If the compiler reports a missing standard header
+
+```
+fatal error C1083: Cannot open include file: 'string': No such file or directory
+```
+
+That is not a problem with the source file. `<string>`, `<optional>` and `<cstdint>` live
+inside the compiler's own installation, and `cl.exe` finds them through the `INCLUDE`
+environment variable — which a fresh command prompt does not have. The build script sets
+`INCLUDE`, `LIB` and `PATH` itself, so this should not happen; it was exactly what went
+wrong on the first real Windows build, for two reasons that are both fixed:
+
+* `INCLUDE` was never set at all (only `PATH`), so the compiler could not find its own
+  standard library, and every one of 246 files failed the same way.
+* the compiler's include directory was added to the command line only *when an SDK was
+  found* — so on a machine where the SDK was not discovered, the flag went missing too.
+
+Both are covered by `tools\build_windows.py --self-test`, which builds a fake toolchain
+on disk and asserts that `INCLUDE` carries the compiler's headers and the SDK's, in the
+order `vcvarsall.bat` would set them. If you still see this message, run:
+
+```bat
+python tools\build_windows.py --dry-run
+```
+
+and look at the `Windows SDK:` line, and at the `/I` flags in the commands it prints: they
+are the directories the compiler will actually search.
 
 ### What each tool is for
 
