@@ -41,6 +41,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import tarfile
@@ -306,28 +307,150 @@ def fetch_index(base: str) -> dict:
     return http_get_json(f"{base}/index.json", description="CEF version index")
 
 
-def versions_for(index: dict, entry: str) -> list[str]:
-    """Extracts the version list for a platform, tolerating index layout changes."""
-    platform_block = index.get(entry)
-    if isinstance(platform_block, dict):
-        versions = platform_block.get("versions") or []
-        if versions:
-            return list(versions)
-    # Some mirrors serve {"linux64": ["ver", ...]} directly.
-    if isinstance(platform_block, list):
-        return list(platform_block)
-    # Last resort: any list of strings that look like CEF versions.
-    for value in index.values():
-        if isinstance(value, dict) and isinstance(value.get("versions"), list):
-            return list(value["versions"])
+# CEF version strings, both numbering eras:
+#   3.2704.1414.g185cd6c                      (before 2023: 3 = the CEF branch)
+#   141.0.12+g3f1c9a2+chromium-141.0.7390.55  (now: the Chromium major leads)
+# Everything after the first '+' is build metadata (git hash, Chromium version) and
+# says nothing about which version is newer.
+CEF_VERSION_RE = re.compile(r"^\d+\.\d+(?:\.\d+)*(?:\.[A-Za-z0-9]+)?(?:\+[^+\s]+)*$")
+
+# Where an index entry keeps its version, in the layouts CEF has published so far.
+VERSION_FIELDS = ("cef_version", "version")
+NESTED_FIELDS = ("versions", "builds", "releases")
+
+
+def looks_like_version(value: object) -> bool:
+    """True for something that can safely be put in an archive name."""
+    return isinstance(value, str) and bool(CEF_VERSION_RE.match(value))
+
+
+def cef_version_key(version: str) -> tuple[int, ...]:
+    """Order versions by their leading numbers.
+
+    This is the fix for a real failure: the index lists builds newest first, the code
+    trusted the order and took the last element, and a Windows machine was offered
+    CEF 3.2704.1414.g185cd6c - Chromium 51, from 2016 - to download in 2026. Position
+    in a list is not a fact about a version; the numbers in it are.
+    """
+    numbers: list[int] = []
+    for part in version.split("+", 1)[0].split("."):
+        if not part.isdigit():
+            break                                   # "g185cd6c": metadata, not a number
+        numbers.append(int(part))
+    return tuple(numbers) or (0,)
+
+
+def _as_version_strings(value: object) -> list[str]:
+    """Flattens any shape an index entry takes into version strings.
+
+    Seen in the wild: {"linux64": {"versions": [ {"cef_version": "..."}, ... ]}}. Also
+    tolerated: a list of plain strings, a mapping of version -> details, and the same
+    wrapped in "versions"/"builds"/"releases".
+    """
+    if looks_like_version(value):
+        return [value]
+    if isinstance(value, dict):
+        for field in VERSION_FIELDS:
+            if looks_like_version(value.get(field)):
+                return [str(value[field])]
+        for field in NESTED_FIELDS:
+            if field in value:
+                nested = _as_version_strings(value[field])
+                if nested:
+                    return nested
+        return [key for key in value if looks_like_version(key)]
+    if isinstance(value, list):
+        found: list[str] = []
+        for item in value:
+            found.extend(_as_version_strings(item))
+        return found
     return []
 
 
-def latest_stable(versions: list[str]) -> str:
-    """Newest entry in the index (CEF's index is ordered oldest → newest)."""
-    if not versions:
-        raise FetchError("the CEF index contained no versions for this platform")
-    return versions[-1]
+def versions_for(index: dict, entry: str) -> list[str]:
+    """Every version string the index offers for a platform, in any known layout."""
+    candidates: list[str] = []
+    if entry in index:
+        candidates = _as_version_strings(index[entry])
+    if not candidates:
+        for key, value in index.items():
+            if key.startswith("//"):                # the lock file's comment convention
+                continue
+            candidates = _as_version_strings(value)
+            if candidates:
+                break
+    seen: set[str] = set()
+    unique: list[str] = []
+    for version in candidates:
+        if version not in seen:
+            seen.add(version)
+            unique.append(version)
+    return unique
+
+
+def newest_first(versions: list[str]) -> list[str]:
+    """Newest build first, by number rather than by position."""
+    return sorted(versions, key=cef_version_key, reverse=True)
+
+
+def latest_stable(versions: object) -> str:
+    """The newest version, chosen by number. Never returns anything but a version."""
+    strings = _as_version_strings(versions)
+    if not strings:
+        raise FetchError(
+            "the CEF index contained no version this tool could read - it may have\n"
+            "    changed shape again. Pin one by hand instead:\n"
+            "      python tools/fetch_cef.py --list                (see what it offers)\n"
+            "      python tools/fetch_cef.py --version <version>")
+    return newest_first(strings)[0]
+
+
+def require_version(version: object) -> str:
+    """Refuse to build a URL out of anything that is not a version string.
+
+    This is the bug that reached a real machine: the index's own record (a whole JSON
+    object with cef_version, channel and files inside it) was formatted into the archive
+    name, and the download died with "URL can't contain control characters". A version
+    that did not come from a version is a bug in this script, so it says so and stops
+    rather than guessing what was meant.
+    """
+    if looks_like_version(version):
+        return str(version)
+    raise FetchError(
+        f"the version to fetch is not a version: {version!r}\n"
+        "    That is a bug in this script, not in your machine - the CEF index layout has\n"
+        "    probably changed again. Two ways past it:\n"
+        "      python tools/fetch_cef.py --list              (see what it offers)\n"
+        "      python tools/fetch_cef.py --version <version> (pin one yourself)")
+    # unreachable
+
+
+def entry_for(index: dict, entry: str, version: str) -> dict:
+    """The index's own record for a version, when the layout carries one.
+
+    It is worth having: that record lists every file with its exact name and SHA-1, so
+    the archive name does not have to be guessed and the download can be verified even
+    when the lock file has nothing to say about this platform yet.
+    """
+    for block in (index.get(entry), index):
+        candidates = block.get("versions") if isinstance(block, dict) else None
+        for item in candidates if isinstance(candidates, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("cef_version") == version or item.get("version") == version:
+                return item
+    return {}
+
+
+def pick_file(record: dict, entry: str, flavour: str) -> dict:
+    """The file in a version record that matches this platform and flavour."""
+    wanted_type = "minimal" if flavour == "minimal" else "standard"
+    files = record.get("files")
+    for item in files if isinstance(files, list) else []:
+        name = item.get("name", "") if isinstance(item, dict) else ""
+        if entry in name and item.get("type") == wanted_type:
+            return item
+    return {}
 
 
 def chromium_version_of(version: str) -> str:
@@ -521,10 +644,12 @@ def cmd_list(base: str, entry: str, limit: int) -> int:
     if not versions:
         log(f"no versions listed for {entry}")
         return 1
-    log_plan(f"CEF builds available for {entry} ({len(versions)}; newest {limit})")
-    for version in versions[-limit:]:
+    ordered = newest_first(versions)
+    log_plan(f"CEF builds available for {entry} ({len(versions)} total; newest {limit})")
+    for index, version in enumerate(ordered[:limit]):
         chromium = chromium_version_of(version)
-        log(f"{version}{('  (Chromium ' + chromium + ')') if chromium else ''}")
+        marker = "  <- what a plain fetch takes" if index == 0 else ""
+        log(f"{version}{('  (Chromium ' + chromium + ')') if chromium else ''}{marker}")
     return 0
 
 
@@ -539,16 +664,31 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
         return 0
 
     version = args.version or lock.get("version") or ""
+    record: dict = {}
     if not version:
         log_plan("no pinned version yet — resolving the newest stable build")
-        version = latest_stable(versions_for(fetch_index(base), entry))
+        index = fetch_index(base)
+        versions = versions_for(index, entry)
+        version = latest_stable(versions)
+        record = entry_for(index, entry, version)
+        log_plan(f"resolved {version}"
+                 + (f" (Chromium {chromium_version_of(version)})" if chromium_version_of(version) else "")
+                 + f" — newest of {len(versions)} offered for {entry}")
+        pinned = lock.get("version") or ""
+        if looks_like_version(pinned) and cef_version_key(version) < cef_version_key(pinned):
+            log_plan(f"note: that is older than the {pinned} this repo was pinned at; the "
+                     f"index is the only source for {entry}, so this is what it offers")
     elif lock.get("pin_mode") == "track-stable" and args.update:
-        newest = latest_stable(versions_for(fetch_index(base), entry))
+        index = fetch_index(base)
+        newest = latest_stable(versions_for(index, entry))
         if newest != version:
             log_plan(f"re-pinning {version} -> {newest}")
             lock["sha1"] = ""
             lock["size_bytes"] = 0
             version = newest
+        record = entry_for(index, entry, version)
+
+    version = require_version(version)
 
     root = cef_root_for(version, entry, flavour)
     if (root / "include" / "cef_app.h").is_file() and not args.force:
@@ -558,6 +698,15 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
 
     filename = archive_name(version, entry, flavour)
     expected_sha1 = "" if args.version or args.update else lock.get("sha1", "")
+    published = pick_file(record, entry, flavour)
+    if published:
+        # The index named the file and published its SHA-1: use both rather than
+        # guessing a name and downloading unverified. This is the common case for the
+        # other-platform fetch, where the lock's SHA-1 belongs to a different archive.
+        filename = published.get("name") or filename
+        expected_sha1 = published.get("sha1") or expected_sha1
+        if published.get("sha1"):
+            log_plan(f"the index publishes {filename} with its SHA-1; it will be verified")
     local_archive = Path(args.archive or os.environ.get("BROWSERX_CEF_ARCHIVE", "")) if (
         args.archive or os.environ.get("BROWSERX_CEF_ARCHIVE")
     ) else None
@@ -628,6 +777,144 @@ def sha1_of(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Self-test: the resolution logic, offline
+# ---------------------------------------------------------------------------
+FIXTURE_2016 = REPO_ROOT / "tests" / "fixtures" / "cef_index_record_2016.json"
+MODERN = "146.0.11+g4d5e6f7+chromium-146.0.7680.31"
+OLDER = "145.0.8+g1a2b3c4+chromium-145.0.7632.75"
+
+
+def self_test() -> int:
+    failures = 0
+
+    def expect(condition: bool, label: str) -> None:
+        nonlocal failures
+        print(f"    {'✔' if condition else '✘'} {label}")
+        failures += not condition
+
+    print("  self-test")
+
+    record = json.loads(FIXTURE_2016.read_text())
+    expect(record["cef_version"] == "3.2704.1414.g185cd6c",
+           "the captured 2016 record loads")
+    expect(not looks_like_version(record),
+           "a whole index record is not a version (the guard that stops the bad URL)")
+    try:
+        require_version(record)
+        expect(False, "require_version refuses the record")
+    except FetchError as error:
+        expect("not a version" in str(error), "require_version refuses the record")
+    expect(require_version(MODERN) == MODERN, "a real version passes require_version")
+
+    # The layout that broke it: one platform, a list of records, newest first.
+    modern_record = {"cef_version": MODERN, "channel": "stable", "files": [
+        {"name": f"cef_binary_{MODERN}_windows64.tar.bz2", "sha1": "1" * 40,
+         "size": 260000000, "type": "standard"},
+        {"name": f"cef_binary_{MODERN}_windows64_minimal.tar.bz2", "sha1": "2" * 40,
+         "size": 100000000, "type": "minimal"},
+    ]}
+    index = {"windows64": {"versions": [modern_record,
+                                       {"cef_version": OLDER, "channel": "stable", "files": []},
+                                       record]}}
+    versions = versions_for(index, "windows64")
+    expect(versions == [MODERN, OLDER, record["cef_version"]],
+           "records are flattened into version strings, in order")
+    expect(latest_stable(versions) == MODERN,
+           "the newest wins, not the last one in the list")
+    expect(record["cef_version"] not in newest_first(versions)[:2],
+           "the 2016 build is not chosen again")
+
+    # Other shapes, so a layout change is a test failure rather than a surprise.
+    expect(latest_stable(versions_for({"linux64": [OLDER, MODERN]}, "linux64")) == MODERN,
+           "a plain list of strings still resolves")
+    expect(latest_stable(versions_for({"linux64": {"versions": [OLDER, MODERN]}}, "linux64")) == MODERN,
+           "a list nested under versions still resolves")
+    expect(latest_stable(versions_for({"macosx64": {OLDER: {"channel": "stable"},
+                                                   MODERN: {"channel": "stable"}}}, "macosx64")) == MODERN,
+           "a mapping of version to details still resolves")
+
+    # Ordering, including the trap: 2016's "3.2704" is smaller than today's "146.0".
+    expect(cef_version_key("3.2704.1414.g185cd6c") < cef_version_key("146.0.11+g4d5e6f7"),
+           "3.2704 (Chromium 51) sorts below 146.0, as it should")
+    expect(cef_version_key("10.0.9999") > cef_version_key("10.0.1000"),
+           "numbers are compared as numbers, not as text")
+    expect(cef_version_key(MODERN) == (146, 0, 11),
+           "build metadata after the plus is ignored when ordering")
+
+    # A record's own file list: exact name and SHA-1, so the archive is not guessed.
+    picked = pick_file(entry_for(index, "windows64", record["cef_version"]),
+                       "windows64", "standard")
+    expect(picked.get("name") == "cef_binary_3.2704.1414.g185cd6c_windows64.tar.bz2",
+           "the file for a platform and flavour comes from the index")
+    expect(picked.get("sha1") == "a5c09cfd51f236a227caee8c8839d98038fbc23a",
+           "its published SHA-1 comes from the index too")
+    minimal = pick_file(entry_for(index, "windows64", record["cef_version"]),
+                        "windows64", "minimal")
+    expect(minimal.get("type") == "minimal", "the minimal flavour picks the minimal file")
+
+    # The whole download path, offline: the URL it builds has to be a URL. The network
+    # and the disk are stubbed; the logic is the real thing, including the resolution,
+    # the file the index names, and the SHA-1 it is verified against. This is the shape
+    # of the original failure, where a JSON record ended up inside the URL.
+    stubbed = {name: globals()[name] for name in
+               ("http_get_json", "stream_download", "extract_archive", "save_lock", "DEPS_DIR")}
+    seen: dict[str, str] = {}
+    mixed = {"windows64": {"versions": [modern_record, record]}}
+
+    def fake_get_json(url: str, timeout: int = 60, description: str = "") -> dict:
+        return mixed
+
+    def fake_download(url: str, destination: Path, expected_sha1: str = "") -> tuple[str, int]:
+        seen["url"], seen["sha1"] = url, expected_sha1
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"archive")
+        return "0" * 40, 7
+
+    def fake_extract(archive: Path, destination: Path) -> None:
+        root = destination / archive.name.replace(".tar.bz2", "")
+        (root / "include").mkdir(parents=True, exist_ok=True)
+        (root / "include" / "cef_app.h").write_text("// stub")
+
+    try:
+        globals()["http_get_json"] = fake_get_json
+        globals()["stream_download"] = fake_download
+        globals()["extract_archive"] = fake_extract
+        globals()["save_lock"] = lambda lock: None
+        with tempfile.TemporaryDirectory() as scratch:
+            globals()["DEPS_DIR"] = Path(scratch)
+            args = argparse.Namespace(version="", update=False, force=False, archive="",
+                                      url="", version_dir=False)
+            code = cmd_download(args, {"pin_mode": "track-stable", "platform_entry": "linux64",
+                                       "version": "", "sha1": ""}, "windows64", "standard",
+                                "https://cef-builds.example")
+    finally:
+        for name, value in stubbed.items():
+            globals()[name] = value
+
+    expect(code == 0, "a fetch with no pin completes against the stubbed index")
+    expect(seen.get("url", "").count("{") == 0 and MODERN in seen.get("url", ""),
+           "the URL it downloads is a URL containing the resolved version")
+    expect(seen.get("sha1", "") == "1" * 40,
+           "and it is verified against the SHA-1 the index published for that file")
+    expect(seen.get("url", "").endswith(f"cef_binary_{MODERN}_windows64.tar.bz2"),
+           "using the exact file name the index published, not a guessed one")
+
+    # Nothing readable: a clear error, never a download attempt.
+    try:
+        latest_stable(versions_for({"windows64": {"versions": [{"unknown": "shape"}]}}, "windows64"))
+        expect(False, "an unreadable index is refused with advice")
+    except FetchError as error:
+        expect("--version" in str(error), "an unreadable index is refused with advice")
+
+    print()
+    if failures:
+        print(f"  {failures} self-test failure(s)\n")
+        return 1
+    print("  self-test passed\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main(argv: list[str]) -> int:
@@ -654,6 +941,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--limit", type=int, default=12, help="how many versions --list prints")
     parser.add_argument("--force", action="store_true", help="re-download even when the tree already exists")
     parser.add_argument("--json", action="store_true", help="machine-readable summary")
+    parser.add_argument("--self-test", action="store_true",
+                        help="check the version resolution offline, no download")
     argv, pasted_note = argv_notes.strip_trailing_comment(argv)
     if pasted_note:
         print(f"note: {pasted_note}", file=sys.stderr)
@@ -671,6 +960,9 @@ def main(argv: list[str]) -> int:
         if os.environ.get("BROWSERX_CEF_HEADERS")
         else HEADERS_DIR
     )
+
+    if args.self_test:
+        return self_test()
 
     lock = load_lock()
     host_entry = platform_entry()

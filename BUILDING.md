@@ -226,6 +226,25 @@ winget install --id Git.Git --accept-package-agreements --accept-source-agreemen
 python tools\fetch_cef.py
 ```
 
+That download is about 200 MB and it is the one step that depends on someone else's
+server, so it is worth knowing how the version is chosen. The script asks the CEF index
+for the versions published for your platform and takes the **newest one by number** — not
+the first or the last line of the index, because a list's order is not a fact about a
+version. It then uses the exact file name and SHA-1 the index publishes for that build.
+
+If you want to see what it would take before it downloads anything:
+
+```bat
+python tools\fetch_cef.py --list
+rem newest first, and the one a plain fetch would take is marked
+python tools\fetch_cef.py --version 141.0.12+g3f1c9a2+chromium-141.0.7390.55
+rem exactly that build instead
+```
+
+An older build is never chosen for you because it happened to be listed last: that was a
+real failure, on a real machine, and `make check-fetch` now replays the captured index
+record that caused it on every build.
+
 ### Step 3 — build
 
 ```bat
