@@ -281,6 +281,48 @@ python tools/build_gui.py --self-test    # the window's logic, no window
 `check-gui`, so the window's logic is checked on every build even though the window itself
 is only ever looked at by a person.
 
+### It builds only what changed
+
+The Windows build is incremental, the same way `make` is on Linux. The first build compiles
+everything; after that a source is recompiled only when it changed, when a header it
+includes changed (transitively), or when something about the build itself changed — the
+compiler, the flags, the include paths, or the CEF pin. Measured on this repository: a
+rebuild with nothing changed compiles **nothing**; editing one `.cc` compiles **one file**;
+editing `src/core/format.h` recompiles the **26 files that include it** and reuses the
+other 8.
+
+```bat
+tools\build_windows.cmd              :: compiles only what changed
+tools\build_windows.cmd --verbose    :: and says why each file was recompiled
+tools\build_windows.cmd --force      :: ignore the cache and rebuild everything
+```
+
+If the dependency record is missing or unreadable the file is compiled rather than
+assumed good: the failure mode of a cache like this has to be *doing the work*, never
+linking something stale.
+
+### What you do *not* need: a build accelerator
+
+**Incredibuild** (the "Incredibuild - Build Acceleration" component in the VS installer) is
+in no way required, and on a single machine it would do nothing here:
+
+* It accelerates builds driven by **MSBuild or the Visual Studio IDE**, by intercepting the
+  `cl.exe` processes *that* build spawns. `tools\build_windows.py` calls `cl.exe` directly,
+  so there is nothing for it to intercept unless the whole build is run under its own
+  launcher.
+* Its free tier is **local** acceleration — using your own cores. This build already does
+  that: `--jobs` defaults to one compile per CPU core.
+* Its paid value is **distributed** builds across several machines. With one PC there is
+  nothing to distribute to.
+* It installs an agent and a coordinator service, and takes gigabytes of disk on a machine
+  that is already trimming.
+
+The honest version of "my builds are slow" was that this build recompiled every file on
+every run; that is fixed above, which is worth more than a build accelerator would have
+been. For reference, a full Windows build is about 180 translation units (the browser, the
+tools, and CEF's own binding layer, which is most of them) — enough that recompiling all of
+them on every keystroke was the real problem.
+
 ### Commands worth knowing
 
 ```bat
