@@ -52,6 +52,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tools"))       # so argv_notes is importable however we are called
+import argv_notes                                  # noqa: E402  (path is set up just above)
 LOCK_FILE = REPO_ROOT / "cef.lock.json"
 DEPS_DIR = REPO_ROOT / ".cef-deps"
 HEADERS_DIR = REPO_ROOT / ".cef-headers"
@@ -652,6 +654,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--limit", type=int, default=12, help="how many versions --list prints")
     parser.add_argument("--force", action="store_true", help="re-download even when the tree already exists")
     parser.add_argument("--json", action="store_true", help="machine-readable summary")
+    argv, pasted_note = argv_notes.strip_trailing_comment(argv)
+    if pasted_note:
+        print(f"note: {pasted_note}", file=sys.stderr)
     args = parser.parse_args(argv)
     if args.platform:
         # Set before anything calls platform_entry(): the lock file, the archive name and
