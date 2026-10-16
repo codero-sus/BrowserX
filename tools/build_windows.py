@@ -49,6 +49,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tools"))       # so argv_notes is importable however we are called
+import argv_notes                                  # noqa: E402  (path is set up just above)
 SRC_DIR = REPO_ROOT / "src"
 OUT_DIR = REPO_ROOT / "out"
 OBJ_DIR = REPO_ROOT / "build" / "obj-win"
@@ -1203,6 +1205,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--quiet", action="store_true", help="less output")
     parser.add_argument("--max-errors", type=int, default=5,
                         help="how many failing files to show in full (default 5)")
+    argv, pasted_note = argv_notes.strip_trailing_comment(argv)
+    if pasted_note:
+        say(f"note: {pasted_note}")
     args = parser.parse_args(argv)
 
     try:
