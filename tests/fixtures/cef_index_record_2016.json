@@ -1,0 +1,44 @@
+{
+  "//": "A real record, captured from the CEF index on 2026-10-16 when a Windows fetch resolved it. It is kept because it is the shape that broke the resolver: a version entry is an object carrying cef_version, channel, chromium_version and files, not a version string. The list it came from is ordered newest first, and this 2016 build was its last element - so taking the last element picked it, and formatting it into the archive name produced a URL full of JSON that the download refused.",
+  "//why-kept": "tools/fetch_cef.py --self-test uses this to prove the resolver still reads this shape and still chooses a modern build over it.",
+  "cef_version": "3.2704.1414.g185cd6c",
+  "channel": "stable",
+  "chromium_version": "51.0.2704.47",
+  "files": [
+    {
+      "last_modified": "2016-05-26T05:43:53.364000Z",
+      "name": "cef_binary_3.2704.1414.g185cd6c_windows64_release_symbols.tar.bz2",
+      "sha1": "4ceb4c4b22b587457cc3f152debda90dfce0c052",
+      "size": 210671973,
+      "type": "release_symbols"
+    },
+    {
+      "last_modified": "2016-05-26T05:43:46.128000Z",
+      "name": "cef_binary_3.2704.1414.g185cd6c_windows64_minimal.tar.bz2",
+      "sha1": "33f62779c330507ec035a08e86df180438f63495",
+      "size": 104064081,
+      "type": "minimal"
+    },
+    {
+      "last_modified": "2016-05-26T05:43:39.521000Z",
+      "name": "cef_binary_3.2704.1414.g185cd6c_windows64_debug_symbols.tar.bz2",
+      "sha1": "b42c4457e0ea86c9aa213924d718260f69936951",
+      "size": 243802628,
+      "type": "debug_symbols"
+    },
+    {
+      "last_modified": "2016-05-26T05:43:32.747000Z",
+      "name": "cef_binary_3.2704.1414.g185cd6c_windows64_client.tar.bz2",
+      "sha1": "cb6a3178f4b85470b400cb5620138d94af30f1a7",
+      "size": 42006570,
+      "type": "client"
+    },
+    {
+      "last_modified": "2016-05-26T05:43:27.640000Z",
+      "name": "cef_binary_3.2704.1414.g185cd6c_windows64.tar.bz2",
+      "sha1": "a5c09cfd51f236a227caee8c8839d98038fbc23a",
+      "size": 254486913,
+      "type": "standard"
+    }
+  ]
+}
