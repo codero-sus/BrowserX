@@ -40,6 +40,7 @@ import json
 import os
 import platform
 import re
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -430,6 +431,155 @@ def base_includes(cef_root: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
+# Incremental compilation.
+#
+# The POSIX build gets this from make. Without it, every Windows rebuild recompiled every
+# file - including CEF's own binding layer, which is over a hundred translation units that
+# never change - so a rebuild that should take a second took minutes. That is the thing a
+# distributed build accelerator would be papering over, and it is fixable directly.
+#
+# How the decision is made, and what it can miss:
+#   * A source is recompiled when the object is missing, when its recipe changed (compiler,
+#     flags, defines, include paths, or the CEF pin), or when any file it includes is newer
+#     than the object.
+#   * Includes are found by scanning quoted #include directives transitively through the
+#     project and CEF headers. Angle-bracket includes (the standard library, the Windows
+#     SDK) are not scanned: they do not change between runs on one machine, and the recipe
+#     hash covers the SDK path if it is ever replaced.
+#   * CEF's headers are covered by the recipe hash (the pin, plus the newest mtime in
+#     include/), so re-fetching CEF rebuilds everything without needing to walk its tree.
+#   * If the cache is missing, unreadable, or older than the object it describes, the file
+#     is compiled: the failure mode of this whole scheme has to be "do the work", never
+#     "link something stale".
+# ---------------------------------------------------------------------------
+INCLUDE_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
+
+
+def scan_includes(start: Path, include_dirs: list[Path]) -> list[Path]:
+    """Every file `start` pulls in through quoted includes, transitively.
+
+    Quoted includes only, and unresolved ones are skipped rather than guessed at: a header
+    this cannot find is a header whose mtime cannot be compared, and inventing a
+    dependency would be worse than compiling one file too many.
+    """
+    seen: dict[Path, None] = {}
+    stack = [start]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen[current] = None
+        try:
+            text = current.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            match = INCLUDE_RE.match(line)
+            if not match:
+                continue
+            name = match.group(1)
+            # Quoted includes resolve against the including file's directory first, then
+            # the include directories - which is what the compiler does.
+            candidates = [current.parent / name] + [d / name for d in include_dirs]
+            for candidate in candidates:
+                if candidate.is_file():
+                    stack.append(candidate)
+                    break
+    seen.pop(start, None)
+    return sorted(seen)
+
+
+def recipe_for(source: Path, cl: Path, includes: list[Path], defines: list[str],
+               debug: bool, cef_root: Path, extra: str = "") -> str:
+    """A hash of everything that changes what an object file should contain.
+
+    If any of this changes, every object is rebuilt: a flag or an include path is not a
+    detail, and an object compiled under a different recipe is not usable proof that the
+    new one works.
+    """
+    parts = [str(cl), "debug" if debug else "release", *defines,
+             *(str(p) for p in includes), str(cef_root), extra]
+    return hashlib.sha1("\x00".join(parts).encode("utf-8", "replace")).hexdigest()
+
+
+def cef_fingerprint(cef_root: Path) -> str:
+    """A cheap stamp for the CEF headers: the pin, plus the newest header mtime."""
+    stamp = ""
+    lock = REPO_ROOT / "cef.lock.json"
+    if lock.is_file():
+        try:
+            stamp += lock.read_text(errors="replace")
+        except OSError:
+            pass
+    newest = 0.0
+    include_dir = cef_root / "include"
+    if include_dir.is_dir():
+        for header in include_dir.rglob("*.h"):
+            try:
+                newest = max(newest, header.stat().st_mtime)
+            except OSError:
+                continue
+    return stamp + f"|{newest:.0f}"
+
+
+def deps_file(obj: Path) -> Path:
+    return obj.with_suffix(obj.suffix + ".deps")
+
+
+def read_deps(obj: Path) -> dict | None:
+    path = deps_file(obj)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None  # unreadable cache means "compile it", never "assume it is fine"
+    if not isinstance(data, dict) or "recipe" not in data or "deps" not in data:
+        return None
+    return data
+
+
+def write_deps(obj: Path, recipe: str, deps: list[Path]) -> None:
+    try:
+        deps_file(obj).write_text(
+            json.dumps({"recipe": recipe, "deps": [str(p) for p in deps]}),
+            encoding="utf-8")
+    except OSError:
+        pass  # a cache that cannot be written costs time, not correctness
+
+
+def stale_reason(source: Path, obj: Path, recipe: str, fresh_deps: list[Path],
+                 deps: dict | None = None) -> str:
+    """Why this source must be compiled, or an empty string when the object is usable.
+
+    Pure on purpose: the rule that decides whether a build happens is worth testing, and
+    testing it must not require a compiler.
+    """
+    if not obj.is_file():
+        return "no object file yet"
+    cached = read_deps(obj) if deps is None else deps
+    if cached is None:
+        return "no dependency record (compiled before this existed)"
+    if cached.get("recipe") != recipe:
+        return "the compiler, flags or CEF changed"
+    try:
+        built_at = obj.stat().st_mtime
+    except OSError:
+        return "the object file is unreadable"
+    # The source is its own first dependency. Leaving it out is the bug the self-test
+    # caught: an edited .cc file would have been skipped, and the build would have linked
+    # an object compiled from the old text - the failure mode this whole scheme exists to
+    # avoid, and the one that is hardest to notice.
+    for dependency in [source] + (fresh_deps or [Path(p) for p in cached.get("deps", [])]):
+        try:
+            if dependency.stat().st_mtime > built_at:
+                return f"{dependency.name} changed"
+        except OSError:
+            return f"{dependency.name} is gone"
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Running things
 # ---------------------------------------------------------------------------
 def run(command: list[str], capture: bool = True, cwd: Path | None = None,
@@ -600,23 +750,58 @@ def build(args) -> int:
     for obj in objects:
         obj.parent.mkdir(parents=True, exist_ok=True)
 
+    # Decide what actually needs compiling, before compiling anything.
+    cef_stamp = cef_fingerprint(cef_root)
+    to_compile: list[tuple[Path, Path, str, list[Path]]] = []   # source, obj, recipe, deps
+    reused = 0
+    for source in sources:
+        obj = object_path(source)
+        include_paths = [Path(p) for p in includes_for(source)]
+        recipe = recipe_for(source, cl, include_paths, defines_for(source), args.debug,
+                            cef_root, cef_stamp)
+        if args.force:
+            reason = "--force"
+        else:
+            reason = stale_reason(source, obj, recipe, [])
+        if reason:
+            # Scanning includes is the expensive part, so it is done only for the files
+            # that are going to be compiled anyway - and the result is cached with the
+            # object for the next run to compare against.
+            to_compile.append((source, obj, recipe, scan_includes(source, include_paths)))
+            if args.verbose:
+                say(f"      compiling {source.relative_to(REPO_ROOT)} — {reason}")
+        else:
+            reused += 1
+
+    if not to_compile:
+        step(f"nothing to compile: all {len(sources)} objects are up to date")
+    else:
+        step(f"compiling {len(to_compile)} of {len(sources)} sources with {args.jobs} job(s)"
+             + (f", reusing {reused}" if reused else ""))
+
     failures: list[tuple[Path, str]] = []
-    done = 0
 
-    def compile_one(source: Path) -> tuple[Path, int, str]:
-        command = compile_command(cl, source, object_path(source),
-                                  [Path(p) for p in includes_for(source)],
+    def compile_one(item: tuple[Path, Path, str, list[Path]]) -> tuple[Path, int, str, list[Path], str]:
+        source, obj, recipe, deps = item
+        command = compile_command(cl, source, obj, [Path(p) for p in includes_for(source)],
                                   defines_for(source), args.debug, sdk)
-        return source, *run(command, capture=True, env=env)
+        code, text = run(command, capture=True, env=env)
+        return source, code, text, deps, recipe
 
-    step(f"compiling {len(sources)} sources with {args.jobs} job(s)")
-    with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        for source, code, text in pool.map(compile_one, sources):
-            done += 1
-            if code != 0:
-                failures.append((source, text))
-            elif args.verbose:
-                say(f"      [{done}/{len(sources)}] {source.relative_to(REPO_ROOT)}")
+    done = 0
+    if to_compile:
+        with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+            for source, code, text, deps, recipe in pool.map(compile_one, to_compile):
+                done += 1
+                if code != 0:
+                    failures.append((source, text))
+                else:
+                    # The record is written only after a successful compile, so a failed
+                    # one is always retried rather than remembered as done.
+                    write_deps(object_path(source), recipe, deps)
+                    if args.verbose:
+                        say(f"      [{done}/{len(to_compile)}] "
+                            f"{source.relative_to(REPO_ROOT)}")
 
     if failures:
         for source, text in failures[: args.max_errors]:
@@ -627,7 +812,8 @@ def build(args) -> int:
         say("")
         raise BuildError(f"{len(failures)} source file(s) failed to compile "
                          f"(showing up to {args.max_errors})")
-    ok(f"{len(sources)} sources compiled")
+    ok(f"{len(to_compile)} sources compiled"
+       + (f", {reused} reused from the last build" if reused else ""))
 
     # --- link --------------------------------------------------------------
     lib_paths = cef_lib_dirs(cef_root)
@@ -880,6 +1066,84 @@ def self_test() -> int:
     expect(includes_for_source(wrapper, cef, ["src", "cef"]) == [str(cef)],
            "the wrapper cannot see our headers at all")
 
+    # --- incremental compilation ----------------------------------------------------
+    # Tested with real files, because the whole point of this logic is what the filesystem
+    # says about time - and because the failure that matters is linking something stale.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "inc").mkdir()
+        header = root / "inc" / "thing.h"
+        deep = root / "inc" / "deep.h"
+        source = root / "a.cc"
+        obj = root / "a.obj"
+        header.write_text("#pragma once\n#include \"deep.h\"\n")
+        deep.write_text("#pragma once\nint deep();\n")
+        source.write_text('#include "thing.h"\n#include <vector>\n')
+
+        deps = scan_includes(source, [root / "inc"])
+        expect(set(deps) == {header, deep},
+               "a source's dependencies include the headers it pulls in, transitively")
+        expect(source not in deps, "a source is not its own dependency")
+
+        recipe = "recipe-1"
+        expect(stale_reason(source, obj, recipe, deps) == "no object file yet",
+               "a missing object is compiled")
+        obj.write_text("object")
+        expect("no dependency record" in stale_reason(source, obj, recipe, deps),
+               "an object with no dependency record is compiled (the cache cannot vouch "
+               "for it)")
+        write_deps(obj, recipe, deps)
+        def age(path: Path, seconds: float) -> None:
+            stamp = time.time() + seconds
+            os.utime(path, (stamp, stamp))
+
+        age(source, -60); age(header, -60); age(deep, -60); age(obj, 0)
+        expect(stale_reason(source, obj, recipe, deps) == "",
+               "an up-to-date object is reused: nothing is compiled")
+        age(source, 30)
+        expect("a.cc changed" in stale_reason(source, obj, recipe, []),
+               "an edited source is recompiled, naming the file - which the cached path "
+               "must notice on its own")
+        age(source, -60); age(deep, 30)
+        expect("deep.h changed" in stale_reason(source, obj, recipe, []),
+               "a change in a header two levels up recompiles the dependent source")
+        age(deep, -60)
+        expect("compiler, flags or CEF changed" in stale_reason(source, obj, "recipe-2", deps),
+               "a changed recipe (compiler, flags, CEF) rebuilds everything")
+        (root / "gone.h").write_text("")
+        write_deps(obj, recipe, deps + [root / "gone.h"])
+        (root / "gone.h").unlink()
+        # Asked the way the build asks on a second run: no fresh scan, so the cached list
+        # is what has to notice.
+        expect("gone.h is gone" in stale_reason(source, obj, recipe, []),
+               "a deleted header recompiles what included it, instead of trusting the cache")
+
+        # A corrupted cache must mean "compile it", never "assume it is fine".
+        deps_file(obj).write_text("{ this is not json")
+        expect("no dependency record" in stale_reason(source, obj, recipe, deps),
+               "an unreadable cache is treated as no cache")
+        deps_file(obj).write_text('{"recipe": "recipe-1"}')
+        expect("no dependency record" in stale_reason(source, obj, recipe, deps),
+               "a cache missing its dependency list is not trusted")
+
+        # The recipe must actually notice the things that change an object's meaning.
+        cl = Path("C:/fake/cl.exe")
+        base = recipe_for(source, cl, [root / "inc"], ["UNICODE"], False, root / "cef", "pin")
+        for name, other in (
+                ("a different define", recipe_for(source, cl, [root / "inc"], ["UNICODE", "X"],
+                                                  False, root / "cef", "pin")),
+                ("release to debug", recipe_for(source, cl, [root / "inc"], ["UNICODE"], True,
+                                                root / "cef", "pin")),
+                ("a different include path", recipe_for(source, cl, [root], ["UNICODE"],
+                                                        False, root / "cef", "pin")),
+                ("a re-fetched CEF", recipe_for(source, cl, [root / "inc"], ["UNICODE"],
+                                                False, root / "cef", "pin-2")),
+                ("a different compiler", recipe_for(source, Path("C:/other/cl.exe"),
+                                                    [root / "inc"], ["UNICODE"], False,
+                                                    root / "cef", "pin"))):
+            expect(base != other, f"the recipe changes when there is {name}")
+
     # --- the source rule -----------------------------------------------------------
     sources = app_sources()
     expect(bool(sources), "the source rule finds the browser's sources")
@@ -892,6 +1156,20 @@ def self_test() -> int:
            "libcef.dll is staged: Windows has no rpath, so the exe needs it next to it")
     expect(any(name.endswith("v8_context_snapshot.bin") for name in CEF_RUNTIME_FILES),
            "the V8 snapshot and ICU data are staged too (no snapshot, no JavaScript)")
+
+    # The bug this catches: the incremental build used a local named `plan`, which is
+    # already the resolved build plan (CEF root, sources, libcef). The linker then asked
+    # that list for libcef and would have failed on the first real build, while a dry run
+    # returned before the line that used it - so nothing would have noticed until someone
+    # with MSVC installed ran the build.
+    source_text = Path(__file__).read_text(errors="replace")
+    body = source_text[source_text.index("def build(args)"):]
+    body = body[:body.index("\ndef ")] if "\ndef " in body else body
+    shadowing = [m.group(1) for m in re.finditer(r"^\s{4}(\w+)\s*:[^=]*=\s*\[\]|"
+                                                 r"^\s{4}(\w+)\s*=\s*plan_build", body, re.M)]
+    expect("libcef" in body, "the link step still asks the build plan for libcef")
+    expect(shadowing.count("plan") <= 1,
+           "the resolved build plan is not shadowed by a local of the same name")
 
     print()
     if failures:
@@ -915,6 +1193,8 @@ def main(argv: list[str]) -> int:
                         help="print the commands instead of running them")
     parser.add_argument("--check-sources", action="store_true",
                         help="prove this build compiles the same sources as the Makefile")
+    parser.add_argument("--force", action="store_true",
+                        help="compile every source, ignoring the incremental cache")
     parser.add_argument("--check-portability", action="store_true",
                         help="find POSIX-only includes that would break this build")
     parser.add_argument("--self-test", action="store_true",

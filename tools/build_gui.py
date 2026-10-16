@@ -203,7 +203,8 @@ def jobs(has_cef: bool, has_toolchain: bool, has_python_tk: bool = True) -> list
             "links against. One time; ~1 GB extracted.",
             script("fetch_cef.py"), group="setup"),
         Job("build", build_label,
-            "Compiles the browser and stages the CEF runtime next to the executable.",
+            "Compiles the browser and stages the CEF runtime next to the executable. Only "
+            "what changed is recompiled, so a rebuild after a small edit is quick.",
             build_command, needs="cef", group="build"),
         Job("run", "Run BrowserX",
             "Starts the browser you just built.", [str(EXECUTABLE)],
