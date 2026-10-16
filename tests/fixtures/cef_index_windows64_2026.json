@@ -1,0 +1,79 @@
+{
+  "//": "The shape of the CEF index as it was on 2026-10-16, captured from a real fetch on a Windows machine. The version strings, the archive name of the beta build and the absence of any 155.x entry are what that machine actually reported; the SHA-1 values are placeholders because the report did not include them.",
+  "//why-kept": "A plain fetch resolved the numerically newest entry and downloaded cef_binary_156.0.7+..._windows64_beta.tar.bz2 - a beta build - because nothing checked whether the newest version was released. tools/fetch_cef.py --self-test replays this shape so a pre-release can never be chosen for a release build again.",
+  "//what-the-report-showed": [
+    "CEF builds available for windows64 (1215 total; newest 12)",
+    "156.0.7+g47dbc1d+chromium-156.0.8078.17  (Chromium 156.0.8078.17)",
+    "154.0.34+g14c5a08+chromium-154.0.8037.98  (Chromium 154.0.8037.98)",
+    "... and 154.0.33, 154.0.32, 154.0.28, 154.0.26, 154.0.25, 154.0.23, 154.0.22, 154.0.20 below them",
+    "no 155.x between 154.x and 156.x - the 156.x entries are the beta line"
+  ],
+  "windows64": {
+    "versions": [
+      {
+        "cef_version": "156.0.7+g47dbc1d+chromium-156.0.8078.17",
+        "channel": "beta",
+        "chromium_version": "156.0.8078.17",
+        "files": [
+          {
+            "name": "cef_binary_156.0.7+g47dbc1d+chromium-156.0.8078.17_windows64_beta.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000001",
+            "size": 254000000,
+            "type": "standard"
+          },
+          {
+            "name": "cef_binary_156.0.7+g47dbc1d+chromium-156.0.8078.17_windows64_beta_minimal.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000002",
+            "size": 104000000,
+            "type": "minimal"
+          }
+        ]
+      },
+      {
+        "cef_version": "156.0.3+g3adefb8+chromium-156.0.8078.17",
+        "channel": "beta",
+        "chromium_version": "156.0.8078.17",
+        "files": [
+          {
+            "name": "cef_binary_156.0.3+g3adefb8+chromium-156.0.8078.17_windows64_beta.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000003",
+            "size": 254000000,
+            "type": "standard"
+          }
+        ]
+      },
+      {
+        "cef_version": "154.0.34+g14c5a08+chromium-154.0.8037.98",
+        "channel": "stable",
+        "chromium_version": "154.0.8037.98",
+        "files": [
+          {
+            "name": "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000004",
+            "size": 254000000,
+            "type": "standard"
+          },
+          {
+            "name": "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64_minimal.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000005",
+            "size": 104000000,
+            "type": "minimal"
+          }
+        ]
+      },
+      {
+        "cef_version": "154.0.33+ga03e714+chromium-154.0.8037.94",
+        "channel": "stable",
+        "chromium_version": "154.0.8037.94",
+        "files": [
+          {
+            "name": "cef_binary_154.0.33+ga03e714+chromium-154.0.8037.94_windows64.tar.bz2",
+            "sha1": "0000000000000000000000000000000000000006",
+            "size": 254000000,
+            "type": "standard"
+          }
+        ]
+      }
+    ]
+  }
+}
