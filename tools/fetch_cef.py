@@ -340,6 +340,20 @@ def cef_version_key(version: str) -> tuple[int, ...]:
     return tuple(numbers) or (0,)
 
 
+def cef_tree_version_key(name: str) -> tuple[int, ...]:
+    """Sort key for a CEF distribution directory or archive name, by its numbers.
+
+    "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64" -> (154, 0, 34).
+
+    Shared with tools/build_windows.py rather than written twice: the fetch decides which
+    build is on disk and the build decides which one to compile, and if the two disagreed
+    about which version is newer the result would be a build that silently uses the tree
+    the fetch just replaced.
+    """
+    match = re.search(r"cef_binary_(\d+(?:\.\d+)*)", name)
+    return tuple(int(part) for part in match.group(1).split(".")) if match else (0,)
+
+
 def _as_version_strings(value: object) -> list[str]:
     """Flattens any shape an index entry takes into version strings.
 
@@ -365,6 +379,53 @@ def _as_version_strings(value: object) -> list[str]:
             found.extend(_as_version_strings(item))
         return found
     return []
+
+
+def _as_records(value: object) -> list[dict]:
+    """The same shapes `_as_version_strings` reads, keeping channel and files."""
+    if looks_like_version(value):
+        return [{"version": str(value), "channel": "", "files": []}]
+    if isinstance(value, dict):
+        for field in VERSION_FIELDS:
+            if looks_like_version(value.get(field)):
+                files = value.get("files")
+                return [{"version": str(value[field]),
+                         "channel": str(value.get("channel") or ""),
+                         "files": files if isinstance(files, list) else []}]
+        for field in NESTED_FIELDS:
+            if field in value:
+                nested = _as_records(value[field])
+                if nested:
+                    return nested
+        return [{"version": key, "channel": "", "files": []}
+                for key in value if looks_like_version(key)]
+    if isinstance(value, list):
+        found: list[dict] = []
+        for item in value:
+            found.extend(_as_records(item))
+        return found
+    return []
+
+
+def version_records(index: dict, entry: str) -> list[dict]:
+    """Every version the index offers for a platform, as records."""
+    candidates: list[dict] = []
+    if entry in index:
+        candidates = _as_records(index[entry])
+    if not candidates:
+        for key, value in index.items():
+            if key.startswith("//"):
+                continue
+            candidates = _as_records(value)
+            if candidates:
+                break
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for record in candidates:
+        if record["version"] not in seen:
+            seen.add(record["version"])
+            unique.append(record)
+    return unique
 
 
 def versions_for(index: dict, entry: str) -> list[str]:
@@ -403,6 +464,84 @@ def latest_stable(versions: object) -> str:
             "      python tools/fetch_cef.py --list                (see what it offers)\n"
             "      python tools/fetch_cef.py --version <version>")
     return newest_first(strings)[0]
+
+
+# Words CEF puts in an archive name, or in an index channel field, when a build is not
+# a released one. The failure that reached a real machine: the numerically newest entry
+# in the index was a pre-release, and a plain fetch downloaded
+#   cef_binary_156.0.7+..._windows64_beta.tar.bz2
+# "Newest" is not the same question as "newest one meant for users" - the same rule this
+# project already applies to the Windows SDK.
+PRE_RELEASE_WORDS = ("beta", "dev", "canary", "master", "alpha", "nightly", "trunk")
+
+
+def flavour_type(flavour: str) -> str:
+    """The index's file type for a flavour: 'standard' or 'minimal'."""
+    return "minimal" if flavour == "minimal" else "standard"
+
+
+def name_channel_marker(name: str) -> str:
+    """The pre-release word in an archive name, or "" for a release archive."""
+    for token in re.split(r"[^A-Za-z0-9]+", name.lower()):
+        if token in PRE_RELEASE_WORDS:
+            return token
+    return ""
+
+
+def record_files(record: dict, entry: str, flavour: str) -> list[dict]:
+    """The record's files for one platform and flavour."""
+    wanted = flavour_type(flavour)
+    return [item for item in record.get("files", [])
+            if isinstance(item, dict) and entry in str(item.get("name", ""))
+            and item.get("type") == wanted]
+
+
+def pre_release(record: dict, entry: str, flavour: str) -> tuple[str, str]:
+    """(label, explanation) when a record is not a released build, else ("", "").
+
+    Two independent signals, and the file name wins because it names the thing that
+    would actually be downloaded: what the index offers on disk, and what the index
+    says in its channel field. A record can be marked 'stable' and still only offer a
+    beta archive; trusting the label over the file would fetch a pre-release.
+    """
+    files = record_files(record, entry, flavour)
+    names = [str(item.get("name", "")) for item in files]
+    markers = {name_channel_marker(name) for name in names}
+    markers.discard("")
+    if names and markers and all(name_channel_marker(name) for name in names):
+        label = sorted(markers)[0]
+        return label, (f"the {flavour_type(flavour)} archive the index offers for "
+                       f"{entry} is a {label} build")
+    stated = str(record.get("channel") or "").strip().lower()
+    if stated and stated != "stable":
+        return stated, f"the index marks it {stated}"
+    return "", ""
+
+
+def choose_record(records: list[dict], entry: str, flavour: str) -> tuple[dict, str]:
+    """The newest *released* build, with a note when a newer pre-release was skipped.
+
+    The version numbers decide the order; the release test decides what is eligible.
+    If the index offers nothing but pre-releases, the newest is still returned - with a
+    note saying so, because silently building the browser from a beta is worse than
+    saying out loud that there was no alternative.
+    """
+    if not records:
+        raise FetchError(f"the CEF index offered no versions for {entry}")
+    ordered = sorted(records, key=lambda record: cef_version_key(record["version"]),
+                     reverse=True)
+    for position, record in enumerate(ordered):
+        if not pre_release(record, entry, flavour)[0]:
+            if position:
+                newest = ordered[0]
+                label, why = pre_release(newest, entry, flavour)
+                return record, (f"skipped {position} newer pre-release build(s), "
+                                f"newest {newest['version']} ({label}: {why})")
+            return record, ""
+    newest = ordered[0]
+    label, why = pre_release(newest, entry, flavour)
+    return newest, (f"the index offers no released build for {entry} ({label}: {why}); "
+                    f"using the newest, {newest['version']}")
 
 
 def require_version(version: object) -> str:
@@ -449,6 +588,8 @@ def pick_file(record: dict, entry: str, flavour: str) -> dict:
     for item in files if isinstance(files, list) else []:
         name = item.get("name", "") if isinstance(item, dict) else ""
         if entry in name and item.get("type") == wanted_type:
+            if name_channel_marker(name):
+                continue        # a beta/dev archive is never "the" file for a release
             return item
     return {}
 
@@ -638,18 +779,27 @@ def ensure_generated_headers(headers_dir: Path, chromium_ref: str) -> None:
 # ---------------------------------------------------------------------------
 # Modes
 # ---------------------------------------------------------------------------
-def cmd_list(base: str, entry: str, limit: int) -> int:
+def cmd_list(base: str, entry: str, limit: int, flavour: str = "standard") -> int:
     index = fetch_index(base)
     versions = versions_for(index, entry)
     if not versions:
         log(f"no versions listed for {entry}")
         return 1
-    ordered = newest_first(versions)
-    log_plan(f"CEF builds available for {entry} ({len(versions)} total; newest {limit})")
-    for index, version in enumerate(ordered[:limit]):
+    records = version_records(index, entry)
+    ordered = sorted(records, key=lambda record: cef_version_key(record["version"]),
+                     reverse=True)
+    chosen, skipped = choose_record(records, entry, flavour)
+    log_plan(f"CEF builds available for {entry} ({len(records)} total; newest {limit})")
+    for record in ordered[:limit]:
+        version = record["version"]
         chromium = chromium_version_of(version)
-        marker = "  <- what a plain fetch takes" if index == 0 else ""
-        log(f"{version}{('  (Chromium ' + chromium + ')') if chromium else ''}{marker}")
+        label = pre_release(record, entry, flavour)[0]
+        marker = "  <- what a plain fetch takes" if record is chosen else ""
+        note = f"  [{label}]" if label else ""
+        log(f"{version}{('  (Chromium ' + chromium + ')') if chromium else ''}{note}{marker}")
+    if skipped and skipped not in ("", None):
+        log("")
+        log_plan(skipped)
     return 0
 
 
@@ -665,22 +815,54 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
 
     version = args.version or lock.get("version") or ""
     record: dict = {}
+    index: dict | None = None
+
+    if version and not args.version and lock.get("pin_mode") == "track-stable":
+        # Honour the lock, but not a lock that pins a pre-release: that is how a machine
+        # ends up building its browser on a beta forever, because the pin is now the only
+        # thing anyone looks at. A deliberate --version is never second-guessed.
+        #
+        # A locked version normally needs no network at all, and installing from a local
+        # archive (BROWSERX_CEF_ARCHIVE) is a documented offline path - so an unreachable
+        # index is not a reason to refuse. It just means the check cannot be made.
+        try:
+            index = fetch_index(base)
+        except FetchError as error:
+            log_plan(f"cannot reach the CEF index to check the pin ({error}); "
+                     f"using the pinned {version} as it is")
+        label, why = pre_release(entry_for(index or {}, entry, version), entry, flavour)
+        if label:
+            log_plan(f"cef.lock.json pins {version}, which is a pre-release ({label}: {why})")
+            log_plan("resolving the newest released build instead — "
+                     "pass --version to keep this one deliberately")
+            lock["sha1"] = ""
+            lock["size_bytes"] = 0
+            version = ""
+
     if not version:
-        log_plan("no pinned version yet — resolving the newest stable build")
-        index = fetch_index(base)
-        versions = versions_for(index, entry)
-        version = latest_stable(versions)
-        record = entry_for(index, entry, version)
+        log_plan("no released version pinned — resolving the newest one")
+        if index is None:
+            index = fetch_index(base)
+        records = version_records(index, entry)
+        record, skipped = choose_record(records, entry, flavour)
+        version = record["version"]
+        if skipped:
+            log_plan(skipped)
         log_plan(f"resolved {version}"
                  + (f" (Chromium {chromium_version_of(version)})" if chromium_version_of(version) else "")
-                 + f" — newest of {len(versions)} offered for {entry}")
+                 + f" — newest release of {len(records)} offered for {entry}")
         pinned = lock.get("version") or ""
         if looks_like_version(pinned) and cef_version_key(version) < cef_version_key(pinned):
             log_plan(f"note: that is older than the {pinned} this repo was pinned at; the "
                      f"index is the only source for {entry}, so this is what it offers")
     elif lock.get("pin_mode") == "track-stable" and args.update:
-        index = fetch_index(base)
-        newest = latest_stable(versions_for(index, entry))
+        if index is None:
+            index = fetch_index(base)
+        records = version_records(index, entry)
+        chosen, skipped = choose_record(records, entry, flavour)
+        if skipped:
+            log_plan(skipped)
+        newest = chosen["version"]
         if newest != version:
             log_plan(f"re-pinning {version} -> {newest}")
             lock["sha1"] = ""
@@ -699,6 +881,9 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
     filename = archive_name(version, entry, flavour)
     expected_sha1 = "" if args.version or args.update else lock.get("sha1", "")
     published = pick_file(record, entry, flavour)
+    if not published:
+        log_plan(f"note: the index publishes no archive for {version} on {entry}, so the "
+                 f"file name is the usual one and there is no SHA-1 to check")
     if published:
         # The index named the file and published its SHA-1: use both rather than
         # guessing a name and downloading unverified. This is the common case for the
@@ -768,6 +953,85 @@ def cmd_download(args, lock: dict, entry: str, flavour: str, base: str) -> int:
     return 0
 
 
+def size_of(path: Path) -> int:
+    """Bytes under a directory, counting each file once (hardlinks are one file)."""
+    total = 0
+    seen: set[tuple[int, int]] = set()
+    for item in path.rglob("*"):
+        try:
+            info = item.stat()
+        except OSError:
+            continue
+        if item.is_file():
+            key = (info.st_dev, info.st_ino)
+            if key in seen:
+                continue
+            seen.add(key)
+            total += info.st_size
+    return total
+
+
+def installed_trees(entry: str) -> list[Path]:
+    """Extracted CEF trees for one platform, oldest first."""
+    if not DEPS_DIR.is_dir():
+        return []
+    return sorted((p for p in DEPS_DIR.glob("cef_binary_*")
+                   if p.is_dir() and entry in p.name
+                   and (p / "include" / "cef_app.h").is_file()),
+                  key=lambda p: cef_tree_version_key(p.name))
+
+
+def cmd_prune(args, lock: dict, entry: str, flavour: str) -> int:
+    """Remove extracted CEF trees that are not the one this project uses.
+
+    Fetching the wrong build is cheap to fix and expensive to keep: a CEF distribution is
+    around 1.4 GB once extracted, and a leftover tree is also a way for a build to use the
+    wrong engine months later. Only trees for this platform that are not the pinned one
+    are considered, and only with --apply; without it this lists and removes nothing.
+    """
+    version = lock.get("version") or ""
+    keep = cef_root_for(version, entry, flavour) if version else None
+    trees = installed_trees(entry)
+    if not trees:
+        log(f"no extracted CEF trees for {entry} under {DEPS_DIR}")
+        return 0
+    if keep is None:
+        log_plan("cef.lock.json pins no version, so nothing is safe to remove yet")
+        log("run a fetch first: python tools/fetch_cef.py")
+        return 0
+
+    stale = [tree for tree in trees if tree != keep]
+    if not stale:
+        log(f"nothing to remove: {keep.name} is the only tree here, and it is the pinned one")
+        return 0
+
+    freed = 0
+    for tree in stale:
+        size = size_of(tree)
+        freed += size
+        label = pre_release({}, entry, flavour)[0] or ""
+        marks = " (a pre-release)" if any(
+            token in PRE_RELEASE_WORDS for token in re.split(r"[^A-Za-z0-9]+", tree.name.lower())
+        ) else ""
+        if not args.apply:
+            log(f"would remove {tree.name}{marks}  ({human_bytes(size)})")
+            continue
+        try:
+            shutil.rmtree(tree)
+        except OSError as error:
+            raise FetchError(f"could not remove {tree}: {error}") from error
+        log(f"removed {tree.name}{marks}  ({human_bytes(size)})")
+        del label
+
+    log("")
+    if args.apply:
+        log(f"freed {human_bytes(freed)}; kept {keep.name}")
+    else:
+        log(f"{human_bytes(freed)} would be freed; kept {keep.name}")
+        log("nothing was removed — add --apply to do it")
+    return 0
+
+
 def sha1_of(path: Path) -> str:
     digest = hashlib.sha1()
     with path.open("rb") as handle:
@@ -780,6 +1044,7 @@ def sha1_of(path: Path) -> str:
 # Self-test: the resolution logic, offline
 # ---------------------------------------------------------------------------
 FIXTURE_2016 = REPO_ROOT / "tests" / "fixtures" / "cef_index_record_2016.json"
+FIXTURE_2026 = REPO_ROOT / "tests" / "fixtures" / "cef_index_windows64_2026.json"
 MODERN = "146.0.11+g4d5e6f7+chromium-146.0.7680.31"
 OLDER = "145.0.8+g1a2b3c4+chromium-145.0.7632.75"
 
@@ -840,6 +1105,11 @@ def self_test() -> int:
            "numbers are compared as numbers, not as text")
     expect(cef_version_key(MODERN) == (146, 0, 11),
            "build metadata after the plus is ignored when ordering")
+    expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64") == (154, 0, 34),
+           "a distribution directory sorts by its version numbers")
+    expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64")
+           > cef_tree_version_key("cef_binary_99.0.1+x_windows64_beta"),
+           "99 does not beat 154 by being sorted as text")
 
     # A record's own file list: exact name and SHA-1, so the archive is not guessed.
     picked = pick_file(entry_for(index, "windows64", record["cef_version"]),
@@ -859,7 +1129,12 @@ def self_test() -> int:
     stubbed = {name: globals()[name] for name in
                ("http_get_json", "stream_download", "extract_archive", "save_lock", "DEPS_DIR")}
     seen: dict[str, str] = {}
-    mixed = {"windows64": {"versions": [modern_record, record]}}
+    mixed = {"windows64": {"versions": [
+        {"cef_version": "999.0.1+g0badc0d+chromium-999.0.1.1", "channel": "beta", "files": [
+            {"name": "cef_binary_999.0.1+g0badc0d+chromium-999.0.1.1_windows64_beta.tar.bz2",
+             "sha1": "9" * 40, "type": "standard"}]},
+        modern_record,
+        record]}}
 
     def fake_get_json(url: str, timeout: int = 60, description: str = "") -> dict:
         return mixed
@@ -892,12 +1167,80 @@ def self_test() -> int:
             globals()[name] = value
 
     expect(code == 0, "a fetch with no pin completes against the stubbed index")
+    expect("beta" not in seen.get("url", "") and "999.0.1" not in seen.get("url", ""),
+           "a pre-release is never what gets downloaded, even when it is newest")
     expect(seen.get("url", "").count("{") == 0 and MODERN in seen.get("url", ""),
            "the URL it downloads is a URL containing the resolved version")
     expect(seen.get("sha1", "") == "1" * 40,
            "and it is verified against the SHA-1 the index published for that file")
     expect(seen.get("url", "").endswith(f"cef_binary_{MODERN}_windows64.tar.bz2"),
            "using the exact file name the index published, not a guessed one")
+
+    # The real index as of 2026-10-16, with a beta line above the stable one. This is
+    # the failure that reached a Windows machine: the newest entry was a beta build.
+    real = json.loads(FIXTURE_2026.read_text())["windows64"]
+    records = version_records(real, "windows64")
+    chosen, note = choose_record(records, "windows64", "standard")
+    expect(chosen["version"].startswith("154.0.34"),
+           "the newest released build is chosen, not the newest build")
+    expect("156.0.7" in note and "beta" in note,
+           "and it says which pre-release it skipped, and why")
+    expect(len(records) == 4, "the index's own records are read (4 versions in the fixture)")
+
+    beta_only = {"windows64": {"versions": [
+        {"cef_version": MODERN, "channel": "beta", "files": [
+            {"name": f"cef_binary_{MODERN}_windows64_dev.tar.bz2", "sha1": "3" * 40,
+             "type": "standard"}]}]}}
+    chosen, note = choose_record(version_records(beta_only, "windows64"), "windows64", "standard")
+    expect(chosen["version"] == MODERN and "no released build" in note,
+           "with nothing but pre-releases it uses one, and says so rather than pretending")
+
+    label, why = pre_release({"cef_version": MODERN, "channel": "dev", "files": [
+        {"name": f"cef_binary_{MODERN}_windows64.tar.bz2", "type": "standard"}]},
+        "windows64", "standard")
+    expect(label == "dev" and "dev" in why,
+           "a channel field is honoured even when the file names look ordinary")
+
+    label, why = pre_release(records[0], "windows64", "standard")
+    expect(label == "beta" and "beta" in why,
+           "a beta archive is recognised by its file name too")
+    plain = pick_file({"files": [
+        {"name": f"cef_binary_{MODERN}_windows64_beta.tar.bz2", "type": "standard"},
+        {"name": f"cef_binary_{MODERN}_windows64.tar.bz2", "type": "standard"}]},
+        "windows64", "standard")
+    expect(plain.get("name") == f"cef_binary_{MODERN}_windows64.tar.bz2",
+           "a release archive is preferred over a pre-release one for the same version")
+
+    # Pruning: the beta tree a wrong fetch left behind is 1.4 GB, and the only thing
+    # that will ever remove it is this. It must remove that one and nothing else.
+    with tempfile.TemporaryDirectory() as scratch:
+        deps = Path(scratch) / ".cef-deps"
+        keep = deps / "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64"
+        keep_beta = deps / "cef_binary_156.0.7+g47dbc1d+chromium-156.0.8078.17_windows64_beta"
+        other_platform = deps / "cef_binary_154.0.34+g14c5a08+linux64"
+        for tree in (keep, keep_beta, other_platform):
+            (tree / "include").mkdir(parents=True, exist_ok=True)
+            (tree / "include" / "cef_app.h").write_text("")
+            (tree / "blob.bin").write_bytes(b"x" * 2048)
+        real_deps = DEPS_DIR
+        try:
+            globals()["DEPS_DIR"] = deps
+            lock = {"version": "154.0.34+g14c5a08+chromium-154.0.8037.98"}
+            args = argparse.Namespace(apply=False)
+            expect(cmd_prune(args, lock, "windows64", "standard") == 0,
+                   "a dry run of --prune succeeds")
+            expect(keep_beta.is_dir(), "a dry run removes nothing")
+            args = argparse.Namespace(apply=True)
+            cmd_prune(args, lock, "windows64", "standard")
+            expect(keep.is_dir(), "the pinned tree survives --prune")
+            expect(not keep_beta.exists(), "the pre-release tree is removed")
+            expect(other_platform.is_dir(),
+                   "another platform's tree is left alone (it was fetched deliberately)")
+            expect(cmd_prune(argparse.Namespace(apply=True),
+                             {"version": ""}, "windows64", "standard") == 0,
+                   "with nothing pinned, --prune refuses to guess and removes nothing")
+        finally:
+            globals()["DEPS_DIR"] = real_deps
 
     # Nothing readable: a clear error, never a download attempt.
     try:
@@ -925,7 +1268,7 @@ def main(argv: list[str]) -> int:
         epilog=__doc__,
     )
     parser.add_argument("--update", action="store_true", help="resolve the newest stable build and re-pin cef.lock.json")
-    parser.add_argument("--list", action="store_true", help="list the versions available upstream")
+    parser.add_argument("--list", action="store_true", help="list the versions available upstream (newest first, marked if a pre-release)")
     parser.add_argument("--headers-only", action="store_true", help="fetch only the CEF headers (for `make check`)")
     parser.add_argument("--print-path", action="store_true", help="print the CEF root that would be used and exit")
     parser.add_argument("--version", default="", help="install this exact CEF version (overrides the lock)")
@@ -943,6 +1286,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable summary")
     parser.add_argument("--self-test", action="store_true",
                         help="check the version resolution offline, no download")
+    parser.add_argument("--prune", action="store_true",
+                        help="list extracted CEF trees that are not the pinned one")
+    parser.add_argument("--apply", action="store_true",
+                        help="with --prune: actually remove them")
     argv, pasted_note = argv_notes.strip_trailing_comment(argv)
     if pasted_note:
         print(f"note: {pasted_note}", file=sys.stderr)
@@ -997,8 +1344,11 @@ def main(argv: list[str]) -> int:
     print("  " + "-" * 60)
 
     try:
+        if args.prune:
+            return cmd_prune(args, lock, entry, flavour)
+
         if args.list:
-            return cmd_list(base, entry, args.limit)
+            return cmd_list(base, entry, args.limit, flavour)
 
         if args.print_path:
             version = args.version or lock.get("version") or "<unpinned>"
