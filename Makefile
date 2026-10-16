@@ -288,8 +288,20 @@ check-compile: check-headers check-core-purity check-bench-page $(CHECK_OBJS)
 	fi
 	@echo ""
 
+# The commands in the documentation are what a person runs first, so they are checked
+# like code: no comment pasted onto the end of a cmd.exe command (it becomes an extra
+# argument and the command refuses it), every tools\ script named exists, every --flag
+# is one that tool accepts, every `make <target>` is a real target.
+.PHONY: check-docs
+check-docs:
+	@$(PYTHON) $(TOOLS_DIR)/check_docs_commands.py
+	@$(PYTHON) $(TOOLS_DIR)/argv_notes.py --self-test
+
 .PHONY: check
-check: check-compile check-improvements check-windows check-gui
+# Order matters: check-improvements is the ratchet that fails on purpose until the
+# ledger passes 200 rows, and make stops at the first failing prerequisite. It runs
+# last so a red gate can never hide a red compiler, a broken window or a broken doc.
+check: check-compile check-windows check-gui check-docs check-improvements
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
@@ -506,12 +518,16 @@ ui-check: pages $(BENCHPAGE_BIN)
 # and the requirements it shows come from the same report `make requirements` prints. These
 # two targets keep it honest - the self-test exercises the job list, the gating and the
 # process runner without opening a window, so it can run on a machine that has no tkinter.
-.PHONY: gui gui-check
+.PHONY: gui check-gui gui-check
 gui:
 	@$(PYTHON) $(ROOT)/tools/build_gui.py
 
-gui-check:
+check-gui:
 	@$(PYTHON) $(ROOT)/tools/build_gui.py --self-test
+
+# The old name for `check-gui`, kept because it was in the notes and in muscle memory.
+# One implementation: this only calls the real target.
+gui-check: check-gui
 
 # -----------------------------------------------------------------------------
 # Windows build checks (run on any machine: they read, they do not compile)

@@ -277,7 +277,8 @@ python tools/build_gui.py --check        # exactly what the window would show
 python tools/build_gui.py --self-test    # the window's logic, no window
 ```
 
-`make gui` and `make check-gui` do the same two things on the Linux side; `make check` runs
+`make gui` opens the window and `make check-gui` (`make gui-check` also works) runs the
+self-test, which is what those two commands do on the Linux side. `make check` runs
 `check-gui`, so the window's logic is checked on every build even though the window itself
 is only ever looked at by a person.
 
@@ -292,9 +293,12 @@ editing `src/core/format.h` recompiles the **26 files that include it** and reus
 other 8.
 
 ```bat
-tools\build_windows.cmd              :: compiles only what changed
-tools\build_windows.cmd --verbose    :: and says why each file was recompiled
-tools\build_windows.cmd --force      :: ignore the cache and rebuild everything
+rem compiles only what changed (the default)
+tools\build_windows.cmd
+rem and says why each file was recompiled
+tools\build_windows.cmd --verbose
+rem ignore the cache and rebuild everything
+tools\build_windows.cmd --force
 ```
 
 If the dependency record is missing or unreadable the file is compiled rather than
@@ -335,6 +339,12 @@ tools\build_windows.cmd --check-portability  find POSIX-only includes that would
 python tools\build_gui.py                   the same build steps, as a window
 python tools\check_build_requirements.py --for windows   the tool table for your machine
 ```
+
+Every command in this file and in the README is checked by `make check-docs`: no note
+sitting after a command on the same line (in `cmd.exe` that is an argument, not a comment,
+which is how `python tools\fetch_cef.py  rem downloads the CEF runtime` came to fail), every
+`tools\` script named exists, every `--flag` is one that tool accepts, and every
+`make <target>` is a target that exists.
 
 `--check-sources` and `--check-portability` are how the Windows build stays honest on a
 machine that is not Windows: the first asks the Makefile for its source list and compares,
