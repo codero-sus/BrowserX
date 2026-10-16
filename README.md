@@ -192,10 +192,16 @@ SDK, Python 3 and Git — CEF is still a 200 MB download, still no CMake or solu
 file):
 
 ```bat
-python tools\fetch_cef.py        :: the Chromium/CEF binaries, SHA-1 verified
-tools\build_windows.cmd --stage  :: build out\BrowserX.exe
+rem the Chromium/CEF binaries, SHA-1 verified
+python tools\fetch_cef.py
+rem build out\BrowserX.exe
+tools\build_windows.cmd --stage
 out\BrowserX.exe
 ```
+
+Paste those a line at a time. In `cmd.exe` a comment is only a comment when it is the
+whole line: `command ... :: note` and `command ... rem note` are passed to the command as
+extra arguments and it will refuse them.
 
 The Windows build is the same sources and the same rules, compiled by MSVC instead of
 g++; `make check-windows` proves both, on any machine. There is also a window for it —
