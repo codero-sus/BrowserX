@@ -13,6 +13,80 @@ asks whether the built browser can *run* here (display, GL, sandbox, caches).
 
 ---
 
+## Get the code with git, not a ZIP
+
+A **Download ZIP** copy looks identical to a checkout and cannot be updated: every fix
+means another download, and `tools\update.cmd` refuses to run because it is not a
+repository. The repository is small (a few hundred KB — the CEF binaries you download are
+not in it), so a checkout is the cheap option.
+
+### You already have a ZIP copy
+
+Six commands, in the folder you already have. Nothing is downloaded again:
+
+```bat
+git init
+git remote add origin https://github.com/codero-sus/BrowserX.git
+git fetch origin arena/419ef7ef-mybrowser
+git reset --hard FETCH_HEAD
+git checkout -B arena/419ef7ef-mybrowser
+git branch --set-upstream-to=origin/arena/419ef7ef-mybrowser
+```
+
+Afterwards `git pull`, `tools\update.cmd` and `tools\update.cmd --check` all work, and
+`git status` is clean. This has been rehearsed on a copy exactly like yours: a folder with
+no `.git` and a 1.4 GB `.cef-deps` download in it — the download came through byte for
+byte, because `git reset --hard` only writes the paths the repository knows about.
+
+A copy of this project from this commit onwards also carries a tool that does the same
+thing and explains itself first:
+
+```bat
+tools\adopt_clone.cmd
+rem what would change (by file), and what would be kept. Nothing is touched.
+tools\adopt_clone.cmd --yes
+rem do it, then verify the result
+```
+
+If your copy is older than the tool, use the six commands above — that is what the tool
+runs.
+
+**What it keeps:** everything git does not track — `.cef-deps` (your CEF download, about
+1.4 GB), `build`, `out`, and your profile inside `out/profile`. You do not re-download
+anything because you changed how you get updates.
+
+**What it replaces:** every file the repository tracks. If you edited `BUILDING.md`, that
+edit goes; the dry run lists exactly which files are being replaced before it happens, and
+it names the ones kept beside them.
+
+### Or clone from scratch
+
+```bat
+git clone --branch arena/419ef7ef-mybrowser https://github.com/codero-sus/BrowserX.git
+```
+
+`--branch` matters: `main` is still the repository's first commit, so a plain
+`git clone` gets an empty tree. Then, inside the clone:
+
+```bat
+python tools\fetch_cef.py
+rem the Chromium/CEF binaries, about 200 MB, once
+tools\build_windows.cmd --stage
+```
+
+### Staying up to date afterwards
+
+```bat
+tools\update.cmd --check
+rem is there anything new? exit 10 when yes, 0 when no
+tools\update.cmd
+rem pull, rebuild what this machine can build, verify
+```
+
+`tools\update.cmd` and `tools\update.sh` are the same updater (`tools/update.py`); on
+Windows it rebuilds with MSVC through `tools\build_windows.py`. Nothing in it runs
+`git clean`, so the profile in `out/profile` cannot be deleted by an update.
+
 ## The four things you can build, and what each needs
 
 | You want | Requirement | Notes |

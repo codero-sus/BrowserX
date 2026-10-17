@@ -306,11 +306,19 @@ check-docs:
 check-fetch:
 	@$(PYTHON) $(TOOLS_DIR)/fetch_cef.py --self-test
 
+# Adopting a downloaded folder into a git checkout moves files, so its logic is tested
+# against real git here: a fake remote, a fake ZIP-style folder with a CEF download in it,
+# and the assertion that the download survives untouched while a modified tracked file is
+# replaced. This is what makes "use the git workflow" safe to recommend.
+.PHONY: check-adopt
+check-adopt:
+	@$(PYTHON) $(TOOLS_DIR)/adopt_clone.py --self-test
+
 .PHONY: check
 # Order matters: check-improvements is the ratchet that fails on purpose until the
 # ledger passes 200 rows, and make stops at the first failing prerequisite. It runs
 # last so a red gate can never hide a red compiler, a broken window or a broken doc.
-check: check-compile check-windows check-gui check-docs check-fetch check-improvements
+check: check-compile check-windows check-gui check-docs check-fetch check-adopt check-improvements
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
