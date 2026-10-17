@@ -187,6 +187,17 @@ make             # build out/BrowserX
 make run         # launch it
 ```
 
+**Getting the code:** a **Download ZIP** copy cannot be updated — every fix would be
+another download. If you already have one, `tools\adopt_clone.cmd` turns that folder into
+a checkout in place and keeps your CEF download and profile; or clone it directly:
+
+```bat
+git clone --branch arena/419ef7ef-mybrowser https://github.com/codero-sus/BrowserX.git
+```
+
+Afterwards `git pull` and `tools\update.cmd` keep it current. Full detail, including what
+the conversion keeps and what it replaces: [the first section of `BUILDING.md`](BUILDING.md).
+
 **On Windows** (Visual Studio 2022 Build Tools with the C++ workload, the Windows
 SDK, Python 3 and Git — CEF is still a 200 MB download, still no CMake or solution
 file):
