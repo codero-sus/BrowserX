@@ -301,3 +301,4 @@ were written beside.
 | 277 | Build | Every CI step has a ceiling, so a stuck command fails in minutes with a message instead of consuming the job's hour | .github/workflows/build.yml | `timeout-minutes: 45` |
 | 278 | Docs | BUILDING.md explains the GitHub build: which job proves what, where the finished browser artifact is, and why the CEF download is cached by the pin | BUILDING.md | `Let GitHub build it` |
 | 279 | Docs | README says a push is compiled by GitHub and a runnable Windows artifact is attached, so a build is available with nothing installed | README.md | `BrowserX-windows-x64` |
+| 280 | Robustness | The CEF entry point is constructed the way each platform declares it, because Windows takes the module instance where POSIX takes argv and MSVC refuses the POSIX call | src/app/main.cc | `CefMainArgs main_args(::GetModuleHandleW(nullptr));` |
