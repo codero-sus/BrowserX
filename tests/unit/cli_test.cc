@@ -211,6 +211,33 @@ TEST(Cli, UsageCreditsTheAuthorAndShipsTheLinks) {
   EXPECT_TRUE(browserx::app::VersionBanner().find("codero-sus") != std::string::npos);
 }
 
+// "Which build is this?" is answered by the binary itself. A build made inside a checkout
+// carries the commit; a build made from a folder that is not a checkout must say
+// "unknown" rather than invent one. Both are the same code path, so this test pins the
+// contract rather than one machine's git state.
+TEST(CliTest, VersionBannerNamesTheBuildRevision) {
+  const std::string banner = browserx::app::VersionBanner();
+  const std::string revision = BROWSERX_GIT;
+  EXPECT_FALSE(revision.empty());
+  // The revision sits in square brackets, so it is identifiable without parsing prose.
+  EXPECT_TRUE(banner.find("[" + revision + "]") != std::string::npos);
+  // and it is not the placeholder in a real checkout build
+  if (revision != "unknown") {
+    EXPECT_TRUE(banner.find("[unknown]") == std::string::npos);
+  }
+}
+
+// A dirty tree must be visible in the revision, not silently dropped: two binaries built
+// from the same commit but different working trees are not the same build.
+TEST(CliTest, ADirtyBuildIsMarkedInTheBanner) {
+#if BROWSERX_GIT_DIRTY
+  EXPECT_TRUE(std::string(BROWSERX_GIT).back() == '+');
+  EXPECT_TRUE(browserx::app::VersionBanner().find("+") != std::string::npos);
+#else
+  EXPECT_TRUE(std::string(BROWSERX_GIT).back() != '+' || std::string(BROWSERX_GIT) == "unknown");
+#endif
+}
+
 }  // namespace
 
 TEST(Cli, HelpListsEveryModeFromTheEngine) {

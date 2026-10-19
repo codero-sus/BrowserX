@@ -87,6 +87,44 @@ rem pull, rebuild what this machine can build, verify
 Windows it rebuilds with MSVC through `tools\build_windows.py`. Nothing in it runs
 `git clean`, so the profile in `out/profile` cannot be deleted by an update.
 
+## Building is a git operation
+
+Every build records the commit it came from, and the binary can tell you itself:
+
+```bat
+out\BrowserX.exe --version
+```
+
+```text
+BrowserX 154.0.34 by codero-sus <https://the-codero.web.app> [409d710] (x86_64, CEF/Chromium, release)
+```
+
+`409d710` is the commit. If the folder had uncommitted edits when it was built, it reads
+`[409d710+]` — the `+` means the commit alone does not describe that binary. A build from
+a folder that is not a checkout says `[unknown]` instead of inventing a number.
+
+`browserx://version` shows the same thing under **Built from**, so it is visible while the
+browser is running.
+
+The same commands answer the other direction — is what I have *current*?
+
+```bat
+python tools\revision.py
+rem branch, commit, subject, clean or dirty, ahead/behind the remote
+python tools\revision.py --check out\build-info.json
+rem exit 0 = built from this code, 10 = rebuild, 3 = cannot tell
+```
+
+`out/build-info.json` is written by both builders (`make` and `tools\build_windows.cmd`)
+after a successful link, and records the commit, branch, dirty flag, subject and exe size.
+`tools\update.cmd` checks it after rebuilding, so an update that pulled new code but left
+an old binary is reported as a failure rather than as success.
+
+How the revision gets in: `tools/revision.py --header` writes `build/generated/revision.h`
+(git-ignored), and both build systems force-include it — g++ `-include`, MSVC `/FI`. It is
+rewritten **only when its content changes**, so an unchanged revision does not trigger a
+full rebuild.
+
 ## The four things you can build, and what each needs
 
 | You want | Requirement | Notes |

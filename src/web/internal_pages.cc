@@ -1157,6 +1157,10 @@ std::string RenderAbout(const PageData& data) {
          "runs the same performance core behind an Android front end.</p>\n";
   out += "<div class=\"card\"><h2 style=\"margin-top:0\">Build</h2><table><tbody>";
   out += "<tr><td>Version</td><td class=\"mono\">" + EscapeImpl(data.version) + "</td></tr>";
+  // Which commit produced this binary. A build from a ZIP folder says "unknown" rather
+  // than inventing one, so the page never claims provenance it does not have.
+  out += "<tr><td>Built from</td><td class=\"mono\">" + EscapeImpl(data.git_revision) +
+         "</td></tr>";
   out += "<tr><td>Engine</td><td class=\"mono\">Chromium via CEF</td></tr>";
   out += "<tr><td>Core</td><td class=\"mono\">src/core (no CEF dependency, unit tested)</td></tr>";
   out += "<tr><td>Active mode</td><td class=\"mono\">" + EscapeImpl(data.active_mode_id) +

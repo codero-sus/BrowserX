@@ -70,6 +70,8 @@ struct InternalUrl {
 /// the sections it needs, and says so when the data is missing instead of lying.
 struct PageData {
   std::string version = "dev";
+  /// The commit this binary was built from (tools/revision.py), or "unknown".
+  std::string git_revision = "unknown";
   std::string active_mode_id = "ultra";
   std::string active_mode_label = "ULTRA";
   /// core::report::RenderPlansJson() — every mode's switches, policy and rationale.
