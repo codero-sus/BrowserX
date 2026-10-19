@@ -62,11 +62,10 @@ it names the ones kept beside them.
 ### Or clone from scratch
 
 ```bat
-git clone --branch arena/419ef7ef-mybrowser https://github.com/codero-sus/BrowserX.git
+git clone https://github.com/codero-sus/BrowserX.git
 ```
 
-`--branch` matters: `main` is still the repository's first commit, so a plain
-`git clone` gets an empty tree. Then, inside the clone:
+`main` is the released tree, so no `--branch` is needed. Then, inside the clone:
 
 ```bat
 python tools\fetch_cef.py
@@ -125,7 +124,29 @@ How the revision gets in: `tools/revision.py --header` writes `build/generated/r
 rewritten **only when its content changes**, so an unchanged revision does not trigger a
 full rebuild.
 
-## Let GitHub build it
+## Let GitHub build it — or download a compiled browser
+
+There is a **Releases** page with a finished browser on it. It is compiled by GitHub, from
+a commit in this repository, by `.github/workflows/release.yml`:
+
+1. open the repository's **Releases**
+2. download `BrowserX-<version>-windows-x64.zip`
+3. unzip anywhere and run `BrowserX.exe` — the CEF runtime sits beside it
+
+The zip carries `READ-ME-FIRST.txt` naming the commit it was built from, and the licence.
+Nothing needs installing: no Visual Studio, no CEF download, no Python.
+
+Publishing a new one is either a tag:
+
+```bat
+git tag v154.0.34
+git push origin v154.0.34
+```
+
+or **Actions → release → Run workflow**, which compiles the branch you pick and names the
+Release from its commit. Both run the same build every other path runs.
+
+
 
 `.github/workflows/build.yml` builds on every push. Two jobs, for two different reasons:
 
