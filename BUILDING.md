@@ -131,8 +131,14 @@ full rebuild.
 
 | Job | What it proves | Time |
 |-----|----------------|------|
-| **core and checks** (Linux, no CEF) | the unit tests pass and every check is green — the same `make test` and `make check` you run locally | about a minute |
-| **full browser** (Windows, MSVC + CEF) | MSVC compiles and links `out\BrowserX.exe` from a clean machine, and the exe prints its own commit | 10–20 minutes |
+| **core and checks** (Linux, no CEF) | the unit tests pass and every check is green — the same `make test` and `make check` you run locally | about 1½ minutes |
+| **full browser** (Windows, MSVC + CEF) | MSVC compiles and links `out\BrowserX.exe` from a clean machine, and the exe prints its own commit | about 5 minutes once CEF is cached |
+
+That second job is the only place the Windows path has ever been proven from nothing: it
+compiles CEF's 246-file binding layer, links, runs `out\BrowserX.exe --version`, and
+attaches the result. Its first green run is what turned up the missing `<cstdint>`, the
+POSIX-only `S_ISREG`, the `CefMainArgs` constructor difference, the linker's command-line
+limit and four missing system libraries — every one of them invisible on Linux.
 
 Open **Actions**, pick the run for your commit, and the finished browser is under
 **Artifacts → `BrowserX-windows-x64`**. It contains `out\BrowserX.exe` with the CEF runtime
