@@ -101,8 +101,12 @@ jobs:
 
       # The wrapper, not the python file: this is the command a person types, so the
       # thing CI proves is that path, including finding a real Python.
+      # The wrapper, not the python file: this is the command a person types, so the thing
+      # CI proves is that path - finding a real Python included. ci_report.py wraps it only
+      # to turn a failure into annotations; the exit code is still the wrapper's.
       - name: Build
-        run: python tools/ci_report.py --label build -- python tools/build_windows.py --stage --verbose
+        shell: cmd
+        run: python tools/ci_report.py --label build -- cmd /c tools\build_windows.cmd --stage --verbose
 
       - name: The executable exists and knows its commit
         shell: cmd
