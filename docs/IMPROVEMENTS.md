@@ -299,3 +299,5 @@ were written beside.
 | 275 | Tooling | The portability check ignores comments and string literals, so a URL or a note naming sysconf is not reported as a portability bug | tools/build_windows.py | `def strip_comments(line: str) -> str:` |
 | 276 | Build | A CI step cannot hang: the wrapper stops waiting when the child exits even if something it started holds the pipe open, and kills the child at a stated timeout | tools/ci_report.py | `quiet_since` |
 | 277 | Build | Every CI step has a ceiling, so a stuck command fails in minutes with a message instead of consuming the job's hour | .github/workflows/build.yml | `timeout-minutes: 45` |
+| 278 | Docs | BUILDING.md explains the GitHub build: which job proves what, where the finished browser artifact is, and why the CEF download is cached by the pin | BUILDING.md | `Let GitHub build it` |
+| 279 | Docs | README says a push is compiled by GitHub and a runnable Windows artifact is attached, so a build is available with nothing installed | README.md | `BrowserX-windows-x64` |

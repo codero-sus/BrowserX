@@ -125,6 +125,31 @@ How the revision gets in: `tools/revision.py --header` writes `build/generated/r
 rewritten **only when its content changes**, so an unchanged revision does not trigger a
 full rebuild.
 
+## Let GitHub build it
+
+`.github/workflows/build.yml` builds on every push. Two jobs, for two different reasons:
+
+| Job | What it proves | Time |
+|-----|----------------|------|
+| **core and checks** (Linux, no CEF) | the unit tests pass and every check is green — the same `make test` and `make check` you run locally | about a minute |
+| **full browser** (Windows, MSVC + CEF) | MSVC compiles and links `out\BrowserX.exe` from a clean machine, and the exe prints its own commit | 10–20 minutes |
+
+Open **Actions**, pick the run for your commit, and the finished browser is under
+**Artifacts → `BrowserX-windows-x64`**. It contains `out\BrowserX.exe` with the CEF runtime
+next to it, so it runs without a build step.
+
+Two details worth knowing:
+
+* The CEF download (about 250 MB) is cached between runs, keyed by the pin in
+  `cef.lock.json`. It is fetched once per CEF version, not once per push.
+* A failing step reports the lines that explain it as **annotations** on the run, not only
+  in the log. That is deliberate: annotations survive a network that cannot open the log.
+
+You do not need this to build the browser — `tools\build_windows.cmd` does that on your own
+machine, and it is the same code path CI runs. This exists so a change that breaks the
+Windows build is found by a machine rather than by you, and so a working build can be
+downloaded when a build toolchain is not installed at all.
+
 ## The four things you can build, and what each needs
 
 | You want | Requirement | Notes |
