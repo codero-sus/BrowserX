@@ -5,6 +5,7 @@
 #include "core/report.h"
 
 #include <algorithm>
+#include <iterator>
 #include <cstdio>
 #include <string>
 #include <vector>

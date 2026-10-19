@@ -26,6 +26,17 @@ namespace browserx {
 namespace app {
 namespace {
 
+/// Is this a regular file? S_ISREG is POSIX; MSVC spells the same test _S_IFREG, and the
+/// Windows build failed on it with "S_ISREG: identifier not found" after months of the
+/// POSIX-only code compiling perfectly on Linux.
+bool IsRegularFile(unsigned int mode) {
+#if defined(_WIN32)
+  return (mode & _S_IFMT) == _S_IFREG;
+#else
+  return S_ISREG(mode);
+#endif
+}
+
 std::string HomeDir() {
 #if defined(_WIN32)
   const char* profile = std::getenv("USERPROFILE");
@@ -103,7 +114,7 @@ bool DirectoryExists(const std::string& path) {
 bool FileExists(const std::string& path) {
   if (path.empty()) return false;
   struct stat info {};
-  return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode);
+  return stat(path.c_str(), &info) == 0 && IsRegularFile(info.st_mode);
 }
 
 bool EnsureDirectory(const std::string& path) {

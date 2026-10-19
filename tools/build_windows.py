@@ -1129,6 +1129,59 @@ POSIX_ONLY_HEADERS = (
 )
 PLATFORM_GUARD = re.compile(r"_WIN32|__linux__|_POSIX|__APPLE__|WIN32_LEAN_AND_MEAN")
 
+#: Macros and calls that exist on POSIX and nowhere in MSVC's CRT. Kept to the ones where
+#: there is no argument: `S_ISREG` is a macro that simply does not exist on Windows (MSVC
+#: has _S_IFREG), and it cost a CI run - the Windows build failed with
+#: "error C3861: 'S_ISREG': identifier not found" in code that had compiled on Linux for
+#: months. Deliberately not a list of everything POSIX-flavoured: snprintf, sleep and
+#: mkdir all exist on Windows in a compatible form, and reporting them would make this
+#: check noise.
+POSIX_ONLY_SYMBOLS = (
+    "S_ISREG", "S_ISDIR", "S_ISLNK", "S_ISCHR", "S_ISBLK", "S_ISFIFO", "S_ISSOCK",
+    "getpwuid", "getuid", "geteuid", "fork", "waitpid", "dlopen", "dlsym", "readlink",
+    "sysconf", "pthread_create",
+)
+POSIX_SYMBOL = re.compile(r"\b(" + "|".join(POSIX_ONLY_SYMBOLS) + r")\b")
+
+
+def strip_comments(line: str) -> str:
+    """Remove what the compiler ignores, without touching string literals.
+
+    A comment that mentions a POSIX call is not a portability bug, and the first version
+    of this check flagged exactly that: "// only used when sysconf is unavailable". One
+    false positive is enough to teach a reader to ignore the whole check, so comments are
+    removed properly - tracking quotes, and honouring a backslash escape inside them.
+    Block comments are cut at /* on the line where they begin; the rest of a multi-line
+    block would need state, and a stray symbol there is a rarer mistake than the noise
+    this avoids.
+    """
+    out: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if quote:
+            # Text inside a string literal is data, not code: "https://host/sysconf" is a
+            # URL, not a call to sysconf. Blank it out (the quotes stay, so the line still
+            # reads like the original) and keep scanning, because // in there is not a
+            # comment - that is the case a naive split gets wrong.
+            out.append(" " if char != quote else char)
+            if char == "\\" and index + 1 < len(line):
+                out.append(" ")
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+            out.append(char)
+        elif line.startswith("//", index) or line.startswith("/*", index):
+            break
+        else:
+            out.append(char)
+        index += 1
+    return "".join(out)
+
 
 def check_portability(args) -> int:
     """Finds POSIX-only includes that are not inside a platform guard.
@@ -1159,13 +1212,19 @@ def check_portability(args) -> int:
                            for posix in POSIX_ONLY_HEADERS):
                         if not any(PLATFORM_GUARD.search(frame) for frame in stack):
                             problems.append((str(path.relative_to(REPO_ROOT)), number, header))
+                continue
+            # Comments describe; they do not compile. Naming a POSIX call in a note is
+            # not a portability bug, and flagging it would teach people to ignore this.
+            symbol = POSIX_SYMBOL.search(strip_comments(line))
+            if symbol and not any(PLATFORM_GUARD.search(frame) for frame in stack):
+                problems.append((str(path.relative_to(REPO_ROOT)), number, symbol.group(1)))
 
     say("")
     if not problems:
-        ok(f"no POSIX-only include outside a platform guard in {len(files)} file(s)")
+        ok(f"no POSIX-only include or call outside a platform guard in {len(files)} file(s)")
         say("")
         return EXIT_OK
-    say(f"    ✘ {len(problems)} POSIX-only include(s) that would break the Windows build:")
+    say(f"    ✘ {len(problems)} POSIX-only construct(s) that would break the Windows build:")
     for name, number, header in problems:
         say(f"        {name}:{number}  {header}")
     say("")
@@ -1488,6 +1547,20 @@ def self_test() -> int:
     expect(is_wrapper_source(Path("/cef_binary_154_windows64/libcef_dll/wrapper/cef_client.cc"),
                              Path("/cef_binary_154_windows64")),
            "CEF's wrapper is recognised, so it can be kept isolated")
+    # --- the portability check itself ------------------------------------------------
+    # It exists to catch what CI caught, and it must not cry wolf while doing it.
+    expect(bool(POSIX_SYMBOL.search(strip_comments("return S_ISREG(info.st_mode);"))),
+           "a POSIX macro in real code is found")
+    expect(not POSIX_SYMBOL.search(strip_comments("// only used when sysconf is unavailable")),
+           "a POSIX name in a comment is ignored")
+    url_line = strip_comments('std::string u = "https://x/sysconf"; // note')
+    expect(url_line.rstrip().endswith(";"),
+           "a // inside a string literal does not start a comment")
+    expect(not POSIX_SYMBOL.search(url_line),
+           "a call named only inside a string literal is data, not code")
+    expect(bool(POSIX_SYMBOL.search(strip_comments('getuid();  // trailing note about fork'))),
+           "stripping a trailing comment keeps the real call on that line")
+
     header_dir = Path("/tmp/browserx-rev-header-check")
     command = compile_command(Path("cl.exe"), SRC_DIR / "app" / "cli.cc", Path("cli.obj"),
                               [header_dir], ["UNICODE"], False, None,
