@@ -52,11 +52,13 @@ jobs:
       # tests; `make check` is the gate: compile check, the Windows build's own self-test,
       # the GUI tool's self-test, the documentation's commands, the CEF fetcher, the
       # revision stamping, folder adoption, and the improvements ledger.
+      # Wrapped in tools/ci_report.py so a failure arrives as annotations, readable
+      # through the checks API even when the job log is not.
       - name: Unit tests
-        run: make test
+        run: python tools/ci_report.py --label "make test" -- make test
 
       - name: Every check
-        run: make check
+        run: python tools/ci_report.py --label "make check" -- make check
 
       # The revision stamp only means something if the header was found and current. A
       # stale header is the quiet failure: present, plausible, and describing a commit
@@ -86,17 +88,21 @@ jobs:
           restore-keys: |
             cef-${{ runner.os }}-
 
+      # Informative, not a gate: this report is about what the machine has, and the build
+      # immediately below fails with a far more specific message if something is truly
+      # missing. Gating here would stop the build from ever being attempted because of an
+      # optional component.
       - name: What this machine has
-        run: python tools/check_build_requirements.py --for windows
+        continue-on-error: true
+        run: python tools/ci_report.py --label requirements -- python tools/check_build_requirements.py --for windows
 
       - name: Fetch CEF (newest released build, SHA-1 verified)
-        run: python tools/fetch_cef.py
+        run: python tools/ci_report.py --label "fetch cef" -- python tools/fetch_cef.py
 
       # The wrapper, not the python file: this is the command a person types, so the
       # thing CI proves is that path, including finding a real Python.
       - name: Build
-        shell: cmd
-        run: tools\build_windows.cmd --stage
+        run: python tools/ci_report.py --label build -- python tools/build_windows.py --stage --verbose
 
       - name: The executable exists and knows its commit
         shell: cmd
@@ -104,6 +110,15 @@ jobs:
           if not exist out\BrowserX.exe exit /b 1
           for %%F in (out\BrowserX.exe) do echo size: %%~zF bytes
           out\BrowserX.exe --version
+
+      - name: Upload the CI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: out/ci/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload the browser
         uses: actions/upload-artifact@v4
