@@ -119,6 +119,18 @@ SYSTEM_LIBS = (
     "wininet.lib",
     "bcrypt.lib",
     "crypt32.lib",
+    # The four below are what CEF's own Windows sources call directly, and none of them was
+    # in this list until a real link said so:
+    #   shell32    CommandLineToArgvW  (cef_util_win.cc)
+    #   wintrust   WinVerifyTrust, WTHelper*  (cef_certificate_util_win.cc)
+    #   comctl32   the common controls CEF's UI helpers expect
+    #   rpcrt4     the RPC runtime those helpers need
+    # link.exe reports them as five unresolved externals, which reads like missing code
+    # rather than four missing libraries.
+    "shell32.lib",
+    "wintrust.lib",
+    "comctl32.lib",
+    "rpcrt4.lib",
 )
 
 
@@ -1613,6 +1625,16 @@ def self_test() -> int:
                 os.environ["BROWSERX_CEF_DIR"] = real_override
         expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64") == (154, 0, 34),
                "a distribution directory sorts by its version numbers")
+
+    # --- the libraries CEF's own sources need -----------------------------------------
+    # Pinned by name: each was learned from a link error, and dropping one would put the
+    # build straight back to "unresolved external symbol" in a file we do not own.
+    for needed, why in (("shell32.lib", "CommandLineToArgvW"),
+                        ("wintrust.lib", "WinVerifyTrust"),
+                        ("comctl32.lib", "common controls"),
+                        ("rpcrt4.lib", "RPC runtime")):
+        expect(needed in SYSTEM_LIBS, f"{needed} is linked ({why})")
+    expect(len(set(SYSTEM_LIBS)) == len(SYSTEM_LIBS), "no system library is listed twice")
 
     # --- the link command line --------------------------------------------------------
     # 246 object paths under a CI checkout do not fit in 32767 characters. The failure
