@@ -477,27 +477,68 @@ def compile_command(cl: Path, source: Path, obj: Path, includes: list[Path],
     return command
 
 
+#: Windows caps a command line at 32767 characters. 246 object paths under a CI checkout
+#: (D:\a\BrowserX\BrowserX\.cef-deps\cef_binary_...\libcef_dll\ctocpp\...) pass that limit
+#: easily, and the failure is [WinError 206] "The filename or extension is too long" - which
+#: reads like a filesystem problem and is really an argument list that will not fit.
+#: Response files are the supported answer: link.exe reads the same arguments from a file.
+MAX_COMMAND_LINE = 30000
+
+
+def link_response_content(objects: list[Path], libs: list[str], lib_paths: list[Path],
+                          debug: bool, subsystem: str) -> str:
+    """The linker arguments, one per line, for a .rsp file.
+
+    One argument per line because a quoted path may legally contain a space (and a CI
+    agent's temporary directory may), and because a stray trailing space in a joined line
+    would become part of the last path.
+    """
+    arguments: list[str] = []
+    arguments += ["/DEBUG"] if debug else ["/LTCG", "/OPT:REF", "/OPT:ICF"]
+    arguments.append(f"/SUBSYSTEM:{subsystem.upper()}")
+    if subsystem == "windows":
+        arguments.append("/ENTRY:mainCRTStartup")
+    for path in lib_paths:
+        arguments.append(f"/LIBPATH:{path}")
+    arguments += [str(obj) for obj in objects]
+    arguments += libs
+    return "\n".join(arguments) + "\n"
+
+
 def link_command(cl: Path, objects: list[Path], output: Path, libs: list[str],
-                 lib_paths: list[Path], debug: bool, subsystem: str = "windows") -> list[str]:
-    # cl.exe is used as the linker driver, exactly as a Visual Studio project does: it
-    # finds link.exe beside itself and passes the object files through.
-    command = [str(cl), "/nologo", "/Fe:" + str(output)]
+                 lib_paths: list[Path], debug: bool, subsystem: str = "windows",
+                 response_file: Path | None = None) -> list[str]:
+    """The command that links the browser, directly or through a response file.
+
+    cl.exe is used as the linker driver, exactly as a Visual Studio project does: it finds
+    link.exe beside itself and passes the object files through.
+
+    With a response file, the platform flags move into it too. They are part of the same
+    argument list, and keeping a copy in both places would mean two sources of truth for
+    /ENTRY and /SUBSYSTEM - the sort of duplication that stays correct exactly until one
+    of them is edited.
+    """
+    driver = [str(cl), "/nologo", "/Fe:" + str(output)]
+
+    if response_file is not None:
+        return driver + [f"@{response_file}"]
+
     if debug:
-        command += ["/DEBUG"]
+        driver += ["/DEBUG"]
     else:
-        command += ["/LTCG", "/OPT:REF", "/OPT:ICF"]
-    command += ["/SUBSYSTEM:" + subsystem.upper()]
+        driver += ["/LTCG", "/OPT:REF", "/OPT:ICF"]
+    driver += [f"/SUBSYSTEM:{subsystem.upper()}"]
     if subsystem == "windows":
         # src/app/main.cc has main(), not WinMain, and /SUBSYSTEM:WINDOWS looks for
         # WinMain by default - so the entry point is named explicitly. Without this the
         # link fails with "unresolved external symbol WinMain", which reads like a coding
         # mistake rather than a linker setting.
-        command += ["/ENTRY:mainCRTStartup"]
+        driver += ["/ENTRY:mainCRTStartup"]
     for path in lib_paths:
-        command.append(f"/LIBPATH:{path}")
-    command += [str(obj) for obj in objects]
-    command += libs
-    return command
+        driver.append(f"/LIBPATH:{path}")
+    driver += [str(obj) for obj in objects]
+    driver += libs
+    return driver
 
 
 def is_wrapper_source(source: Path, cef_root: Path) -> bool:
@@ -1025,8 +1066,23 @@ def build(args) -> int:
     if plan.get("wrapper_lib"):
         inputs.append(str(plan["wrapper_lib"]))       # CEF's binding layer, prebuilt
     inputs += list(SYSTEM_LIBS)
-    code, text = run(link_command(cl, objects, output, inputs, lib_paths, args.debug),
-                     capture=True, env=env)
+    # Arguments go through a response file when the plain command line would be too long.
+    # Not always: a short command line is easier to read in --verbose output and in a bug
+    # report, and the limit is only reached by a full CEF tree.
+    plain = link_command(cl, objects, output, inputs, lib_paths, args.debug)
+    if sum(len(part) + 1 for part in plain) > MAX_COMMAND_LINE:
+        response = OBJ_DIR / "link.rsp"
+        response.parent.mkdir(parents=True, exist_ok=True)
+        response.write_text(link_response_content(objects, inputs, lib_paths,
+                                                  args.debug, "windows"), encoding="utf-8")
+        command = link_command(cl, objects, output, inputs, lib_paths, args.debug,
+                               response_file=response)
+        if not args.quiet:
+            say(f"  link arguments in {response.relative_to(REPO_ROOT)} "
+                f"({len(plain)} arguments would be {sum(len(p) + 1 for p in plain)} characters)")
+    else:
+        command = plain
+    code, text = run(command, capture=True, env=env)
     if code != 0:
         say("")
         for line in tail(text, 20).splitlines():
@@ -1537,6 +1593,31 @@ def self_test() -> int:
                 os.environ["BROWSERX_CEF_DIR"] = real_override
         expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64") == (154, 0, 34),
                "a distribution directory sorts by its version numbers")
+
+    # --- the link command line --------------------------------------------------------
+    # 246 object paths under a CI checkout do not fit in 32767 characters. The failure
+    # ([WinError 206]) names a filename, which sends a reader looking in the wrong place.
+    # Shaped like the real thing: a CI checkout plus the full CEF path is about 140
+    # characters per object, and there are 246 of them.
+    prefix = ("D:/a/BrowserX/BrowserX/.cef-deps/cef_binary_154.0.34+g14c5a08+"
+              "chromium-154.0.8037.98_windows64/libcef_dll/ctocpp/v8_exception_%03d.obj")
+    many = [Path(prefix % index) for index in range(246)]
+    plain_link = link_command(Path("cl.exe"), many, Path("out/BrowserX.exe"),
+                              ["libcef.lib"], [Path("C:/lib")], False)
+    expect(sum(len(part) + 1 for part in plain_link) > MAX_COMMAND_LINE,
+           "a full CEF tree really does exceed the command-line limit (the fixture is honest)")
+    rsp_link = link_command(Path("cl.exe"), many, Path("out/BrowserX.exe"), ["libcef.lib"],
+                            [Path("C:/lib")], False, response_file=Path("build/link.rsp"))
+    expect(rsp_link[-1] == "@build/link.rsp" and len(rsp_link) == 4,
+           "with a response file the command is just cl, /Fe:, and the file")
+    content = link_response_content(many, ["libcef.lib"], [Path("C:/lib")], False, "windows")
+    lines = content.splitlines()
+    expect(lines[0] == "/LTCG" and lines[-1] == "libcef.lib",
+           "the response file starts with the linker flags and ends with the libraries")
+    expect(str(many[0]) in lines and str(many[-1]) in lines,
+           "every object file is named in the response file")
+    expect(all(line == line.strip() and line for line in lines),
+           "one argument per line, so a path with a space cannot be split")
 
     # --- the revision header ----------------------------------------------------------
     # The whole point of stamping the commit is that it is true. These checks keep the two
