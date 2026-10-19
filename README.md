@@ -187,6 +187,11 @@ make             # build out/BrowserX
 make run         # launch it
 ```
 
+**Or let GitHub build it:** every push is compiled by
+[`.github/workflows/build.yml`](.github/workflows/build.yml) — tests and checks on Linux in
+about a minute, and the real browser with MSVC on Windows. A finished
+`BrowserX-windows-x64` artifact is attached to the run. Nothing to install.
+
 **Getting the code:** a **Download ZIP** copy cannot be updated — every fix would be
 another download. If you already have one, `tools\adopt_clone.cmd` turns that folder into
 a checkout in place and keeps your CEF download and profile; or clone it directly:
