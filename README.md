@@ -187,17 +187,21 @@ make             # build out/BrowserX
 make run         # launch it
 ```
 
-**Or let GitHub build it:** every push is compiled by
-[`.github/workflows/build.yml`](.github/workflows/build.yml) — tests and checks on Linux in
-about a minute, and the real browser with MSVC on Windows. A finished
-`BrowserX-windows-x64` artifact is attached to the run. Nothing to install.
+**Download a compiled browser:** the [**Releases**](../../releases) page has
+`BrowserX-<version>-windows-x64.zip` — unzip it and run `BrowserX.exe`. GitHub compiles it
+through [`.github/workflows/release.yml`](.github/workflows/release.yml), with the same
+`tools\build_windows.cmd` everyone else uses. Nothing to install.
+
+Every push is also compiled by [`.github/workflows/build.yml`](.github/workflows/build.yml)
+— tests and checks on Linux in about a minute, and the real browser with MSVC on Windows,
+attached to the run as an artifact.
 
 **Getting the code:** a **Download ZIP** copy cannot be updated — every fix would be
 another download. If you already have one, `tools\adopt_clone.cmd` turns that folder into
 a checkout in place and keeps your CEF download and profile; or clone it directly:
 
 ```bat
-git clone --branch arena/419ef7ef-mybrowser https://github.com/codero-sus/BrowserX.git
+git clone https://github.com/codero-sus/BrowserX.git
 ```
 
 Afterwards `git pull` and `tools\update.cmd` keep it current. Full detail, including what
