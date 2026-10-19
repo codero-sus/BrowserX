@@ -286,3 +286,6 @@ were written beside.
 | 262 | Build | The CEF download is cached by the pin in cef.lock.json, so CI spends its minutes compiling rather than re-downloading 250 MB | .github/workflows/build.yml | `hashFiles('cef.lock.json')` |
 | 263 | Build | CI uploads the built browser as an artifact, so a successful Windows build is something that can be run and inspected, not just a green tick | .github/workflows/build.yml | `actions/upload-artifact@v4` |
 | 264 | Docs | BUILDING.md explains the git build: what --version reports, how to ask whether a build is current, and how the revision gets in | BUILDING.md | `Building is a git operation` |
+| 265 | Build | A failing CI step reports its last lines as annotations, which stay readable through the checks API even where the job log is not reachable | tools/ci_report.py | `def escape(text: str) -> str:` |
+| 266 | Build | The CI wrapper keeps the command's own exit code and passes output through unchanged, so the log shows the original failure rather than a reconstruction | tools/ci_report.py | `for line in process.stdout:` |
+| 267 | Build | The machine-report step in CI informs instead of gating, so an optional component cannot stop the build from being attempted | .github/workflows/build.yml | `continue-on-error: true` |
