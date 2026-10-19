@@ -5,6 +5,7 @@
 #include "app/cef_host.h"
 
 #include <algorithm>
+#include <iterator>
 #include <cstdlib>
 #include <set>
 #include <string>

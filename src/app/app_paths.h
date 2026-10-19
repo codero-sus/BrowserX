@@ -19,6 +19,7 @@
 #ifndef BROWSERX_APP_APP_PATHS_H_
 #define BROWSERX_APP_APP_PATHS_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
