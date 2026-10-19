@@ -1386,4 +1386,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    # Windows console code pages cannot encode ✔ or →; without this a tool dies while
+    # reporting something else. Best effort: it never makes a working run fail.
+    import utf8_console  # same directory: sys.path[0] when run as a script
+    utf8_console.enable()
     sys.exit(main(sys.argv[1:]))

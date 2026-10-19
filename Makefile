@@ -327,6 +327,13 @@ check-docs:
 check-fetch:
 	@$(PYTHON) $(TOOLS_DIR)/fetch_cef.py --self-test
 
+# Every tool prints ✔ and ✘. On a Windows console whose code page is cp1252, writing one
+# raises UnicodeEncodeError and the tool dies while reporting on something else - which is
+# exactly what happened to `python tools\fetch_cef.py` in a GitHub Windows runner.
+.PHONY: check-utf8
+check-utf8:
+	@$(PYTHON) $(TOOLS_DIR)/utf8_console.py
+
 # The revision stamp is what lets a binary answer "which commit am I?" - and it is the
 # kind of thing that breaks silently (a header that quietly stops being found leaves the
 # binary saying "unknown" while everything looks fine). Tested with real git in temp dirs.
@@ -346,7 +353,7 @@ check-adopt:
 # Order matters: check-improvements is the ratchet that fails on purpose until the
 # ledger passes 200 rows, and make stops at the first failing prerequisite. It runs
 # last so a red gate can never hide a red compiler, a broken window or a broken doc.
-check: check-compile check-windows check-gui check-docs check-fetch check-revision check-adopt check-improvements
+check: check-compile check-windows check-gui check-docs check-fetch check-utf8 check-revision check-adopt check-improvements
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.

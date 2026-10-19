@@ -289,3 +289,6 @@ were written beside.
 | 265 | Build | A failing CI step reports its last lines as annotations, which stay readable through the checks API even where the job log is not reachable | tools/ci_report.py | `def escape(text: str) -> str:` |
 | 266 | Build | The CI wrapper keeps the command's own exit code and passes output through unchanged, so the log shows the original failure rather than a reconstruction | tools/ci_report.py | `for line in process.stdout:` |
 | 267 | Build | The machine-report step in CI informs instead of gating, so an optional component cannot stop the build from being attempted | .github/workflows/build.yml | `continue-on-error: true` |
+| 268 | Robustness | Every tool prints its tick marks on a Windows console whose code page cannot encode them, instead of dying with a UnicodeEncodeError while reporting on something else | tools/utf8_console.py | `def enable(encoding: str = "utf-8") -> bool:` |
+| 269 | Tests | The console fix is tested against a deliberately narrow cp1252 stream, the exact condition that crashed the CEF fetcher in CI | tools/utf8_console.py | `def safe_write(stream, text: str) -> None:` |
+| 270 | Build | CI annotations carry the lines that explain a failure rather than the last ten lines of noise, because GitHub silently drops anything past ten per step | tools/ci_report.py | `ANNOTATION_LIMIT = 10` |
