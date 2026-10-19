@@ -16,6 +16,12 @@
 #define BROWSERX_VERSION "dev"
 #endif
 
+// Stamped by the build from git (tools/revision.py). "unknown" is the honest answer for a
+// build made outside a checkout, and it is what a ZIP-folder build reports — never a guess.
+#ifndef BROWSERX_GIT
+#define BROWSERX_GIT "unknown"
+#endif
+
 namespace browserx {
 namespace app {
 namespace {
@@ -81,7 +87,12 @@ std::string VersionBanner() {
 #endif
   std::string banner = "BrowserX ";
   banner += BROWSERX_VERSION;
-  banner += " by codero-sus <https://the-codero.web.app> (";
+  banner += " by codero-sus <https://the-codero.web.app>";
+  // The commit, so "which build is this?" is answered by the binary itself rather than by
+  // trusting that the folder it was copied from is still the folder it was built from.
+  banner += " [";
+  banner += BROWSERX_GIT;
+  banner += "] (";
   banner += arch;
   banner += ", CEF/Chromium";
 #if defined(NDEBUG)
