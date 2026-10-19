@@ -49,6 +49,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT / "tools") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+import revision  # noqa: E402  (same directory; imported after REPO_ROOT is known)
 sys.path.insert(0, str(REPO_ROOT / "tools"))       # so argv_notes is importable however we are called
 import argv_notes                                  # noqa: E402  (path is set up just above)
 import fetch_cef                                   # noqa: E402  (same directory)
@@ -444,7 +448,8 @@ WRAPPER_DEFINES = ("UNICODE", "_UNICODE", "WIN32_LEAN_AND_MEAN", "NOMINMAX",
 
 
 def compile_command(cl: Path, source: Path, obj: Path, includes: list[Path],
-                    defines: list[str], debug: bool, sdk: dict | None) -> list[str]:
+                    defines: list[str], debug: bool, sdk: dict | None,
+                    force_include: str | None = None) -> list[str]:
     command = [
         str(cl), "/nologo", "/c", "/std:c++20", "/EHsc", "/W4",
         # /permissive-: MSVC's strict mode. The code is written for C++20 and built with
@@ -461,6 +466,11 @@ def compile_command(cl: Path, source: Path, obj: Path, includes: list[Path],
         command += ["/O2", "/GL", "/Gy", "/DNDEBUG"]
     for define in defines:
         command.append(f"/D{define}")
+    if force_include:
+        # The revision header (tools/revision.py). Forced rather than #included so the
+        # sources do not all have to remember it, and named by /FI exactly like the
+        # Makefile's -include, so the two build systems stamp the same facts.
+        command.append(f"/FI{force_include}")
     for include in includes:
         command.append(f"/I{include}")
     command += [f"/Fo{obj}", str(source)]
@@ -860,6 +870,15 @@ def build(args) -> int:
     includes = base_includes(cef_root)
     sdk = toolchain.get("sdk")
 
+    # Which commit this build is from, written as C++ the compiler can include. Written
+    # before anything compiles and only when it changes, so an unchanged revision does not
+    # invalidate the incremental cache.
+    revision_header = OBJ_DIR / "generated" / revision.REVISION_HEADER
+    if not args.dry_run:
+        if revision.write_header(revision_header):
+            say(f"  revision {revision.revision_label(revision.describe())}")
+    includes = includes + [revision_header.parent]
+
     # The compiler's own include directory, always - that is where <string>, <optional>
     # and the rest of the C++ standard library live. This line used to sit inside the
     # `if sdk:` below, so a machine whose SDK was not found compiled without it and every
@@ -908,7 +927,9 @@ def build(args) -> int:
         for source in sample:
             say("  " + " ".join(compile_command(cl, source, object_path(source),
                                                 [Path(p) for p in includes_for(source)],
-                                                defines_for(source), args.debug, sdk)))
+                                                defines_for(source), args.debug, sdk,
+                                                force_include=None if is_wrapper_source(source, cef_root)
+                                                else revision.REVISION_HEADER)))
         say(f"  … and the same for the other {len(sources) - len(sample)} sources")
         link_libs = [str(plan["libcef"])] + list(SYSTEM_LIBS)
         link_paths = list(cef_lib_dirs(cef_root))
@@ -960,8 +981,12 @@ def build(args) -> int:
 
     def compile_one(item: tuple[Path, Path, str, list[Path]]) -> tuple[Path, int, str, list[Path], str]:
         source, obj, recipe, deps = item
-        command = compile_command(cl, source, obj, [Path(p) for p in includes_for(source)],
-                                  defines_for(source), args.debug, sdk)
+        command = compile_command(
+            cl, source, obj, [Path(p) for p in includes_for(source)],
+            defines_for(source), args.debug, sdk,
+            # CEF's own binding layer must not see BrowserX headers; that isolation is
+            # deliberate, so the revision header is forced only into our sources.
+            force_include=None if is_wrapper_source(source, cef_root) else revision.REVISION_HEADER)
         code, text = run(command, capture=True, env=env)
         return source, code, text, deps, recipe
 
@@ -1021,8 +1046,17 @@ def build(args) -> int:
         warn("not staged: run with --stage so libcef.dll sits next to the exe, or the "
              "browser will not start")
 
+    revision_path = revision.write_record(
+        OUT_DIR / "build-info.json",
+        exe=output.name,
+        size=output.stat().st_size if output.is_file() else 0,
+        debug=bool(args.debug),
+        staged=bool(args.stage),
+    )
     say("")
     say(f"  built in {time.time() - started:.1f}s → {output}")
+    say(f"  built from:    {revision.revision_label(revision.describe())}"
+        f"  ({revision_path.name} records it)")
     say(f"  run it:        out\\BrowserX.exe")
     say(f"  then update:   tools\\update.cmd")
     say("")
@@ -1444,6 +1478,28 @@ def self_test() -> int:
                 os.environ["BROWSERX_CEF_DIR"] = real_override
         expect(cef_tree_version_key("cef_binary_154.0.34+x_windows64") == (154, 0, 34),
                "a distribution directory sorts by its version numbers")
+
+    # --- the revision header ----------------------------------------------------------
+    # The whole point of stamping the commit is that it is true. These checks keep the two
+    # ways it can quietly become false from coming back: the wrapper seeing our headers,
+    # and the header escaping the include path the compiler is given.
+    expect(not is_wrapper_source(SRC_DIR / "app" / "cli.cc", Path("/nowhere")),
+           "our own sources are not mistaken for CEF's wrapper")
+    expect(is_wrapper_source(Path("/cef_binary_154_windows64/libcef_dll/wrapper/cef_client.cc"),
+                             Path("/cef_binary_154_windows64")),
+           "CEF's wrapper is recognised, so it can be kept isolated")
+    header_dir = Path("/tmp/browserx-rev-header-check")
+    command = compile_command(Path("cl.exe"), SRC_DIR / "app" / "cli.cc", Path("cli.obj"),
+                              [header_dir], ["UNICODE"], False, None,
+                              force_include="revision.h")
+    expect("/FIrevision.h" in command, "our sources are compiled with the revision forced in")
+    wrapper_command = compile_command(Path("cl.exe"), Path("cef_client.cc"), Path("c.obj"),
+                                      [header_dir], ["WRAPPING_CEF_SHARED"], False, None,
+                                      force_include=None)
+    expect(not any(arg.startswith("/FI") for arg in wrapper_command),
+           "CEF's wrapper is never force-included with a BrowserX header")
+    expect(revision.REVISION_HEADER == "revision.h" and (OBJ_DIR / "generated").name == "generated",
+           "the header has one name, used by both build systems")
 
     # --- the prebuilt binding layer --------------------------------------------------
     with tempfile.TemporaryDirectory() as scratch:

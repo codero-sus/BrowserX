@@ -1,0 +1,121 @@
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
+#
+# Build on every push, so "it compiles" is a fact GitHub checks rather than something the
+# author remembers. Two jobs, deliberately different:
+#
+#   core     — Linux, no CEF: the core, the tools and every check run in about a minute.
+#              This is the gate that catches most mistakes, and it needs no secrets and
+#              no downloads.
+#   windows  — the real thing: the CEF distribution is fetched (about 250 MB, cached
+#              between runs by the pin in cef.lock.json), then MSVC compiles and links
+#              out\BrowserX.exe. This is the only place the Windows path is proven
+#              end-to-end without a Windows machine at hand, which is why it exists.
+#
+# The cache key is the CEF pin, not the code: the binaries only change when the pin does,
+# so a run reuses them and spends its minutes compiling. A cache miss is not a failure —
+# it is the first run after a pin bump, and it downloads what it needs.
+
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# One run per branch: a second push makes the first one's answer moot.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: core and checks (Linux, no CEF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show the compiler
+        run: g++ --version | head -1
+
+      # The same two commands a person runs locally. `make test` builds and runs the unit
+      # tests; `make check` is the gate: compile check, the Windows build's own self-test,
+      # the GUI tool's self-test, the documentation's commands, the CEF fetcher, the
+      # revision stamping, folder adoption, and the improvements ledger.
+      - name: Unit tests
+        run: make test
+
+      - name: Every check
+        run: make check
+
+      # The revision stamp only means something if the header was found and current. A
+      # stale header is the quiet failure: present, plausible, and describing a commit
+      # that has moved on.
+      - name: The revision stamp names this commit
+        run: python tools/revision.py --verify-header build/generated/revision.h
+
+  windows:
+    name: full browser (Windows, MSVC + CEF)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Keyed on the pin file: a new CEF version is a new cache, the same version is a
+      # restore. restore-keys falls back to the newest cached tree if the exact key is
+      # missing, so a pin bump still starts from something rather than from nothing.
+      - name: Cache the CEF distribution
+        uses: actions/cache@v4
+        with:
+          path: .cef-deps
+          key: cef-${{ runner.os }}-${{ hashFiles('cef.lock.json') }}
+          restore-keys: |
+            cef-${{ runner.os }}-
+
+      - name: What this machine has
+        run: python tools/check_build_requirements.py --for windows
+
+      - name: Fetch CEF (newest released build, SHA-1 verified)
+        run: python tools/fetch_cef.py
+
+      # The wrapper, not the python file: this is the command a person types, so the
+      # thing CI proves is that path, including finding a real Python.
+      - name: Build
+        shell: cmd
+        run: tools\build_windows.cmd --stage
+
+      - name: The executable exists and knows its commit
+        shell: cmd
+        run: |
+          if not exist out\BrowserX.exe exit /b 1
+          for %%F in (out\BrowserX.exe) do echo size: %%~zF bytes
+          out\BrowserX.exe --version
+
+      - name: Upload the browser
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrowserX-windows-x64
+          path: |
+            out/BrowserX.exe
+            out/*.dll
+            out/*.bin
+            out/*.dat
+            out/*.pak
+            out/*.json
+            out/locales/**
+          if-no-files-found: error
+          retention-days: 14

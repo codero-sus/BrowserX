@@ -28,6 +28,7 @@ SRC_DIR        := $(ROOT)/src
 TEST_DIR       := $(ROOT)/tests/unit
 TOOLS_DIR      := $(ROOT)/tools
 OUT_DIR        := $(ROOT)/out
+BUILD_DIR      := $(ROOT)/build
 OBJ_DIR        := $(ROOT)/build/obj
 CHECK_OBJ_DIR  := $(ROOT)/build/obj-check
 TEST_OBJ_DIR   := $(ROOT)/build/obj-tests
@@ -75,6 +76,11 @@ WARN           := -Wall -Wno-unused-parameter -Wno-missing-field-initializers \
 BASE_FLAGS     := $(CXX_STD) -fno-rtti -fno-exceptions -fno-threadsafe-statics \
                   -fPIC -fno-strict-aliasing -fstack-protector -funwind-tables \
                   -fvisibility=hidden -fvisibility-inlines-hidden -pipe -pthread
+# The commit the binary was built from arrives as a generated header, not as a -D flag:
+# make's $(shell) strips backslashes, so `-DNAME=\"value\"` reaches the compiler with no
+# quotes and turns into a C++ expression (a branch named arena/... becomes a division).
+# A header has no quoting layer to lose, and MSVC takes the same file.
+REVISION_H     := $(BUILD_DIR)/generated/revision.h
 DEFINES        := -D_FILE_OFFSET_BITS=64 -DUSING_CEF_SHARED -DBROWSERX_VERSION=\"$(shell $(PYTHON) -c "import json;print(json.load(open('$(ROOT)/cef.lock.json')).get('version') or 'dev')" 2>/dev/null)\"
 
 ifeq ($(SANITIZE),asan)
@@ -98,7 +104,20 @@ OPT_FLAGS      := -O2 -g1 -DNDEBUG -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 \
                   -ffunction-sections -fdata-sections
 endif
 
-INCLUDES       := -I$(ROOT)/src -I$(CHECK_CEF_ROOT)
+REVISION_FLAGS := -include $(REVISION_H)
+INCLUDES       := -I$(ROOT)/src -I$(CHECK_CEF_ROOT) $(REVISION_FLAGS)
+
+# -include is silent when the file is absent, so a build with no git (or a folder
+# that is not a checkout) still compiles: the sources fall back to "unknown".
+# FORCE makes the recipe run every build; write_header only touches the file when its
+# content changes, so objects are not needlessly rebuilt.
+$(REVISION_H): FORCE
+	@mkdir -p $(dir $@)
+	@$(PYTHON) $(TOOLS_DIR)/revision.py --header $@
+
+FORCE:
+
+.PHONY: FORCE
 
 LD_FLAGS       := -fPIC -pthread -Wl,--disable-new-dtags -Wl,-z,noexecstack \
                   -Wl,-z,now -Wl,-z,relro -Wl,-O1 -Wl,--as-needed -Wl,--gc-sections \
@@ -218,7 +237,7 @@ headers:
 # -----------------------------------------------------------------------------
 # Build
 # -----------------------------------------------------------------------------
-$(OBJ_DIR)/%.o: $(ROOT)/%.cc
+$(OBJ_DIR)/%.o: $(ROOT)/%.cc $(REVISION_H)
 	@mkdir -p $(dir $@)
 	@echo "  CXX  $(patsubst $(ROOT)/%,%,$<)"
 	@$(CXX) $(BASE_FLAGS) $(WARN) $(OPT_FLAGS) $(SAN_FLAGS) $(DEFINES) $(INCLUDES) -MMD -MP -c $< -o $@
@@ -247,7 +266,8 @@ $(BIN): $(APP_OBJS) $(WRAPPER_LIB)
 	@$(CXX) $(BASE_FLAGS) $(OPT_FLAGS) $(SAN_FLAGS) $(APP_OBJS) $(WRAPPER_LIB) \
 		-L$(CEF_BINARY_DIR) -lcef $(LD_FLAGS) $(LIBS) -o $@
 	@echo ""
-	@echo "  ✔ built $(patsubst $(ROOT)/%,%,$@)"
+	@echo "  ✔ built $(patsubst $(ROOT)/%,%,$@)  [$(shell $(PYTHON) $(TOOLS_DIR)/revision.py --label)]"
+	@$(PYTHON) $(TOOLS_DIR)/revision.py --record $(OUT_DIR)/build-info.json
 	@echo "    next: make run    (or: make package)"
 	@echo ""
 
@@ -267,11 +287,12 @@ debug:
 # With a CEF distribution: real object compilation.
 # Header-only fallback:     -fsyntax-only against the CEF headers.
 # -----------------------------------------------------------------------------
-$(CHECK_OBJ_DIR)/%.o: $(ROOT)/%.cc
+$(CHECK_OBJ_DIR)/%.o: $(ROOT)/%.cc $(REVISION_H)
 	@mkdir -p $(dir $@)
 	@echo "  CHK  $(patsubst $(ROOT)/%,%,$<)"
 	@$(CXX) $(BASE_FLAGS) $(WARN) -Werror=return-type -Werror=delete-non-virtual-dtor \
-		-fsyntax-only $(OPT_FLAGS:-O2=-O0) $(SAN_FLAGS) $(DEFINES) -I$(ROOT)/src -I$(CHECK_CEF_ROOT) $<
+		-fsyntax-only $(OPT_FLAGS:-O2=-O0) $(SAN_FLAGS) $(DEFINES) -I$(ROOT)/src -I$(CHECK_CEF_ROOT) \
+		$(REVISION_FLAGS) $<
 
 .PHONY: check-improvements
 check-improvements:
@@ -306,6 +327,13 @@ check-docs:
 check-fetch:
 	@$(PYTHON) $(TOOLS_DIR)/fetch_cef.py --self-test
 
+# The revision stamp is what lets a binary answer "which commit am I?" - and it is the
+# kind of thing that breaks silently (a header that quietly stops being found leaves the
+# binary saying "unknown" while everything looks fine). Tested with real git in temp dirs.
+.PHONY: check-revision
+check-revision:
+	@$(PYTHON) $(TOOLS_DIR)/revision.py --self-test
+
 # Adopting a downloaded folder into a git checkout moves files, so its logic is tested
 # against real git here: a fake remote, a fake ZIP-style folder with a CEF download in it,
 # and the assertion that the download survives untouched while a modified tracked file is
@@ -318,7 +346,7 @@ check-adopt:
 # Order matters: check-improvements is the ratchet that fails on purpose until the
 # ledger passes 200 rows, and make stops at the first failing prerequisite. It runs
 # last so a red gate can never hide a red compiler, a broken window or a broken doc.
-check: check-compile check-windows check-gui check-docs check-fetch check-adopt check-improvements
+check: check-compile check-windows check-gui check-docs check-fetch check-revision check-adopt check-improvements
 
 # Files listed in TEST_EXTRA_SRCS are compiled by `make test` without CEF headers
 # on the include path, so a stray CEF include there would break the test build.
@@ -353,11 +381,11 @@ check-core-purity: check-test-extra-purity
 # -----------------------------------------------------------------------------
 # Unit tests — pure C++, no CEF, so they run anywhere (including CI sandboxes)
 # -----------------------------------------------------------------------------
-$(TEST_OBJ_DIR)/%.o: $(ROOT)/%.cc
+$(TEST_OBJ_DIR)/%.o: $(ROOT)/%.cc $(REVISION_H)
 	@mkdir -p $(dir $@)
 	@echo "  TST  $(patsubst $(ROOT)/%,%,$<)"
 	@$(CXX) $(CXX_STD) -fexceptions -frtti -O1 -g $(SAN_FLAGS) -DUNIT_TEST \
-		-I$(ROOT)/src -I$(ROOT)/tests -MMD -MP -c $< -o $@
+		-I$(ROOT)/src -I$(ROOT)/tests $(REVISION_FLAGS) -MMD -MP -c $< -o $@
 
 .PHONY: test
 test: $(TEST_BIN)
