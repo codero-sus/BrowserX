@@ -18,6 +18,7 @@
 #define BROWSERX_BROWSER_BROWSER_SHELL_H_
 
 #include <memory>
+#include <cstdint>
 #include <string>
 #include <vector>
 

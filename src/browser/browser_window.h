@@ -21,6 +21,7 @@
 #define BROWSERX_BROWSER_BROWSER_WINDOW_H_
 
 #include <map>
+#include <cstdint>
 #include <string>
 #include <vector>
 
