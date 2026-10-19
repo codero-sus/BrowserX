@@ -414,13 +414,42 @@ def do_verify(checks: list[str], args, out: Out) -> list[dict]:
             ok = exe.is_file() and exe.stat().st_size > 0
             out.step(f"verifying: {exe.relative_to(REPO_ROOT)} exists")
             results.append({"step": "out/BrowserX.exe exists", "ok": ok})
+            results.append(verify_revision(out))
             continue
         out.step(f"verifying: make {check}")
         code, _ = run(["make", check], stream=True, timeout=None)
         results.append({"step": f"make {check}", "ok": code == 0})
         if code != 0:
             break
+    results.append(verify_revision(out))
     return results
+
+
+def verify_revision(out: "Out", record: "Path | None" = None) -> dict:
+    """Did the thing we just built come from the commit we just pulled?
+
+    An update that pulls code and then reports success while the binary on disk is still
+    the old one is the failure this catches. It reads out/build-info.json, which the build
+    writes only after a successful link, and asks tools/revision.py to compare it with HEAD.
+    Cannot-tell (no record yet, or no checkout) is reported as its own outcome rather than
+    as a pass: an update should not claim provenance it cannot check.
+    """
+    record = record or REPO_ROOT / "out" / "build-info.json"
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    try:
+        import revision
+    except ImportError:
+        out.warn("could not load tools/revision.py, so the build record was not checked")
+        return {"step": "build matches the pulled commit", "ok": True, "skipped": True}
+    code, text = revision.staleness(record, revision.describe())
+    if code == revision.EXIT_CURRENT:
+        out.mark("ok", "revision", text)
+        return {"step": "build matches the pulled commit", "ok": True}
+    if code == revision.EXIT_STALE:
+        out.mark("fail", "revision", text)
+        return {"step": "build matches the pulled commit", "ok": False}
+    out.mark("info", "revision", text)
+    return {"step": "build matches the pulled commit", "ok": True, "skipped": True}
 
 
 def do_rollback(repo: Repo, args, out: Out) -> int:
@@ -525,6 +554,25 @@ def self_test() -> int:
     expect(decide_verification(True, True, args) == ["check-compile", "test"],
            "--full also compiles every file against the CEF headers")
     args.full = False
+
+    # The step that stops an update from claiming success while the binary is untouched:
+    # it must fail on a stale record, pass on a current one, and report "not checked"
+    # (neither pass nor failure) when there is nothing to compare.
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="browserx-verify-") as scratch:
+        class Quiet:
+            def __getattr__(self, name):
+                return lambda *a, **k: None
+
+        verdict = verify_revision(Quiet(), REPO_ROOT / "out" / "no-such-record.json")
+        expect(verdict.get("skipped") is True,
+               "a build with no record is reported as not checked, never as a pass")
+
+        record = Path(scratch) / "build-info.json"
+        record.write_text('{"commit": "unknown", "short": "unknown", "dirty": false}')
+        verdict = verify_revision(Quiet(), record)
+        expect(verdict.get("skipped") is True,
+               "a record with no commit (an outside-a-checkout build) is not checked either")
 
     state = tree_state(" M src/core/format.cc\n?? scratch.txt\nM  Makefile\n")
     expect(state["dirty"] and len(state["modified"]) == 2,

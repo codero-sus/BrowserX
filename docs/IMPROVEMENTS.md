@@ -266,3 +266,23 @@ were written beside.
 | 243 | Tooling | The Windows wrapper finds a real Python (not the Store stub) and refuses to run rather than touch files without the check, returning the exit code unchanged | tools/adopt_clone.cmd | `Refusing to touch your files without it` |
 | 244 | Tests | The conversion is tested against real git: a fabricated remote, a ZIP-style folder with a modified pin and a large untracked download, proving the download survives byte for byte while the pin is replaced | tools/adopt_clone.py | `the CEF download was not touched` |
 | 245 | Docs | BUILDING.md gives the six commands that turn a ZIP copy into a checkout in any version of this project, including ones older than the tool, and says they were rehearsed with a real 1.4 GB download in place | BUILDING.md | `Six commands, in the folder you already have` |
+| 246 | Build | Every build is stamped with the commit it came from, so the binary answers which commit it is through --version | src/app/cli.cc | `banner += BROWSERX_GIT` |
+| 247 | Build | An uncommitted working tree is part of the revision, not hidden: the label gains a + so two binaries from one commit are never confused | tools/revision.py | `return short + ("+" if facts.get("dirty") else "")` |
+| 248 | Honesty | A build outside a checkout is stamped unknown rather than guessing a revision it cannot know | tools/revision.py | `short = str(facts.get("short") or UNKNOWN)` |
+        return UNKNOWN` |
+| 249 | Tooling | The revision reaches the compiler through a generated header, because make strips the backslashes out of -D string flags and turns a branch name into a division | tools/revision.py | `REVISION_HEADER = "revision.h"` |
+| 250 | Tooling | The generated header is rewritten only when its content changes, so an unchanged revision does not invalidate every object file | tools/revision.py | `if path.read_text(encoding="utf-8") == text` |
+| 251 | Build | Both build systems stamp the same facts with the same contract, g++ -include and MSVC /FI, so the two cannot drift | tools/build_windows.py | `command.append(f"/FI{force_include}")` |
+| 252 | Safety | CEF's own binding layer is never force-included with a BrowserX header, which would break the isolation that keeps the wrapper compiling | tools/build_windows.py | `force_include=None if is_wrapper_source` |
+| 253 | Build | A successful build writes out/build-info.json naming the commit, branch, dirty flag and exe size, so currency can be checked without launching the browser | tools/build_windows.py | `revision.write_record(` |
+| 254 | Tooling | Is my build current? answered by comparing the recorded commit with HEAD, with stale as exit 10 so scripts compose with the updater | tools/revision.py | `def staleness(` |
+| 255 | Safety | Cannot-tell is its own answer, distinct from stale: a missing or malformed record never pretends to be either | tools/revision.py | `is not readable as a build record` |
+| 256 | Honesty | A stale generated header is caught before anything is built, which CI asserts on every push | tools/revision.py | `def verify_header(` |
+| 257 | Tooling | The updater now fails an update that pulled new code but left an old binary, instead of reporting success | tools/update.py | `def verify_revision(` |
+| 258 | Docs | browserx://version shows which commit the running browser was built from, next to the version | src/web/internal_pages.cc | `Built from` |
+| 259 | Tests | The revision contract is unit tested: the banner names the build, and a dirty tree is marked rather than silently dropped | tests/unit/cli_test.cc | `VersionBannerNamesTheBuildRevision` |
+| 260 | Build | Every push is compiled by GitHub: a Linux job runs the tests and all checks, a Windows job fetches CEF and links the real browser | .github/workflows/build.yml | `name: full browser (Windows, MSVC + CEF)` |
+| 261 | Build | The Windows CI job builds through tools\build_windows.cmd, the command a person types, so CI proves that path and not a parallel one | .github/workflows/build.yml | `tools\build_windows.cmd --stage` |
+| 262 | Build | The CEF download is cached by the pin in cef.lock.json, so CI spends its minutes compiling rather than re-downloading 250 MB | .github/workflows/build.yml | `hashFiles('cef.lock.json')` |
+| 263 | Build | CI uploads the built browser as an artifact, so a successful Windows build is something that can be run and inspected, not just a green tick | .github/workflows/build.yml | `actions/upload-artifact@v4` |
+| 264 | Docs | BUILDING.md explains the git build: what --version reports, how to ask whether a build is current, and how the revision gets in | BUILDING.md | `Building is a git operation` |

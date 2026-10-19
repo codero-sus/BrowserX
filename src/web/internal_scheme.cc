@@ -25,6 +25,10 @@
 #define BROWSERX_VERSION "dev"
 #endif
 
+#ifndef BROWSERX_GIT
+#define BROWSERX_GIT "unknown"
+#endif
+
 namespace browserx {
 namespace web {
 namespace {
@@ -131,6 +135,7 @@ class InternalSchemeFactory : public CefSchemeHandlerFactory {
 PageData BuildPageData(const app::CefHost& host) {
   PageData data;
   data.version = BROWSERX_VERSION;
+  data.git_revision = BROWSERX_GIT;
 
   const core::ModeInfo& info = core::GetModeInfo(host.plan().mode);
   data.active_mode_id = info.id != nullptr ? info.id : "ultra";
