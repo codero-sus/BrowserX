@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -39,9 +40,23 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = REPO_ROOT / "out" / "ci"
-#: Long enough to hold a compiler's error list, short enough that 50 annotations cover
-#: what matters; GitHub caps how many it shows per step.
-DEFAULT_LINES = 40
+#: How much trailing output to keep for the "why did it fail" decision. Generous, because
+#: the line that explains a failure is often not the last one - make prints the command it
+#: was running, and a compiler prints a preamble before the error.
+DEFAULT_LINES = 120
+
+#: GitHub accepts at most ten annotations per step created by workflow commands. Beyond
+#: that it silently drops them, which is how the first version of this reported nine lines
+#: of "TST tests/unit/..." and no error at all: the useful lines were past the cap.
+ANNOTATION_LIMIT = 10
+
+#: What a line that explains a failure looks like. Deliberately broad: compilers, linkers,
+#: make, Python tracebacks and git all say "error" in their own way, and a missed line
+#: costs another push-and-wait cycle to discover.
+DIAGNOSTIC = re.compile(
+    r"(error|fatal|cannot|can't|unable to|failed|failure|not found|no such file|"
+    r"undefined reference|Traceback|Exception|make: \*\*\*|✘|\bX |exit code)",
+    re.IGNORECASE)
 
 
 def escape(text: str) -> str:
@@ -86,12 +101,24 @@ def run(label: str, command: list[str], keep: int) -> int:
     print(f"\n  {label}: FAILED with exit code {code} ({elapsed:.1f}s)",
           file=sys.stderr)
     print(f"  full output: {log_path}", file=sys.stderr)
-    # The annotations are the point. Emit the tail in order, so the last line - usually
-    # the one that says what to fix - is the most recent annotation.
-    for line in tail:
+
+    # The annotations are the point, and there are only ten of them. Spend them on the
+    # lines that explain the failure, then on the end of the output: a build that dies
+    # after printing its plan must still say what the plan was, but an error outranks it.
+    chosen = [line for line in tail if line.strip() and DIAGNOSTIC.search(line)]
+    if not chosen:
+        chosen = [line for line in tail if line.strip()][-ANNOTATION_LIMIT:]
+    if len(chosen) > ANNOTATION_LIMIT:
+        # The first error is the one that matters (later ones are usually consequences),
+        # but the last lines hold the summary - keep both ends rather than only the tail.
+        chosen = chosen[:6] + chosen[-(ANNOTATION_LIMIT - 6):]
+    for line in chosen:
         message = escape(line)
         if message.strip():
             print(f"::error title={escape(label)}::{message}")
+    if len(tail) > ANNOTATION_LIMIT:
+        print(f"  ({len(tail)} trailing lines captured; the rest are in the log)",
+              file=sys.stderr)
     return code
 
 
@@ -123,4 +150,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    # Windows console code pages cannot encode ✔ or →; without this a tool dies while
+    # reporting something else. Best effort: it never makes a working run fail.
+    import utf8_console  # same directory: sys.path[0] when run as a script
+    utf8_console.enable()
     sys.exit(main(sys.argv[1:]))
