@@ -47,9 +47,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_URL = "https://github.com/codero-sus/BrowserX.git"
-# The branch carrying the work. `main` is still the repository's first commit, so cloning
-# or adopting without naming this branch produces a folder with almost nothing in it.
-DEFAULT_BRANCH = "arena/419ef7ef-mybrowser"
+# The branch a person wants: `main`, the default branch, which carries the released tree.
+# It used to point at a development branch because main was still the repository's first
+# commit; the tool now checks that main is not an empty stub before adopting onto it (see
+# main_is_a_stub below), so this constant cannot silently produce an almost-empty folder.
+DEFAULT_BRANCH = "main"
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -150,6 +152,18 @@ def remote_head(url: str, branch: str) -> tuple[str, dict[str, bytes]]:
 # ---------------------------------------------------------------------------
 # The plan
 # ---------------------------------------------------------------------------
+def main_is_a_stub(entries: list[dict]) -> bool:
+    """Is `main` still the repository's initial commit, with no project in it?
+
+    Adopting onto a stub replaces a working folder with a README and nothing else - the
+    worst outcome this tool could produce, because it looks like success. A stub is
+    recognised by content, not by commit count: fewer than a handful of files, and no
+    Makefile or src directory among them.
+    """
+    names = {str(entry.get("path", "")) for entry in entries}
+    return len(names) < 5 and "Makefile" not in names and "src" not in names
+
+
 def comparable(data: bytes) -> bytes:
     """Bytes with line endings normalised, for deciding whether two copies differ.
 
@@ -164,6 +178,17 @@ def comparable(data: bytes) -> bytes:
 
 def make_plan(workdir: Path, url: str, branch: str) -> dict:
     commit, files = remote_head(url, branch)
+    # Guard against adopting onto a branch that has no project in it. This is the one
+    # failure that would look like success: the folder ends up a clean checkout of a
+    # README, with the user's files replaced and nothing to build.
+    if branch in ("main", "master") and main_is_a_stub([{"path": p} for p in files]):
+        raise AdoptError(
+            f"the '{branch}' branch on this remote holds {len(files)} file(s) and no "
+            "project - adopting onto it would replace your folder with almost nothing.\n"
+            "    That branch is probably still the repository's first commit.\n"
+            "    Use the branch that carries the code instead, for example:\n"
+            "      tools\\adopt_clone.cmd --branch <branch>\n"
+            "    Or ask the repository owner to make the code branch the default.")
     same: list[str] = []
     changed: list[str] = []
     added: list[str] = []
@@ -381,6 +406,32 @@ def self_test() -> int:
 
         # Nothing is adopted when the branch is wrong: the folder stays as it was.
         expect(not is_checkout(fresh), "a failed plan leaves the folder untouched")
+
+        # --- the stub guard -----------------------------------------------------------
+        # A remote whose main is still the repository's first commit. Adopting onto it
+        # would replace a full folder with a README and call it a success, which is the
+        # one outcome this tool must never produce.
+        stub_source = scratch / "stub-source"
+        stub_source.mkdir()
+        (stub_source / "README.md").write_text("# BrowserX\n")
+        git(["init", "--quiet", "-b", "main"], cwd=stub_source)
+        git(["add", "--all"], cwd=stub_source)
+        git(["-c", "user.name=BrowserX self-test", "-c", "user.email=test@example.invalid",
+             "commit", "--quiet", "-m", "Initial commit"], cwd=stub_source)
+        stub_remote = scratch / "stub.git"
+        git(["clone", "--quiet", "--bare", str(stub_source), str(stub_remote)])
+        guarded = scratch / "stub-workdir"
+        guarded.mkdir()
+        (guarded / "keep-me.txt").write_text("my work\n")
+        try:
+            make_plan(guarded, str(stub_remote), "main")
+            expect(False, "adopting onto a stub branch is refused")
+        except AdoptError as error:
+            text = str(error)
+            expect("no project" in text and "<branch>" in text,
+                   "adopting onto a stub branch is refused, and says which branch to use instead")
+        expect((guarded / "keep-me.txt").is_file() and not is_checkout(guarded),
+               "the refusal leaves the folder exactly as it was")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

@@ -1,0 +1,156 @@
+# BrowserX — (c) 2026 codero-sus. All rights reserved.
+# Personal, non-commercial use only. No modification, no redistribution or resale.
+# Source-available, not open source — see LICENSE. https://the-codero.web.app
+#
+# Compile the browser and publish it, so the answer to "where do I get BrowserX?" is a
+# link rather than a toolchain. Triggered two ways:
+#
+#   a tag             git tag v154.0.34 && git push origin v154.0.34
+#                     -> builds that tag and publishes it as a Release
+#   manual dispatch   Actions -> release -> Run workflow
+#                     -> builds the branch you choose, names the Release from the commit
+#
+# It is deliberately separate from build.yml. That one answers "does this commit compile?"
+# on every push and must stay fast and cheap; this one produces a downloadable file and
+# only runs when someone asks for one.
+#
+# The build is the same code path as everywhere else: tools\build_windows.cmd, which calls
+# tools\build_windows.py, which compiles the same sources the Makefile does. Nothing here
+# is a special release-only build that could rot untested - if build.yml is green for a
+# commit, this job compiles that commit the same way.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to call this build (e.g. 154.0.34). Empty = the commit's date."
+        required: false
+
+permissions:
+  contents: write   # create the Release and upload the asset
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # never cancel half-written release assets
+
+jobs:
+  windows:
+    name: compile and publish (Windows, MSVC + CEF)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache the CEF distribution
+        uses: actions/cache@v4
+        with:
+          path: .cef-deps
+          key: cef-${{ runner.os }}-${{ hashFiles('cef.lock.json') }}
+          restore-keys: |
+            cef-${{ runner.os }}-
+
+      - name: Fetch CEF (newest released build, SHA-1 verified)
+        timeout-minutes: 20
+        run: python tools/ci_report.py --label "fetch cef" --timeout 1140 -- python tools/fetch_cef.py
+
+      # The wrapper a person runs, wrapped only so a failure becomes an annotation.
+      - name: Compile
+        shell: cmd
+        timeout-minutes: 45
+        run: python tools/ci_report.py --label build --timeout 2580 -- cmd /c tools\build_windows.cmd --stage
+
+      # What the file will be called, and proof it runs.
+      - name: Name the build
+        id: name
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if (-not $version) {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+          if (-not $version -or $version -eq "main" -or $version -eq "master") {
+            $version = (Get-Date -Format "yyyy.MM.dd") + "-" + "${{ github.sha }}".Substring(0, 7)
+          }
+          $asset = "BrowserX-$version-windows-x64"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "asset=$asset" >> $env:GITHUB_OUTPUT
+          "folder=release/$asset" >> $env:GITHUB_OUTPUT
+
+      - name: Prove the executable runs and knows its commit
+        shell: cmd
+        run: |
+          if not exist out\BrowserX.exe exit /b 1
+          out\BrowserX.exe --version
+          python tools\revision.py --check out\build-info.json
+
+      # The zip holds exactly what a person needs to run it: the exe, the CEF runtime
+      # beside it, and the licence. Build records and CI logs stay out - they describe how
+      # it was made, not what it is.
+      - name: Assemble the package
+        shell: pwsh
+        run: |
+          $folder = "${{ steps.name.outputs.folder }}"
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          $skip = @("ci", "update", "profile", "cache", "obj", "obj-win")
+          Get-ChildItem out -Force | Where-Object { $skip -notcontains $_.Name } |
+            ForEach-Object {
+              if ($_.PSIsContainer) {
+                Copy-Item $_.FullName -Destination $folder -Recurse -Force
+              } else {
+                Copy-Item $_.FullName -Destination $folder -Force
+              }
+            }
+          Copy-Item LICENSE, CREDITS.md -Destination $folder -Force
+          $version = "${{ steps.name.outputs.version }}"
+          @(
+            "BrowserX $version - Windows x64",
+            "",
+            "Built from commit ${{ github.sha }}",
+            "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "",
+            "Run BrowserX.exe. The CEF runtime is in this folder; keep it together.",
+            "",
+            "Licence: BrowserX Personal-Use License - personal, non-commercial use only.",
+            "No modification, no redistribution, no resale. See LICENSE."
+          ) | Set-Content -Path "$folder\READ-ME-FIRST.txt" -Encoding UTF8
+          Compress-Archive -Path "$folder\*" -DestinationPath "$folder.zip" -CompressionLevel Optimal
+          Get-Item "$folder.zip" | ForEach-Object { "asset: {0:N1} MB" -f ($_.Length / 1MB) }
+
+      - name: Publish the Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = "${{ steps.name.outputs.asset }}"
+          $version = "${{ steps.name.outputs.version }}"
+          $zip = "${{ steps.name.outputs.folder }}.zip"
+          $notes = @"
+          BrowserX $version, compiled by GitHub from ${{ github.sha }}.
+
+          **To use it:** download $asset.zip, unzip anywhere, run BrowserX.exe.
+          Keep the folder together - libcef.dll and its resources sit beside the exe.
+
+          Windows x64, MSVC + CEF, built by the same code path as a local build.
+          Licence: personal, non-commercial use only; no modification, no redistribution.
+          "@
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $tag = "v$version"
+          }
+          # An existing tag means this is a rebuild: replace the asset rather than fail.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --title "BrowserX $version" --notes $notes --target "${{ github.sha }}"
+          }
+          "published: $tag ($asset)"
