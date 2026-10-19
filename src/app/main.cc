@@ -19,6 +19,10 @@
 #include <memory>
 #include <string>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/wrapper/cef_helpers.h"
@@ -266,7 +270,16 @@ int RunSmokeOrBenchmark(browserx::app::CefHost* host, const LaunchOptions& optio
 }  // namespace
 
 int main(int argc, char** argv) {
+  // CefMainArgs takes different arguments per platform, and this is the one place where
+  // the two builds cannot share a line: POSIX passes argv, Windows passes the module
+  // instance, because that is what CEF needs to find its resources and its own helper
+  // executable. MSVC reports the POSIX call as
+  //     error C2661: 'CefMainArgs::CefMainArgs': no overloaded function takes 2 arguments
+#if defined(_WIN32)
+  CefMainArgs main_args(::GetModuleHandleW(nullptr));
+#else
   CefMainArgs main_args(argc, argv);
+#endif
 
   // 1. Helper processes must be dispatched before we touch anything else.
   if (IsHelperProcess(argc, argv)) {
