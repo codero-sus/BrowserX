@@ -485,13 +485,33 @@ def compile_command(cl: Path, source: Path, obj: Path, includes: list[Path],
 MAX_COMMAND_LINE = 30000
 
 
+def response_argument(argument: str) -> str:
+    """Quote an argument for a response file if it contains a space.
+
+    This is not decoration. The Windows SDK lives under
+    C:\\Program Files (x86)\\Windows Kits\\..., and an unquoted /LIBPATH there is read as
+    /LIBPATH:C:\\Program followed by a stray word - link.exe then reports
+
+        LINK : fatal error LNK1181: cannot open input file 'Files.obj'
+
+    which names a file that exists in no directory and says nothing about quoting. A
+    response file has no shell to do this, so it has to be done here: the option keeps its
+    spelling and only the value is quoted, which is the form link.exe documents.
+    """
+    if " " not in argument:
+        return argument
+    if argument.startswith("/") and ":" in argument:
+        name, value = argument.split(":", 1)
+        return f'{name}:"{value}"'
+    return f'"{argument}"'
+
+
 def link_response_content(objects: list[Path], libs: list[str], lib_paths: list[Path],
                           debug: bool, subsystem: str) -> str:
     """The linker arguments, one per line, for a .rsp file.
 
-    One argument per line because a quoted path may legally contain a space (and a CI
-    agent's temporary directory may), and because a stray trailing space in a joined line
-    would become part of the last path.
+    One argument per line because a path may contain a space, and because a stray trailing
+    space in a joined line would become part of the last path.
     """
     arguments: list[str] = []
     arguments += ["/DEBUG"] if debug else ["/LTCG", "/OPT:REF", "/OPT:ICF"]
@@ -502,7 +522,7 @@ def link_response_content(objects: list[Path], libs: list[str], lib_paths: list[
         arguments.append(f"/LIBPATH:{path}")
     arguments += [str(obj) for obj in objects]
     arguments += libs
-    return "\n".join(arguments) + "\n"
+    return "\n".join(response_argument(item) for item in arguments) + "\n"
 
 
 def link_command(cl: Path, objects: list[Path], output: Path, libs: list[str],
@@ -1616,8 +1636,16 @@ def self_test() -> int:
            "the response file starts with the linker flags and ends with the libraries")
     expect(str(many[0]) in lines and str(many[-1]) in lines,
            "every object file is named in the response file")
-    expect(all(line == line.strip() and line for line in lines),
-           "one argument per line, so a path with a space cannot be split")
+    expect(all(line == line.strip() for line in lines),
+           "no line carries stray whitespace that would join a path")
+    sdk_lib = Path("C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64")
+    spaced = link_response_content(many[:2], ["libcef.lib"], [sdk_lib], False, "windows")
+    expect(f'/LIBPATH:"{sdk_lib}"' in spaced,
+           "a library path containing a space keeps its quotes, or link reads Files.obj")
+    spaced_obj = link_response_content([Path("D:/a/My Files/x.obj")], [], [], False, "windows")
+    expect('"D:/a/My Files/x.obj"' in spaced_obj, "an object path with a space is quoted")
+    expect(link_response_content(many[:1], [], [], False, "windows").splitlines()[-1]
+           == str(many[0]), "a path without a space is left exactly as it is")
 
     # --- the revision header ----------------------------------------------------------
     # The whole point of stamping the commit is that it is true. These checks keep the two
