@@ -46,6 +46,7 @@ jobs:
           python-version: "3.12"
 
       - name: Show the compiler
+        timeout-minutes: 2
         run: g++ --version | head -1
 
       # The same two commands a person runs locally. `make test` builds and runs the unit
@@ -55,10 +56,12 @@ jobs:
       # Wrapped in tools/ci_report.py so a failure arrives as annotations, readable
       # through the checks API even when the job log is not.
       - name: Unit tests
-        run: python tools/ci_report.py --label "make test" -- make test
+        timeout-minutes: 15
+        run: python tools/ci_report.py --label "make test" --timeout 780 -- make test
 
       - name: Every check
-        run: python tools/ci_report.py --label "make check" -- make check
+        timeout-minutes: 15
+        run: python tools/ci_report.py --label "make check" --timeout 780 -- make check
 
       # The revision stamp only means something if the header was found and current. A
       # stale header is the quiet failure: present, plausible, and describing a commit
@@ -94,10 +97,12 @@ jobs:
       # optional component.
       - name: What this machine has
         continue-on-error: true
-        run: python tools/ci_report.py --label requirements -- python tools/check_build_requirements.py --for windows
+        timeout-minutes: 5
+        run: python tools/ci_report.py --label requirements --timeout 240 -- python tools/check_build_requirements.py --for windows
 
       - name: Fetch CEF (newest released build, SHA-1 verified)
-        run: python tools/ci_report.py --label "fetch cef" -- python tools/fetch_cef.py
+        timeout-minutes: 20
+        run: python tools/ci_report.py --label "fetch cef" --timeout 1140 -- python tools/fetch_cef.py
 
       # The wrapper, not the python file: this is the command a person types, so the
       # thing CI proves is that path, including finding a real Python.
@@ -106,10 +111,12 @@ jobs:
       # to turn a failure into annotations; the exit code is still the wrapper's.
       - name: Build
         shell: cmd
-        run: python tools/ci_report.py --label build -- cmd /c tools\build_windows.cmd --stage --verbose
+        timeout-minutes: 45
+        run: python tools/ci_report.py --label build --timeout 2580 -- cmd /c tools\build_windows.cmd --stage --verbose
 
       - name: The executable exists and knows its commit
         shell: cmd
+        timeout-minutes: 5
         run: |
           if not exist out\BrowserX.exe exit /b 1
           for %%F in (out\BrowserX.exe) do echo size: %%~zF bytes

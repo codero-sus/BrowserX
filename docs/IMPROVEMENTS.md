@@ -287,7 +287,7 @@ were written beside.
 | 263 | Build | CI uploads the built browser as an artifact, so a successful Windows build is something that can be run and inspected, not just a green tick | .github/workflows/build.yml | `actions/upload-artifact@v4` |
 | 264 | Docs | BUILDING.md explains the git build: what --version reports, how to ask whether a build is current, and how the revision gets in | BUILDING.md | `Building is a git operation` |
 | 265 | Build | A failing CI step reports its last lines as annotations, which stay readable through the checks API even where the job log is not reachable | tools/ci_report.py | `def escape(text: str) -> str:` |
-| 266 | Build | The CI wrapper keeps the command's own exit code and passes output through unchanged, so the log shows the original failure rather than a reconstruction | tools/ci_report.py | `for line in process.stdout:` |
+| 266 | Build | The CI wrapper keeps the command's own exit code and passes output through unchanged, so the log shows the original failure rather than a reconstruction | tools/ci_report.py | `for text in stream:` |
 | 267 | Build | The machine-report step in CI informs instead of gating, so an optional component cannot stop the build from being attempted | .github/workflows/build.yml | `continue-on-error: true` |
 | 268 | Robustness | Every tool prints its tick marks on a Windows console whose code page cannot encode them, instead of dying with a UnicodeEncodeError while reporting on something else | tools/utf8_console.py | `def enable(encoding: str = "utf-8") -> bool:` |
 | 269 | Tests | The console fix is tested against a deliberately narrow cp1252 stream, the exact condition that crashed the CEF fetcher in CI | tools/utf8_console.py | `def safe_write(stream, text: str) -> None:` |
@@ -297,3 +297,5 @@ were written beside.
 | 273 | Robustness | Is this a regular file? answered portably, because S_ISREG does not exist in MSVC's CRT and the Windows build failed on it | src/app/app_paths.cc | `bool IsRegularFile(unsigned int mode)` |
 | 274 | Tooling | The portability check also catches POSIX-only macros and calls, not just headers, so the S_ISREG class of failure is found before a Windows machine is needed | tools/build_windows.py | `POSIX_ONLY_SYMBOLS = (` |
 | 275 | Tooling | The portability check ignores comments and string literals, so a URL or a note naming sysconf is not reported as a portability bug | tools/build_windows.py | `def strip_comments(line: str) -> str:` |
+| 276 | Build | A CI step cannot hang: the wrapper stops waiting when the child exits even if something it started holds the pipe open, and kills the child at a stated timeout | tools/ci_report.py | `quiet_since` |
+| 277 | Build | Every CI step has a ceiling, so a stuck command fails in minutes with a message instead of consuming the job's hour | .github/workflows/build.yml | `timeout-minutes: 45` |

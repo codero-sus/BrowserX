@@ -32,9 +32,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -71,7 +73,7 @@ def safe_name(label: str) -> str:
     return keep.strip("-") or "step"
 
 
-def run(label: str, command: list[str], keep: int) -> int:
+def run(label: str, command: list[str], keep: int, timeout: float = 0.0) -> int:
     started = time.time()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / f"{safe_name(label)}.log"
@@ -83,19 +85,78 @@ def run(label: str, command: list[str], keep: int) -> int:
                                    stderr=subprocess.STDOUT, text=True, bufsize=1,
                                    encoding="utf-8", errors="replace")
         assert process.stdout is not None
-        for line in process.stdout:
-            line = line.rstrip("\n")
-            sys.stdout.write(line + "\n")
-            sys.stdout.flush()
-            log.write(line + "\n")
-            tail.append(line)
-            if len(tail) > keep:
-                tail.pop(0)
+
+        # Read on a thread and consume from a queue rather than iterating the pipe
+        # directly. Why: iterating `for line in process.stdout` ends only when every writer
+        # has closed the pipe, and a grandchild that inherited the handle keeps it open
+        # after the child exits - the step then hangs forever with no output, which is
+        # exactly what happened to a Windows runner. With a queue, the parent's exit is
+        # what ends the loop, and a stuck child can be killed on timeout.
+        lines: "queue.Queue[str | None]" = queue.Queue()
+
+        def pump(stream) -> None:
+            try:
+                for text in stream:
+                    lines.put(text)
+            finally:
+                lines.put(None)
+
+        reader = threading.Thread(target=pump, args=(process.stdout,), daemon=True)
+        reader.start()
+
+        seen_end = False
+        quiet_since: float | None = None
+        while True:
+            try:
+                item = lines.get(timeout=0.5)
+            except queue.Empty:
+                item = "__empty__"
+            if item is None:
+                seen_end = True
+                break
+            if item != "__empty__":
+                line = str(item).rstrip("\n")
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+                log.write(line + "\n")
+                tail.append(line)
+                if len(tail) > keep:
+                    tail.pop(0)
+            if process.poll() is not None:
+                # The child has exited. Its reader may still be blocked because something
+                # it started inherited the pipe, so wait a moment for output already in
+                # flight and then stop waiting for a pipe nobody is going to close.
+                if quiet_since is None:
+                    quiet_since = time.time()
+                elif (time.time() - quiet_since) > 1.5:
+                    break
+            else:
+                quiet_since = None
+            if timeout and (time.time() - started) > timeout:
+                process.kill()
+                print(f"\n  {label}: killed after {timeout:.0f}s", file=sys.stderr)
+                break
+        if not seen_end:
+            # Drain whatever the reader still had, without waiting for the pipe to close.
+            while True:
+                try:
+                    item = lines.get_nowait()
+                except queue.Empty:
+                    break
+                if item is None:
+                    break
+                line = str(item).rstrip("\n")
+                sys.stdout.write(line + "\n")
+                log.write(line + "\n")
+                tail.append(line)
+                if len(tail) > keep:
+                    tail.pop(0)
         code = process.wait()
 
     elapsed = time.time() - started
     if code == 0:
-        print(f"\n  {label}: ok ({elapsed:.1f}s, log: {log_path.relative_to(REPO_ROOT)})")
+        shown = log_path.relative_to(REPO_ROOT) if log_path.is_relative_to(REPO_ROOT) else log_path
+        print(f"\n  {label}: ok ({elapsed:.1f}s, log: {shown})")
         return 0
 
     print(f"\n  {label}: FAILED with exit code {code} ({elapsed:.1f}s)",
@@ -122,17 +183,81 @@ def run(label: str, command: list[str], keep: int) -> int:
     return code
 
 
+def self_test() -> int:
+    """The three properties this wrapper exists for, checked without a CI run."""
+    import contextlib
+    import io
+    import tempfile
+
+    checks: list[tuple[bool, str]] = []
+
+    def expect(ok: bool, what: str) -> None:
+        checks.append((bool(ok), what))
+
+    with tempfile.TemporaryDirectory(prefix="browserx-ci-") as scratch:
+        global LOG_DIR
+        real_dir = LOG_DIR
+        LOG_DIR = Path(scratch)
+        try:
+            quiet = io.StringIO()
+            with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+                code = run("ok", [sys.executable, "-c", "print('fine')"], 40)
+            expect(code == 0, "a successful command keeps exit code 0")
+            expect("fine" in quiet.getvalue(), "its output is passed through, not swallowed")
+
+            quiet = io.StringIO()
+            with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+                code = run("bad", [sys.executable, "-c",
+                                   "print('the reason'); raise SystemExit(7)"], 40)
+            expect(code == 7, "a failing command keeps its own exit code")
+            expect("::error title=bad::the reason" in quiet.getvalue(),
+                   "the reason becomes an annotation")
+
+            # The hang this wrapper caused once: a grandchild inherits the pipe and stays
+            # alive, so waiting for the pipe to close waits for the grandchild's lifetime.
+            started = time.time()
+            quiet = io.StringIO()
+            with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+                code = run("leaky", [sys.executable, "-c",
+                                     "import subprocess, sys\n"
+                                     "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                                     "print('child done')"], 40)
+            elapsed = time.time() - started
+            expect(code == 0, "a child that leaves a grandchild behind still reports success")
+            expect(elapsed < 10, f"it does not wait for a pipe the child left open ({elapsed:.1f}s)")
+        finally:
+            LOG_DIR = real_dir
+
+    for ok, what in checks:
+        print(f"  {'✔' if ok else '✘'} {what}")
+    passed = sum(1 for ok, _ in checks if ok)
+    print("")
+    if passed == len(checks):
+        print(f"  self-test passed ({passed} checks)")
+        return 0
+    print(f"  self-test FAILED ({len(checks) - passed} of {len(checks)})")
+    return 1
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Run a command; on failure, make its output readable as annotations.")
-    parser.add_argument("--label", required=True, help="what to call this step in messages")
+    parser.add_argument("--self-test", action="store_true", help="check the wrapper itself")
+    parser.add_argument("--label", help="what to call this step in messages")
     parser.add_argument("--lines", type=int, default=DEFAULT_LINES,
                         help=f"how many trailing lines to report (default {DEFAULT_LINES})")
+    parser.add_argument("--timeout", type=float, default=0.0,
+                        help="kill the command after this many seconds (0 = no limit)")
     parser.add_argument("--shell", action="store_true",
                         help="pass the command through the shell (use for pipelines)")
     parser.add_argument("command", nargs=argparse.REMAINDER,
                         help="the command, after --")
     args = parser.parse_args(argv)
+
+    if args.self_test:
+        return self_test()
+    if not args.label:
+        parser.error("--label is required")
 
     command = args.command
     if command and command[0] == "--":
@@ -144,9 +269,9 @@ def main(argv: list[str]) -> int:
         # Joined back into one string on purpose: the caller asked for shell semantics.
         rendered = " ".join(command)
         if sys.platform.startswith("win"):
-            return run(args.label, ["cmd", "/c", rendered], args.lines)
-        return run(args.label, ["/bin/sh", "-c", rendered], args.lines)
-    return run(args.label, command, args.lines)
+            return run(args.label, ["cmd", "/c", rendered], args.lines, args.timeout)
+        return run(args.label, ["/bin/sh", "-c", rendered], args.lines, args.timeout)
+    return run(args.label, command, args.lines, args.timeout)
 
 
 if __name__ == "__main__":

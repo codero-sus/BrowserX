@@ -333,6 +333,7 @@ check-fetch:
 .PHONY: check-utf8
 check-utf8:
 	@$(PYTHON) $(TOOLS_DIR)/utf8_console.py
+	@$(PYTHON) $(TOOLS_DIR)/ci_report.py --self-test
 
 # The revision stamp is what lets a binary answer "which commit am I?" - and it is the
 # kind of thing that breaks silently (a header that quietly stops being found leaves the
