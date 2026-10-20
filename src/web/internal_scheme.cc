@@ -193,22 +193,21 @@ PageData BuildPageData(const app::CefHost& host) {
   data.rules_duplicates = imported.report.duplicates;
   data.rules_skipped = imported.report.skipped;
   data.rules_examples = imported.report.examples;
-  if (const BrowserShell* shell = host.shell()) {
-    if (const core::Blocklist* blocklist = shell->blocklist()) {
-    const core::Blocklist& shield = *blocklist;
-    data.shield_on = shield.enabled();
-    data.shield_rules = shield.rule_count();
+  const BrowserShell* shell = host.shell();
+  const core::Blocklist* shield = shell != nullptr ? shell->blocklist() : nullptr;
+  if (shield != nullptr) {
+    data.shield_on = shield->enabled();
+    data.shield_rules = shield->rule_count();
     for (const core::BlockCategory category :
          {core::BlockCategory::kAds, core::BlockCategory::kAnalytics,
           core::BlockCategory::kSocial, core::BlockCategory::kCrypto,
           core::BlockCategory::kFingerprint}) {
       size_t count = 0;
-      for (const core::BlockRule& rule : shield.rules()) {
+      for (const core::BlockRule& rule : shield->rules()) {
         if (rule.category == category) ++count;
       }
       data.shield_categories.push_back(std::string(core::BlockCategoryLabel(category)) +
                                        " - " + std::to_string(count) + " rules");
-    }
     }
   }
 
