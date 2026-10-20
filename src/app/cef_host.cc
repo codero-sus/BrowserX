@@ -161,7 +161,12 @@ void CefHost::Initialize(const LaunchOptions& options, const Paths& paths) {
 
   // Extensions: scanned once. A folder that does not exist is a normal first run.
   if (options_.extensions) {
-    extension_scan_ = ScanExtensions(ExtensionsDirectory(paths_.profile_dir));
+    std::vector<std::string> roots =
+        ExtensionsRoots(paths_.profile_dir, paths_.executable_dir);
+    // --extensions-dir appends a root rather than replacing the profile: a switch that
+    // silently stopped loading the user's own folder would be a trap.
+    for (const std::string& extra : options_.extension_dirs) roots.push_back(extra);
+    extension_scan_ = ScanExtensionRoots(roots);
     extension_scan_done_ = true;
   }
 

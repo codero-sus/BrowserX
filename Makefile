@@ -140,6 +140,8 @@ CHECK_OBJS     := $(patsubst $(ROOT)/%.cc,$(CHECK_OBJ_DIR)/%.o,$(APP_SRCS))
 # Compiled by `make test` without CEF headers on the include path, so they must
 # stay CEF-free (check-test-extra-purity enforces it).
 TEST_EXTRA_SRCS := $(SRC_DIR)/app/cli.cc $(SRC_DIR)/app/app_paths.cc \
+                   $(SRC_DIR)/app/http_client.cc $(SRC_DIR)/app/ai_session.cc \
+                   $(SRC_DIR)/app/ai_controller.cc \
                    $(SRC_DIR)/app/library_store.cc \
                    $(SRC_DIR)/browser/session.cc $(SRC_DIR)/browser/tab_commands.cc \
                    $(SRC_DIR)/web/internal_pages.cc $(SRC_DIR)/web/bench_page.cc
@@ -438,7 +440,8 @@ PERF_BIN       := $(OUT_DIR)/browserx-perf
 # Renders every browserx:// page to a file, with live engine data. This is what makes
 # the UI reviewable - and the preview clickable - without a CEF build.
 $(PAGES_BIN): $(TOOLS_DIR)/pages_dump.cc $(CORE_SRCS) $(SRC_DIR)/web/internal_pages.cc \
-              $(SRC_DIR)/web/bench_page.cc $(SRC_DIR)/web/internal_pages.h
+              $(SRC_DIR)/web/bench_page.cc $(SRC_DIR)/web/internal_pages.h \
+              $(SRC_DIR)/app/ai_session.cc
 	@mkdir -p $(OUT_DIR)
 	@echo "  CXX+LD tools/pages_dump.cc"
 	@$(CXX) $(CXX_STD) -O2 -pthread -I$(ROOT)/src $(DEFINES) $^ -o $@

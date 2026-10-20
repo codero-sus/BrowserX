@@ -439,3 +439,34 @@ count but not a per-day blocked chart (the shell does not persist counters); Tor
 in-app start/stop (it never had one — the browser cannot manage a daemon it does not own);
 and extension reload requires a restart because `--load-extension` is read once at boot.
 Each of these is stated in the UI rather than left to discover.
+
+## 15. Built-in AI, and extensions from more than one folder
+
+**AI: three providers, one page, nothing hidden.** `browserx://ai` (Ctrl+Shift+A) speaks
+to Cortex_LLMHoster (codero-sus, local, OpenAI-compatible), Ollama (local, native
+`/api/chat`), or any OpenAI-compatible cloud endpoint. The split is deliberate:
+
+| Piece | Where | Why there |
+| --- | --- | --- |
+| Wire format, prompts, validation | `core/ai.{h,cc}` | CEF-free, so every request shape and every refusal is unit tested |
+| HTTP/1.1 client (loopback only, bounded) | `app/http_client.{h,cc}` | a non-blocking socket with a parser that survives split packets and chunked bodies; it refuses plain http to a remote host and refuses https rather than pretending to speak TLS |
+| Session (config, page text, turns) | `app/ai_session.{h,cc}` | holds the key; decides what is attached to a request |
+| Concurrency | `app/ai_controller.{h,cc}` | a worker thread plus a `Pump()` on the UI tick, because a two-minute answer must not block the IO thread that serves every request |
+| Page | `web/internal_pages.cc` (`RenderAi`) | form + poll; the page never holds the key |
+| Actions | `web/internal_scheme.cc` → `BrowserShell::AiAction` | POST body → `CefPostTask(TID_UI)`, so the session is only ever touched on the UI thread |
+
+**What the AI feature refuses, and why:** a plain-`http://` endpoint that is not loopback
+(the key and prompt would travel in clear text), an unknown provider id (a typo must not
+silently switch to cloud), a cloud request with no key, a summary with no page text, and
+showing the key anywhere — the request view prints `…abcd` and nothing more. These are
+tests, not comments.
+
+**Extensions from more than one folder.** Chromium users keep unpacked extensions in a few
+places, so the scan now covers `<profile>/extensions`, `<exe>/extensions`, and any
+`--extensions-dir` (repeatable or comma-separated), merged by manifest id so the same
+extension in two roots is one extension. The page lists every root it searched, so "my
+extension is not loading" has an answer better than a shrug. `.crx` is not unpacked by this
+browser; the page says to rename it `.zip` and unpack it, which is what the format is.
+
+**Credits.** The AI page, the About page and `CREDITS.md` all name codero-sus, the
+Cortex_LLMHoster repository and https://the-codero.web.app.

@@ -33,6 +33,9 @@ struct ExtensionInfo {
   std::string path;
   std::string name;
   std::string version;
+  /// The id the manifest declares, if any. Chrome's Web Store ignores it for unpacked
+  /// loads (the path decides the id), but it is what tells two copies apart.
+  std::string id;
   int manifest_version = 0;
   /// False when the manifest is missing required fields, or version 3 with a service
   /// worker - the case that most often loads and then does nothing.

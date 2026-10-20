@@ -42,6 +42,41 @@ std::string ExtensionsDirectory(const std::string& profile_dir) {
   return JoinPath(profile_dir, "extensions");
 }
 
+std::vector<std::string> ExtensionsRoots(const std::string& profile_dir,
+                                         const std::string& executable_dir) {
+  std::vector<std::string> roots;
+  roots.push_back(ExtensionsDirectory(profile_dir));
+  if (!executable_dir.empty()) roots.push_back(JoinPath(executable_dir, "extensions"));
+  return roots;
+}
+
+ExtensionScan ScanExtensionRoots(const std::vector<std::string>& roots) {
+  ExtensionScan merged;
+  if (!roots.empty()) merged.directory = roots.front();
+  for (const std::string& root : roots) {
+    ExtensionScan one = ScanExtensions(root);
+    merged.searched.push_back(root);
+    merged.directory_exists = merged.directory_exists || one.directory_exists;
+    for (core::ExtensionInfo& info : one.extensions) {
+      const bool duplicate =
+          std::any_of(merged.extensions.begin(), merged.extensions.end(),
+                      [&info](const core::ExtensionInfo& existing) {
+                        return !info.id.empty() && existing.id == info.id;
+                      });
+      if (duplicate) {
+        merged.problems.push_back(info.name + ": also found in another folder - loaded once");
+        continue;
+      }
+      merged.extensions.push_back(std::move(info));
+    }
+    for (const std::string& refused : one.refused) merged.refused.push_back(refused);
+    for (const std::string& problem : one.problems) merged.problems.push_back(problem);
+  }
+  core::log::InfoF("extensions", "%zu root(s): %zu loadable, %zu refused", roots.size(),
+                   merged.extensions.size(), merged.refused.size());
+  return merged;
+}
+
 ExtensionScan ScanExtensions(const std::string& directory) {
   ExtensionScan scan;
   scan.directory = directory;

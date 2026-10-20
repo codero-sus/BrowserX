@@ -36,6 +36,7 @@
 #include "app/extensions_store.h"
 #include "app/settings_store.h"
 #include "app/tor_probe.h"
+#include "app/ai_controller.h"
 #include "core/blocklist.h"
 #include "core/mode_engine.h"
 #include "core/tor.h"
@@ -65,6 +66,22 @@ class BrowserShell {
   /// The live tracker shield, so browserx://shield can print its real rule count rather
   /// than a number the page made up. Null before a shell exists.
   virtual const core::Blocklist* blocklist() const { return nullptr; }
+  /// browserx://ai actions, applied on the UI thread (the scheme handler posts them here).
+  /// `payload` is the request's JSON object. Returns false with `error` for a bad action.
+  virtual bool AiAction(const std::string& action, const std::string& payload,
+                        std::string* error) {
+    (void)action;
+    (void)payload;
+    (void)error;
+    return false;
+  }
+  /// The AI panel's state as JSON, for the page's poll. "{}" when there is no shell.
+  virtual std::string AiStateJson() const { return "{}"; }
+  /// The live AI session, for the page's read-only view. Null before a shell exists.
+  /// The session owns the key; callers may read the config but not print the secret.
+  virtual const app::AiSession* ai_session() const { return nullptr; }
+  /// The same state the page's poll sees, for the server-rendered first paint.
+  virtual app::AiState ai_state() const { return app::AiState{}; }
 };
 
 namespace app {
