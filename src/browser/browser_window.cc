@@ -335,6 +335,9 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   // Ctrl+Shift+H: "show me the CAPTCHA". Ctrl+Shift+C/H are the conventions browsers use
   // for developer and helper tools; H is free and mnemonic enough for "human check".
   bind(kIdCaptchaAssist, 'H', true, true, false);
+  // Ctrl+Shift+A for the AI panel: A for assistant, and not taken by any browser
+  // convention that would make it surprising.
+  bind(kIdOpenAi, 'A', true, true, false);
   // The jump list: every page and every mode, from anywhere, on one key.
   bind(kIdJumpTo, 'K', false, true, false);
   // Only one more is worth a key: PRIVACY is the other mode people reach for in a
@@ -498,6 +501,7 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
     case kIdOpenTor: OpenInternalPage("tor"); return;
     case kIdOpenExtensions: OpenInternalPage("extensions"); return;
     case kIdOpenShield: OpenInternalPage("shield"); return;
+    case kIdOpenAi: OpenInternalPage("ai"); return;
     case kIdOpenBench: OpenInternalPage("bench"); return;
     case kIdOpenShortcuts: OpenInternalPage("shortcuts"); return;
     case kIdOpenHistory: OpenInternalPage("history"); return;
@@ -649,6 +653,18 @@ void BrowserWindow::InjectCaptchaDetector() {
     return;
   }
   frame->ExecuteJavaScript(core::DetectorScript(), "", 0);
+}
+
+void BrowserWindow::InjectAiPageTextCollector() {
+  if (browser_.get() == nullptr) return;
+  CefRefPtr<CefFrame> frame = browser_->GetMainFrame();
+  if (frame.get() == nullptr) return;
+  if (transport_ != core::Transport::kSecure && transport_ != core::Transport::kInsecure) {
+    return;  // a browserx:// page has no article to summarise
+  }
+  ai_text_url_ = current_url_;
+  ai_text_title_ = current_title_;
+  frame->ExecuteJavaScript(core::PageTextScript(), "", 0);
 }
 
 void BrowserWindow::UpdateStatus(const std::string& left, const std::string& right) {
@@ -836,6 +852,7 @@ void BrowserWindow::ShowMainMenu(const CefPoint& screen_point) {
   model->AddSeparator();
   // Grouped, and above the utility items, because these are the four features that are
   // specific to this browser rather than to any browser.
+  model->AddItem(kIdOpenAi, "AI assistant\tCtrl+Shift+A");
   model->AddItem(kIdSecurity, "Connection details for this page");
   model->AddItem(kIdOpenTor, "Tor mode...");
   model->AddItem(kIdOpenExtensions, "Extensions...");
@@ -1240,6 +1257,21 @@ bool BrowserWindow::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_seve
     return false;
   }
 
+  // The AI page's "attach this page" uses the same channel for the same reason: the text
+  // is read by the browser process, not fetched by the page's own script.
+  std::string page_text;
+  if (core::ParsePageTextMessage(message.ToString(), &page_text) &&
+      browser_ != nullptr && browser == browser_ && shell_ != nullptr) {
+    std::vector<std::string> lines;
+    if (!page_text.empty()) lines.push_back(page_text);
+    // The URL stored with the text is the one the collector ran on, not whatever the
+    // address bar shows now: an answer about the wrong page is worse than none.
+    shell_->NoteAiPageText(ai_text_url_.empty() ? current_url_ : ai_text_url_,
+                           ai_text_title_.empty() ? current_title_ : ai_text_title_,
+                           std::move(lines));
+    return false;
+  }
+
   const core::LogLevel mapped = level <= LOGSEVERITY_ERROR ? core::LogLevel::kError
                                                           : core::LogLevel::kDebug;
   core::Logger::Get().Log(mapped, "page",
@@ -1266,6 +1298,11 @@ void BrowserWindow::OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool is_
     // Inject after the load, not before: the detector observes mutations, so starting it
     // on a parsed document catches widgets that appear later.
     InjectCaptchaDetector();
+    // The AI panel needs the visible text of the page it will summarise, and by the time
+    // the panel is open the page is no longer visible to the panel's own script. The text
+    // is read locally into this process and is never sent unless the person asks; the AI
+    // page states that in as many words.
+    InjectAiPageTextCollector();
   }
   if (back_button_.get() != nullptr && back_button_->IsValid()) back_button_->SetEnabled(can_go_back);
   if (forward_button_.get() != nullptr && forward_button_->IsValid()) {

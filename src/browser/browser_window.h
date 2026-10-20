@@ -72,6 +72,7 @@ enum ChromeId {
   kIdOpenTor,
   kIdOpenExtensions,
   kIdOpenShield,
+  kIdOpenAi,
   kIdMode,
   kIdMenu,
   kIdStatusLeft,
@@ -212,6 +213,13 @@ class BrowserWindow : public CefWindowDelegate,
   /// start page (and the restored active tab is the one shown).
   void Create(const std::string& url, const std::string& restored_session_json = std::string());
   void Close();
+  /// Injects the read-only text collector the AI panel asked for. Public because the
+  /// shell, not the window, decides when a summary is wanted.
+  void InjectAiPageTextCollector();
+  /// The address and title the pending collector was injected into. The answer arrives
+  /// asynchronously, and by then the address bar may show a different page.
+  std::string ai_text_url_;
+  std::string ai_text_title_;
 
   CefRefPtr<CefBrowser> browser() const { return browser_; }
   CefRefPtr<CefWindow> window() const { return window_; }
@@ -262,6 +270,8 @@ class BrowserWindow : public CefWindowDelegate,
   void SetStatusText(const std::string& text);
   /// Injects the read-only CAPTCHA detector into the visible page.
   void InjectCaptchaDetector();
+  /// Injects the read-only text collector the AI panel asked for. Public because the
+  /// shell, not the window, decides when a summary is wanted.
   /// Opens `url` in a new tab (session + view) and optionally activates it.
   int OpenTab(const std::string& url, bool activate);
   /// Replaces the session with the tabs of a saved session (see Create()).

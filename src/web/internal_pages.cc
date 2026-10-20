@@ -295,6 +295,31 @@ input[type="text"], input[type="search"] {
   border-radius: var(--r-sm); padding: 7px 11px; font: inherit; font-size: 13px; width: 100%;
 }
 input[type="text"]::placeholder, input[type="search"]::placeholder { color: var(--faint); }
+/* The AI page's own controls, built from the same tokens as everything else. */
+input[type="password"], textarea {
+  background: var(--sunken); border: 1px solid var(--line); color: var(--text);
+  border-radius: var(--r-sm); padding: 8px 11px; font: inherit; font-size: 13px; width: 100%;
+}
+textarea { resize: vertical; min-height: 64px; }
+input[type="password"]::placeholder { color: var(--faint); }
+.chip { background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.chip:hover { color: var(--text); border-color: var(--line-strong); }
+.chip.on { color: var(--ink); background: var(--accent); border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+.btn.primary:hover { background: var(--accent); filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted);
+  margin: 10px 0; }
+.card.turn .q { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
+.card.turn .q::before { content: "You asked: "; color: var(--faint); }
+.card.turn .a { margin: 0; white-space: pre-wrap; line-height: 1.55; }
+.row.wrap { flex-wrap: wrap; }
+ul.plain { list-style: none; padding: 0; margin: 10px 0; }
+ul.plain li { padding: 4px 0; color: var(--muted); border-bottom: 1px solid var(--line); }
+ul.plain li:last-child { border-bottom: none; }
+.small { font-size: 12.5px; }
+pre.scroll { max-height: 320px; overflow: auto; white-space: pre-wrap; }
 .empty { color: var(--faint); font-size: 13px; padding: 10px 2px; }
 
 /* --- command palette ----------------------------------------------------- */
@@ -664,6 +689,7 @@ const std::vector<HostEntry>& HostTable() {
       {"extensions", PageKind::kExtensions, "Extensions"},
       {"security", PageKind::kSecurity, "Connection"},
       {"shield", PageKind::kShield, "Tracker shield"},
+      {"ai", PageKind::kAi, "AI assistant"},
   };
   return table;
 }
@@ -885,6 +911,9 @@ std::string RenderNewTab(const PageData& data) {
   out += "<a class=\"card feature\" href=\"browserx://shield\"><h3>Tracker shield</h3>"
          "<p>Curated host rules plus your own list. Stops requests before they are "
          "sent.</p><span class=\"pill\">light, not uBlock</span></a>\n";
+  out += "<a class=\"card feature\" href=\"browserx://ai\"><h3>AI assistant</h3>"
+         "<p>Cortex LLMHoster, Ollama or any OpenAI-compatible cloud. Local by "
+         "default.</p><span class=\"pill\">you see the prompt</span></a>\n";
   out += "<a class=\"card feature\" href=\"browserx://shortcuts\"><h3>CAPTCHA assist</h3>"
          "<p>Finds the challenge and shows you where it is. Never solves it, never "
          "clicks.</p><span class=\"pill\">Ctrl+Shift+H</span></a>\n";
@@ -1183,6 +1212,280 @@ std::string RenderSession(const PageData& data) {
   return out;
 }
 
+// The page's client. Plain JS, no framework: it posts one action at a time to this same
+// scheme and polls for state. It holds no key — the key lives in the browser process.
+constexpr char kAiScript[] = R"JS(<script>
+(function () {
+  function post(action, extra) {
+    var body = Object.assign({action: action}, extra || {});
+    return fetch('browserx://ai', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+  function show(id, text) {
+    var node = document.getElementById(id);
+    if (!node) return;
+    node.hidden = !text;
+    node.textContent = text || '';
+  }
+  function busy(on) {
+    var node = document.getElementById('ai-busy');
+    if (node) node.hidden = !on;
+    var ask = document.getElementById('ai-ask');
+    if (ask) ask.disabled = on;
+    var sum = document.getElementById('ai-summarise');
+    if (sum) sum.disabled = on;
+  }
+  function escapeText(t) { return t; }  // textContent assignment, never innerHTML
+  function renderTurns(state) {
+    var host = document.getElementById('ai-turns');
+    if (!host) return;
+    host.textContent = '';
+    if (!state.turns || !state.turns.length) {
+      var p = document.createElement('p');
+      p.className = 'note';
+      p.textContent = 'No answers yet in this session. Answers are not saved.';
+      host.appendChild(p);
+      return;
+    }
+    state.turns.forEach(function (turn) {
+      var card = document.createElement('div');
+      card.className = 'card turn';
+      var q = document.createElement('p');
+      q.className = 'q';
+      q.textContent = turn.question;
+      card.appendChild(q);
+      if (turn.error) {
+        var e = document.createElement('p');
+        e.className = 'warn';
+        e.textContent = turn.error;
+        card.appendChild(e);
+      } else {
+        var a = document.createElement('p');
+        a.className = 'a';
+        a.textContent = turn.answer;
+        card.appendChild(a);
+      }
+      var meta = document.createElement('p');
+      meta.className = 'note tight';
+      meta.textContent = turn.provider + ' · ' + turn.model + ' · ' + turn.timestamp +
+        (turn.used_page_text ? ' · page text attached' : '');
+      card.appendChild(meta);
+      host.appendChild(card);
+    });
+  }
+  function poll() {
+    fetch('browserx://ai?action=state', {headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (state) {
+        busy(state.busy);
+        show('ai-error', state.problem);
+        renderTurns(state);
+        if (state.busy) setTimeout(poll, 700);
+      })
+      .catch(function () { setTimeout(poll, 1500); });
+  }
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.dataset) return;
+    if (target.dataset.aiProvider) {
+      post('provider', {provider: target.dataset.aiProvider}).then(function () {
+        location.reload();
+      });
+      return;
+    }
+    if (target.dataset.aiModel) {
+      var field = document.getElementById('ai-model');
+      if (field) field.value = target.dataset.aiModel;
+      return;
+    }
+    if (target.id === 'ai-test') { busy(true); post('test', {}).then(function () { setTimeout(poll, 400); }); return; }
+    if (target.id === 'ai-save') {
+      post('config', {
+        endpoint: (document.getElementById('ai-endpoint') || {}).value || '',
+        model: (document.getElementById('ai-model') || {}).value || '',
+        key: (document.getElementById('ai-key') || {}).value || ''
+      }).then(function () { location.reload(); });
+      return;
+    }
+    if (target.id === 'ai-ask' || target.id === 'ai-summarise') {
+      var summarise = target.id === 'ai-summarise';
+      var text = (document.getElementById('ai-question') || {}).value || '';
+      var usePage = !!(document.getElementById('ai-use-page') || {}).checked;
+      busy(true);
+      show('ai-error', '');
+      post('ask', {question: text, page: usePage, summarise: summarise}).then(function (r) {
+        if (r && r.error) { busy(false); show('ai-error', r.error); return; }
+        setTimeout(poll, 500);
+      });
+      return;
+    }
+    if (target.id === 'ai-clear') { post('clear', {}).then(function () { location.reload(); }); return; }
+    if (target.id === 'ai-show-prompt' || target.id === 'ai-show-request') {
+      var id = target.id === 'ai-show-prompt' ? 'ai-prompt-card' : 'ai-request-card';
+      var card = document.getElementById(id);
+      if (card) card.hidden = !card.hidden;
+      return;
+    }
+  });
+})();
+</script>)JS";
+
+std::string RenderAiTurns(const PageData& data);
+
+// ---------------------------------------------------------------------------
+// browserx://ai — the built-in assistant
+// ---------------------------------------------------------------------------
+//
+// The page is a form plus a polling client. It never talks to a model directly: every
+// action is a fetch() to this same scheme, which the browser process applies. That keeps
+// the API key out of the page's JavaScript entirely — a page holding a key is one XSS
+// away from leaking it, and an internal page has no business holding one anyway.
+std::string RenderAi(const PageData& data) {
+  std::string out;
+  out += "<h1>AI assistant</h1>\n";
+  out += "<p class=\"lede\">Three providers, one box. Local by default; cloud only if you "
+         "choose it and set a key.</p>\n";
+
+  // --- provider + state ---------------------------------------------------
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Provider</h2>\n";
+  out += "<p>" + EscapeImpl(data.ai_location) + "</p>\n";
+  out += "<div class=\"row wrap\">\n";
+  const std::pair<const char*, const char*> providers[] = {
+      {"cortex", "Cortex LLMHoster"}, {"ollama", "Ollama"}, {"cloud", "Cloud"}};
+  for (const auto& entry : providers) {
+    const bool active = data.ai_provider == entry.first;
+    out += "<button class=\"chip" + std::string(active ? " on" : "") +
+           "\" data-ai-provider=\"" + entry.first + "\">" + entry.second + "</button>\n";
+  }
+  out += "</div>\n";
+  if (!data.ai_problem.empty()) {
+    out += "<p class=\"warn\" id=\"ai-problem\">" + EscapeImpl(data.ai_problem) + "</p>\n";
+  }
+  out += "<ul class=\"plain small\">\n";
+  for (const std::string& line : data.ai_status_lines) {
+    out += "<li>" + EscapeImpl(line) + "</li>\n";
+  }
+  out += "</ul>\n";
+  if (!data.ai_models_note.empty()) {
+    out += "<p class=\"note tight\" id=\"ai-models-note\">" + EscapeImpl(data.ai_models_note) +
+           "</p>\n";
+  }
+  if (!data.ai_models.empty()) {
+    out += "<p class=\"note tight\">Models the server listed:</p>\n<div class=\"row wrap\">\n";
+    for (const std::string& model : data.ai_models) {
+      out += "<button class=\"chip\" data-ai-model=\"" + EscapeImpl(model) + "\">" +
+             EscapeImpl(model) + "</button>\n";
+    }
+    out += "</div>\n";
+  }
+  out += "<div class=\"row\">\n";
+  out += "<button id=\"ai-test\" class=\"btn\">Test connection</button>\n";
+  out += "<button id=\"ai-show-request\" class=\"btn ghost\">Show the last request</button>\n";
+  out += "</div>\n";
+  out += "</div>\n";
+
+  // --- settings form ------------------------------------------------------
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Connection</h2>\n";
+  out += "<p class=\"note\">The endpoint is where BrowserX sends the request. Nothing is "
+         "sent until you press Ask or Test.</p>\n";
+  out += "<label class=\"field\"><span>Endpoint</span><input id=\"ai-endpoint\" value=\"" +
+         EscapeImpl(data.ai_endpoint) + "\" spellcheck=\"false\"></label>\n";
+  out += "<label class=\"field\"><span>Model (empty = the server picks)</span><input "
+         "id=\"ai-model\" value=\"" + EscapeImpl(data.ai_model) + "\" spellcheck=\"false\"></label>\n";
+  out += "<label class=\"field\"><span>API key (cloud only)</span><input id=\"ai-key\" "
+         "type=\"password\" spellcheck=\"false\" placeholder=\"paste again to replace\"></label>\n";
+  out += "<p class=\"note tight\">" + EscapeImpl(data.ai_store_note) + "</p>\n";
+  out += "<div class=\"row\">\n";
+  out += "<button id=\"ai-save\" class=\"btn\">Save connection</button>\n";
+  out += "</div>\n";
+  out += "</div>\n";
+
+  // --- ask ---------------------------------------------------------------
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Ask</h2>\n";
+  out += "<p class=\"note\" id=\"ai-page-state\">";
+  if (data.ai_context_chars > 0 && !data.ai_prompt_preview.empty()) {
+    out += "Page: " + EscapeImpl(data.page_title.empty() ? data.page_url : data.page_title) +
+           " (" + std::to_string(data.ai_context_chars) + " characters of text available)";
+  }
+  out += "</p>\n";
+  out += "<textarea id=\"ai-question\" rows=\"3\" placeholder=\"Ask about anything, or about "
+         "this page\">" + EscapeImpl(data.ai_question) + "</textarea>\n";
+  out += "<label class=\"check\"><input type=\"checkbox\" id=\"ai-use-page\" " +
+         std::string(data.ai_context_chars > 0 ? "" : "disabled ") +
+         ">Attach this page's visible text</label>\n";
+  out += "<div class=\"row\">\n";
+  out += "<button id=\"ai-ask\" class=\"btn primary\">Ask</button>\n";
+  out += "<button id=\"ai-summarise\" class=\"btn\">Summarise this page</button>\n";
+  out += "<button id=\"ai-show-prompt\" class=\"btn ghost\">Show the summary prompt</button>\n";
+  out += "<button id=\"ai-clear\" class=\"btn ghost\">Clear answers</button>\n";
+  out += "</div>\n";
+  out += "<p class=\"note\" id=\"ai-busy\" hidden>Waiting for the provider…</p>\n";
+  out += "<p class=\"warn\" id=\"ai-error\" hidden></p>\n";
+  out += "</div>\n";
+
+  // --- answers -----------------------------------------------------------
+  out += "<div id=\"ai-turns\">\n";
+  out += RenderAiTurns(data);
+  out += "</div>\n";
+
+  // --- prompt and request previews ---------------------------------------
+  out += "<div class=\"card\" id=\"ai-prompt-card\" hidden><h2 style=\"margin-top:0\">The "
+         "summary prompt</h2><p class=\"note\">This is the text that will be sent. Read "
+         "it before it leaves the machine.</p><pre class=\"mono scroll\" id=\"ai-prompt\">" +
+         EscapeImpl(data.ai_prompt_preview) + "</pre></div>\n";
+  out += "<div class=\"card\" id=\"ai-request-card\" hidden><h2 style=\"margin-top:0\">The "
+         "last request</h2><p class=\"note\">The key, if any, is redacted. Everything else "
+         "is exactly what was sent.</p><pre class=\"mono scroll\" id=\"ai-request\">" +
+         EscapeImpl(data.ai_request_preview) + "</pre></div>\n";
+
+  // --- privacy ------------------------------------------------------------
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">What leaves this machine</h2>\n"
+         "<ul>\n";
+  for (const std::string& note : data.ai_privacy_notes) {
+    out += "<li>" + EscapeImpl(note) + "</li>\n";
+  }
+  out += "</ul>\n";
+  out += "<p class=\"note\">" + EscapeImpl(data.ai_turn_disclaimer) + "</p>\n";
+  out += "</div>\n";
+
+  // --- credits ------------------------------------------------------------
+  out += "<div class=\"card flat\"><p class=\"note\">Built-in AI uses Cortex LLMHoster by "
+         "codero-sus (<a href=\"https://github.com/codero-sus/Cortex_LLMHoster\" "
+         "target=\"_blank\" rel=\"noreferrer\">github.com/codero-sus/Cortex_LLMHoster</a>) "
+         "and Ollama, or any OpenAI-compatible cloud endpoint. BrowserX by codero-sus — "
+         "<a href=\"https://the-codero.web.app\" target=\"_blank\" rel=\"noreferrer\">"
+         "the-codero.web.app</a>.</p></div>\n";
+
+  out += kAiScript;
+  return out;
+}
+
+// Answers, as HTML. Split out because the browser re-renders the whole page after every
+// action, and the turn list is the one part that grows.
+std::string RenderAiTurns(const PageData& data) {
+  std::string out;
+  if (data.ai_turns.empty() && data.ai_turn_errors.empty()) {
+    out += "<p class=\"note\">No answers yet in this session. Answers are not saved.</p>\n";
+    return out;
+  }
+  for (size_t i = 0; i < data.ai_turns.size(); ++i) {
+    out += "<div class=\"card turn\">\n";
+    out += "<p class=\"q\">" + EscapeImpl(data.ai_turns[i]) + "</p>\n";
+    if (i < data.ai_turn_errors.size() && !data.ai_turn_errors[i].empty()) {
+      out += "<p class=\"warn\">" + EscapeImpl(data.ai_turn_errors[i]) + "</p>\n";
+    } else if (i < data.ai_answers.size()) {
+      // The answer is escaped, never inserted as HTML: a model that repeats a tag must
+      // not be able to end the paragraph it is in.
+      out += "<p class=\"a\">" + EscapeImpl(data.ai_answers[i]) + "</p>\n";
+    }
+    out += "</div>\n";
+  }
+  return out;
+}
+
 std::string RenderShield(const PageData& data) {
   std::string out;
   out += "<h1>Tracker shield</h1>\n";
@@ -1324,14 +1627,38 @@ std::string RenderExtensions(const PageData& data) {
          "extensions from a folder. There is no Web Store, and CEF does not implement every "
          "extension API - so each one is listed below with what to expect.</p>\n";
 
-  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Folder</h2>\n";
-  out += "<p class=\"mono\">" + EscapeImpl(data.extensions_dir) + "</p>\n";
-  out += "<p>Put each extension in its own folder inside it, then restart the browser. "
-         "Extensions are read at start-up, not watched.</p>\n";
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Folders searched</h2>\n";
+  out += "<ul class=\"mono\">\n";
+  for (const std::string& root : data.extension_roots) {
+    out += "<li>" + EscapeImpl(root) + "</li>\n";
+  }
+  out += "</ul>\n";
+  out += "<p>Put each extension in its own folder inside one of these, then restart the "
+         "browser. Extensions are read at start-up, not watched. <code>--extensions-dir</code> "
+         "adds another folder without replacing these.</p>\n";
   if (!data.extensions_on) {
     out += "<p><strong>Extensions are disabled for this run</strong> (<code>--no-extensions</code>).</p>\n";
   }
   out += "</div>\n";
+
+  // The honest answer to "Chromium has thousands of extensions": the engine can run a
+  // large number of them, but this browser has no Store client and CEF implements only
+  // part of the extension API surface. Saying which part is the useful thing.
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Why not just install from the "
+         "Chrome Web Store?</h2>\n"
+         "<p>Because there is no Store client in this build. You can still install anything "
+         "the Store offers unpacked: download the extension's <code>.crx</code>, rename it "
+         "to <code>.zip</code>, unpack it into one of the folders above, and restart. What "
+         "runs is Chromium's own extension engine, so the manifest, permissions and content "
+         "scripts behave as they do in Chrome.</p>\n"
+         "<p><strong>What does not work here, and is reported per extension:</strong> "
+         "Manifest V3 service workers (CEF has no worker-backed extension host), the "
+         "Store's own update channel, and any <code>chrome.*</code> API CEF does not "
+         "implement. A partial load is not a silent one: the list below says what each "
+         "extension will and will not get.</p>\n"
+         "<p class=\"note\">Extensions are trusted code with access to every page you "
+         "open. Install them the way you would install a program, not the way you would "
+         "bookmark a site.</p>\n</div>\n";
 
   out += "<div class=\"card\"><h2 style=\"margin-top:0\">Loaded</h2>\n";
   if (data.extension_lines.empty()) {
@@ -1411,7 +1738,18 @@ std::string RenderAbout(const PageData& data) {
   out += "<li><a href=\"https://source.chromium.org/\" rel=\"noopener\">Chromium source</a> — "
          "the ground truth behind every switch in the catalogue: each one records the file it was "
          "verified against.</li>";
+  out += "<li><a href=\"https://github.com/codero-sus/Cortex_LLMHoster\" rel=\"noopener\">"
+         "Cortex_LLMHoster</a> — codero-sus's local LLM hoster, one of the built-in AI's three "
+         "providers.</li>";
+  out += "<li><a href=\"https://ollama.com/\" rel=\"noopener\">Ollama</a> — the local runner "
+         "BrowserX talks to on 127.0.0.1:11434 (MIT).</li>";
   out += "</ul>";
+  out += "<h3>Made by</h3>";
+  out += "<p>BrowserX is designed, written and maintained by <strong>codero-sus</strong> — "
+         "every part of it: the performance core, the modes, the native features, the AI "
+         "integration, the mobile edition. <a href=\"https://github.com/codero-sus\" "
+         "rel=\"noopener\">github.com/codero-sus</a> · <a href=\"https://the-codero.web.app\" "
+         "rel=\"noopener\">the-codero.web.app</a></p>";
   out += "<p class=\"note\">The Chromium/CEF runtime BrowserX downloads and packages stays under "
          "its own licences; BrowserX claims no copyright over it. Full credits: "
          "<span class=\"mono\">CREDITS.md</span> in the source tree.</p>";
@@ -1923,6 +2261,7 @@ std::string RenderPage(PageKind kind, const PageData& data) {
     case PageKind::kExtensions: return Shell(kind, data, RenderExtensions(data));
     case PageKind::kSecurity: return Shell(kind, data, RenderSecurity(data));
     case PageKind::kShield: return Shell(kind, data, RenderShield(data));
+    case PageKind::kAi: return Shell(kind, data, RenderAi(data));
     case PageKind::kUnknown: break;
   }
   return Shell(PageKind::kUnknown, data,

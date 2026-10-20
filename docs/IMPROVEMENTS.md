@@ -335,3 +335,23 @@ were written beside.
 | 311 | Ad blocker | Lines the importer does not implement - element hiding, regex, options - are counted as skipped and shown verbatim, never approximated into rules that do nothing | src/core/blocklist.cc | `not approximated` |
 | 312 | Ad blocker | The importer refuses to block localhost, bare LAN names and address literals, so a rule file cannot break loopback pages or the updater | src/core/blocklist.cc | `never block the machine you are on` |
 | 313 | Docs | browserx://shield states the rule count, the per-category split, and that this is a light shield rather than uBlock Origin | src/web/internal_pages.cc | `not uBlock Origin and does not claim to be` |
+| 314 | AI | A built-in assistant with three providers — Cortex_LLMHoster by codero-sus, Ollama, and any OpenAI-compatible cloud — behind one page, with the provider's location stated in a sentence | src/core/ai.cc | `AiProviderLocation` |
+| 315 | AI | Local providers are the default and need no key, so a fresh install sends nothing anywhere until the person asks a question | src/core/ai.cc | `http://127.0.0.1:11434` |
+| 316 | AI | A plain http endpoint that is not loopback is refused with the reason: the key and the prompt would travel in clear text | src/core/ai.cc | `travel in clear text` |
+| 317 | AI | The cloud provider refuses to send without a key and refuses any endpoint that is not https | src/core/ai.cc | `Cloud endpoints must use https://` |
+| 318 | AI | An unknown provider id is an error, never a silent fallback — a typo must not route a prompt somewhere else | tests/unit/ai_test.cc | `olama` |
+| 319 | AI | The request each provider actually expects: Ollama's native /api/chat with num_predict, and the OpenAI chat-completions shape for Cortex and cloud | src/core/ai.cc | `num_predict` |
+| 320 | AI | Answers parse for both response shapes, and an HTML proxy page or streamed chunk is reported as a failure instead of shown as an empty answer | src/core/ai.cc | `not JSON` |
+| 321 | AI | HTTP and transport failures become sentences naming the port and the missing server, with the provider's own words flattened out of any HTML | src/core/ai.cc | `Nothing is listening on that port` |
+| 322 | AI | The summary prompt states its rules, redacts the URL query, and says when the page text was truncated — so a model cannot claim to have read what was cut | src/core/ai.cc | `was truncated` |
+| 323 | AI | Page text is read by an injected read-only script that is asserted to contain no click, submit, fetch or XHR | src/core/ai.cc | `PageTextScript` |
+| 324 | AI | The AI page shows the exact prompt before it is sent and the exact request after, with the key reduced to its last four characters | src/app/ai_session.cc | `redacted` |
+| 325 | AI | A non-blocking HTTP/1.1 client for loopback model servers: bounded body and headers, hard timeout, split-packet and chunked decoding | src/app/http_client.cc | `HttpResponseParser` |
+| 326 | AI | A refused connection says refused — a regression test pins the SO_ERROR bug that once reported 'operation now in progress' | tests/unit/http_client_test.cc | `ARefusedConnectionSaysRefusedNotInProgress` |
+| 327 | AI | The model call runs on a worker thread and is collected on the UI tick, because a two-minute answer on the IO thread would freeze every request in the browser | src/app/ai_controller.cc | `AiController::Pump` |
+| 328 | AI | browserx://ai is a form plus a poll, and the page never holds the API key — actions are posted to the browser process, which owns it | src/web/internal_pages.cc | `kAiScript` |
+| 329 | AI | Ctrl+Shift+A opens the assistant; the new-tab page and the menu both name it | src/browser/browser_window.cc | `AI assistant\tCtrl+Shift+A` |
+| 330 | Extensions | Unpacked extensions are found in three roots — the profile, the executable's folder, and any --extensions-dir — and merged by manifest id | src/app/extensions_store.cc | `ScanExtensionRoots` |
+| 331 | Extensions | The extensions page lists every folder that was searched, so \'my extension is not loading\' has an answer | src/web/internal_pages.cc | `Folders searched` |
+| 332 | Extensions | The extensions page explains how to install a Store extension unpacked, and says plainly which APIs will not work rather than implying parity with Chrome | src/web/internal_pages.cc | `Chrome Web Store` |
+| 333 | Docs | The About page credits Cortex_LLMHoster, Ollama, Chromium and CEF, and names codero-sus and the-codero.web.app as the author | src/web/internal_pages.cc | `the-codero.web.app` |

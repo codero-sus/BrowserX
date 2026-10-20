@@ -291,7 +291,7 @@ not subscribed to in this build — an honest empty page, not a fake one. Sync i
 
 ### Native features, and what each one does not do
 
-Four features are built into the chrome rather than promised:
+Five features are built into the chrome rather than promised:
 
 - **Tor mode** (`--tor`, `--tor-port=N`, `browserx://tor`). Adds the SOCKS5 proxy,
   proxied DNS (`host-resolver-rules=MAP * ~NOTFOUND`), no QUIC and no non-proxied
@@ -303,12 +303,23 @@ Four features are built into the chrome rather than promised:
   `<profile>/extensions/*/manifest.json` load as `--load-extension` with
   `--disable-extensions-except`, and every one is listed with what will not work —
   MV3 service workers, the Chrome Web Store, permissions this build does not
-  implement — instead of a silent partial load.
+  implement — instead of a silent partial load. Three roots are searched
+  (`<profile>/extensions`, `<exe>/extensions`, plus any `--extensions-dir`), merged by
+  extension id. Store extensions install unpacked: download the `.crx`, rename it
+  `.zip`, unpack it into one of those folders, restart.
 - **Tracker shield** (`browserx://shield`). A curated host list (163 rules at
   default) plus an optional `<profile>/rules.txt` of hosts-file lines
   (`0.0.0.0 ads.example`) or `||ads.example^` rules. It is light on purpose: no
   element hiding, no regex, no options, no uBlock. Lines it does not understand are
   counted and shown verbatim, so the rule count never quietly means something else.
+- **AI assistant** (`browserx://ai`, `Ctrl+Shift+A`). Three providers, one box:
+  **Cortex_LLMHoster** by codero-sus (local, OpenAI-compatible), **Ollama** (local,
+  `/api/chat`), and any **OpenAI-compatible cloud**. Local providers need no key and
+  the prompt never leaves this machine; the cloud provider is opt-in, needs a key, and
+  requires `https://`. The page shows the exact prompt before it is sent and the exact
+  request after (key redacted) — an assistant you cannot audit is a decision you did
+  not make. Page text is read locally so a summary can be asked for, and attached only
+  when you tick the box or press Summarise.
 - **CAPTCHA assist** (`Ctrl+Shift+H`). Detects a challenge from the page's own
   console signals, says so in the status bar, and on request scrolls to it and
   outlines it. It never solves, clicks, focuses, submits or calls a solving service;

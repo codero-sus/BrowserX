@@ -137,3 +137,34 @@ TEST(Extensions, TheDescriptionNamesTheVersionAndTheManifestGeneration) {
   EXPECT_TRUE(text.find("1.2.3") != std::string::npos);
   EXPECT_TRUE(text.find("Manifest V2") != std::string::npos);
 }
+
+// --- multiple roots --------------------------------------------------------
+// Chromium users keep unpacked extensions in more than one place. The scan must merge
+// them without reporting the same extension twice, because the load list and the report
+// are read by different people at different times.
+TEST(Extensions, TheSameIdInTwoRootsIsOneExtension) {
+  const std::string one =
+      R"({"manifest_version":2,"name":"Same","version":"1.0","id":"abcdefghijklmnop"})";
+  const std::string two =
+      R"({"manifest_version":2,"name":"Same","version":"1.1","id":"abcdefghijklmnop"})";
+  std::vector<browserx::core::ExtensionInfo> found;
+  std::string error;
+  browserx::core::ExtensionInfo info;
+  ASSERT_TRUE(browserx::core::ParseManifest(one, "a", "/a", &info, &error));
+  found.push_back(info);
+  info = browserx::core::ExtensionInfo{};
+  ASSERT_TRUE(browserx::core::ParseManifest(two, "b", "/b", &info, &error));
+  // The merge rule lives in the scanner; this pins the identity it merges on.
+  EXPECT_EQ(found.front().id, info.id);
+  EXPECT_EQ(found.front().name, info.name);
+}
+
+TEST(Extensions, AnExtensionWithoutAnIdIsStillUsable) {
+  browserx::core::ExtensionInfo info;
+  std::string error;
+  ASSERT_TRUE(browserx::core::ParseManifest(
+      R"({"manifest_version":2,"name":"No Id","version":"2.0"})", "x", "/x", &info, &error));
+  EXPECT_TRUE(info.id.empty());
+  EXPECT_EQ(info.name, "No Id");
+  EXPECT_TRUE(info.loadable);
+}

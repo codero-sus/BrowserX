@@ -223,6 +223,15 @@ json::Value Settings::ToJson() const {
   out["download_dir"] = json::Value(download_dir);
   out["ask_where_to_save"] = json::Value(ask_where_to_save);
   out["history_limit"] = json::Value(history_limit);
+  out["ai_provider"] = json::Value(ai_provider);
+  out["ai_endpoint"] = json::Value(ai_endpoint);
+  out["ai_model"] = json::Value(ai_model);
+  out["ai_api_key"] = json::Value(ai_api_key);
+  out["ai_temperature"] = json::Value(ai_temperature);
+  out["ai_max_tokens"] = json::Value(static_cast<double>(ai_max_tokens));
+  out["ai_send_page_context"] = json::Value(ai_send_page_context);
+  out["ai_max_context_chars"] = json::Value(static_cast<double>(ai_max_context_chars));
+  out["ai_stream"] = json::Value(ai_stream);
   out["log_level"] = json::Value(log_level);
   out["verbose_startup_timing"] = json::Value(verbose_startup_timing);
   return json::Value(std::move(out));
@@ -343,6 +352,34 @@ bool Settings::FromJson(const json::Value& value, std::string* error) {
   }
   if (const auto parsed = OptionalInt(value.Get("history_limit"), 0, 1000000); parsed.has_value()) {
     history_limit = *parsed;
+  }
+  if (value.Get("ai_provider").IsString()) {
+    // An unknown provider id is a corrupted file, not a request to switch: keep the
+    // default rather than silently routing prompts to a different place.
+    ai_provider = fmt::ToLower(value.Get("ai_provider").AsString());
+    if (ai_provider != "cortex" && ai_provider != "ollama" && ai_provider != "cloud") {
+      ai_provider = "ollama";
+    }
+  }
+  if (value.Get("ai_endpoint").IsString()) ai_endpoint = value.Get("ai_endpoint").AsString();
+  if (value.Get("ai_model").IsString()) ai_model = value.Get("ai_model").AsString();
+  if (value.Get("ai_api_key").IsString()) ai_api_key = value.Get("ai_api_key").AsString();
+  if (const auto parsed = OptionalDouble(value.Get("ai_temperature"), 0.0, 2.0);
+      parsed.has_value()) {
+    ai_temperature = *parsed;
+  }
+  if (const auto parsed = OptionalInt(value.Get("ai_max_tokens"), 32, 8192); parsed.has_value()) {
+    ai_max_tokens = *parsed;
+  }
+  if (const auto parsed = OptionalBool(value.Get("ai_send_page_context")); parsed.has_value()) {
+    ai_send_page_context = *parsed;
+  }
+  if (const auto parsed = OptionalInt(value.Get("ai_max_context_chars"), 0, 20000);
+      parsed.has_value()) {
+    ai_max_context_chars = *parsed;
+  }
+  if (const auto parsed = OptionalBool(value.Get("ai_stream")); parsed.has_value()) {
+    ai_stream = *parsed;
   }
   if (value.Get("log_level").IsString()) log_level = fmt::ToLower(value.Get("log_level").AsString());
   if (const auto parsed = OptionalBool(value.Get("verbose_startup_timing")); parsed.has_value()) {

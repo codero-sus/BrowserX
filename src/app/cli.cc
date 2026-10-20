@@ -37,6 +37,7 @@ const char* const kOwnSwitches[] = {
     "list-modes",   "smoke-test",       "benchmark",   "doctor",   "help",
     "version",      "disable-gpu",      "tab",         "no-features-check",
     "tor",          "no-tor",           "tor-port",    "extensions",  "no-extensions",
+    "extensions-dir",
 };
 
 bool IsOwnSwitch(const std::string& name) {
@@ -142,6 +143,18 @@ std::string CliUsage(const char* program) {
   text += "  --allow-multiple     allow a second instance to share the profile\n";
   text += "  --tab=<url>          open another tab (may be repeated)\n";
   text += "  --log-level=<level>  trace | debug | info | warn | error\n\n";
+  text += "NATIVE FEATURES\n";
+  text += "  --tor                route all traffic through a Tor SOCKS5 proxy\n";
+  text += "                       (you run Tor; this browser does not bundle it)\n";
+  text += "  --tor-port=<n>       SOCKS port to use (implies --tor, default 9050)\n";
+  text += "  --no-tor             force Tor mode off for this run\n";
+  text += "  --extensions         load unpacked extensions (default on)\n";
+  text += "  --no-extensions      disable extension loading for this run\n";
+  text += "  --extensions-dir=<d> search another folder for unpacked extensions\n";
+  text += "                       (repeatable, or comma-separated)\n\n";
+  text += "AI (configured on browserx://ai, Ctrl+Shift+A)\n";
+  text += "  Cortex LLMHoster, Ollama, or any OpenAI-compatible cloud endpoint.\n";
+  text += "  Local providers need no key. A cloud key is stored in settings.json.\n\n";
   text += "DIAGNOSTICS (print and exit)\n";
   text += "  --flag-plan[=mode|all]   resolved Chromium switches + why they are used\n";
   text += "  --print-profile          detected hardware and the mode we recommend\n";
@@ -369,6 +382,19 @@ LaunchOptions ParseCli(int argc, const char* const* argv) {
     }
     if (name == "no-extensions") {
       options.extensions = false;
+      continue;
+    }
+    if (name == "extensions-dir") {
+      if (!need_value("extensions-dir")) continue;
+      // Accept a list so a launcher can pass several folders in one argument; a trailing
+      // separator is a common copy-paste artefact and is trimmed rather than passed on.
+      for (std::string folder : browserx::core::fmt::Split(value, ',')) {
+        folder = browserx::core::fmt::Trim(folder);
+        while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\')) {
+          folder.pop_back();
+        }
+        if (!folder.empty()) options.extension_dirs.push_back(folder);
+      }
       continue;
     }
     if (name == "tor-port") {

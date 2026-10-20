@@ -26,6 +26,8 @@
 #include "core/chromium_catalog.h"
 #include "core/json.h"
 #include "core/library.h"
+#include "app/ai_session.h"
+#include "core/ai.h"
 #include "core/blocklist.h"
 #include "core/security_state.h"
 #include "core/tor.h"
@@ -142,6 +144,32 @@ int main(int argc, char** argv) {
   data.rules_examples = {"example.com##.ad-banner", "||ads.example^$third-party"};
   data.security_url = "http://example.com/";
 
+  // The AI page: a local provider, one answered question, and the prompt preview, so the
+  // dump shows the page a person actually sees rather than an empty shell.
+  data.ai_provider = "ollama";
+  data.ai_provider_label = "Ollama";
+  data.ai_location = browserx::core::AiProviderLocation(browserx::core::AiProvider::kOllama);
+  data.ai_endpoint = "http://127.0.0.1:11434";
+  data.ai_model = "";
+  {
+    browserx::app::AiSession session;
+    browserx::core::Settings settings = browserx::core::Settings::Defaults();
+    session.LoadFromSettings(settings);
+    data.ai_status_lines = session.StatusLines();
+  }
+  data.ai_privacy_notes = browserx::core::AiPrivacyNotes();
+  data.ai_turn_disclaimer = browserx::core::AiAnswerDisclaimer();
+  data.ai_store_note = "A local provider needs no key.";
+  data.ai_turns = {"What is this page about?"};
+  data.ai_answers = {"A short sample answer, shown so the layout can be reviewed offline."};
+  data.ai_turn_errors = {""};
+  data.ai_question = data.ai_turns.back();
+  data.ai_prompt_preview = browserx::core::BuildSummaryPrompt(
+      "Example page", "https://example.com/article", "Some visible page text.", 4000);
+  data.ai_context_chars = 21;
+  data.page_title = "Example page";
+  data.page_url = "https://example.com/article";
+
   std::vector<browserx::core::ModePlan> plans;
   for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
     plans.push_back(browserx::core::BuildPlan(info.mode, context));
@@ -216,7 +244,8 @@ int main(int argc, char** argv) {
         browserx::web::PageKind::kHistory, browserx::web::PageKind::kBookmarks,
         browserx::web::PageKind::kFind, browserx::web::PageKind::kError,
         browserx::web::PageKind::kTor, browserx::web::PageKind::kExtensions,
-        browserx::web::PageKind::kSecurity, browserx::web::PageKind::kShield}) {
+        browserx::web::PageKind::kSecurity, browserx::web::PageKind::kShield,
+        browserx::web::PageKind::kAi}) {
     const std::string path = output_dir + "/" + browserx::web::PageName(kind) + ".html";
     if (!WriteFile(path, browserx::web::RenderPage(kind, data))) return 1;
     std::printf("  wrote %s\n", path.c_str());

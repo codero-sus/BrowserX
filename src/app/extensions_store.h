@@ -27,6 +27,9 @@ struct ExtensionScan {
   /// The directory that was scanned, for reporting even when it does not exist.
   std::string directory;
   bool directory_exists = false;
+  /// Every root that was searched. Chromium's own users keep unpacked extensions in more
+  /// than one place, and a browser that only looked in one would make the rest invisible.
+  std::vector<std::string> searched;
   std::vector<core::ExtensionInfo> extensions;
   /// Folders that looked like extensions and were refused, with why.
   std::vector<std::string> refused;
@@ -38,8 +41,19 @@ struct ExtensionScan {
 /// extensions). Never throws; a missing directory is a normal outcome, not an error.
 ExtensionScan ScanExtensions(const std::string& directory);
 
+/// Scans several roots and merges them, de-duplicated by extension id (the same extension
+/// installed in two roots is one extension, and saying otherwise would make the load list
+/// and the report disagree). Later roots do not override earlier ones.
+ExtensionScan ScanExtensionRoots(const std::vector<std::string>& roots);
+
 /// The directory extensions are loaded from, given a profile directory.
 std::string ExtensionsDirectory(const std::string& profile_dir);
+
+/// Where the browser looks, in order: the profile (yours, writable), then
+/// `<executable dir>/extensions` (a portable or shared install). Extra roots from
+/// `--extensions-dir` are appended by the caller.
+std::vector<std::string> ExtensionsRoots(const std::string& profile_dir,
+                                         const std::string& executable_dir);
 
 }  // namespace app
 }  // namespace browserx

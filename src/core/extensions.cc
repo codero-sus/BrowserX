@@ -52,6 +52,12 @@ bool ParseManifest(const std::string& manifest_json, const std::string& folder,
 
   info.name = parsed->Get("name").AsString();
   info.version = parsed->Get("version").AsString();
+  {
+    // Chrome's Web Store manifests carry an "id"; unpacked GitHub builds usually do not.
+    // It is used only to recognise the same extension found in two folders.
+    const json::Value& id = parsed->Get("id");
+    if (id.IsString()) info.id = id.AsString();
+  }
   const json::Value& mv = parsed->Get("manifest_version");
   info.manifest_version = mv.IsNumber() ? static_cast<int>(mv.AsDouble()) : 0;
 

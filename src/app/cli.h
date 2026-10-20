@@ -69,6 +69,9 @@ struct LaunchOptions {
   int tor_port = core::kDefaultTorSocksPort;
   /// Unpacked extensions are loaded from <profile>/extensions unless --no-extensions.
   bool extensions = true;
+  /// Extra extension roots, in addition to the profile and the executable's folder.
+  /// Added by --extensions-dir (repeatable, or comma-separated).
+  std::vector<std::string> extension_dirs;
 
   // Overrides.
   std::string profile_dir;
