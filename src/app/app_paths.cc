@@ -192,6 +192,7 @@ std::string Paths::history_file() const { return JoinPath(profile_dir, "history.
 std::string Paths::bookmarks_file() const { return JoinPath(profile_dir, "bookmarks.json"); }
 std::string Paths::session_file() const { return JoinPath(sessions_dir, "last-session.json"); }
 std::string Paths::log_file() const { return JoinPath(logs_dir, "browserx.log"); }
+std::string Paths::rules_file() const { return JoinPath(profile_dir, "rules.txt"); }
 
 Paths ResolvePaths() {
   Paths paths;

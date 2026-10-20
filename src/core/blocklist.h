@@ -72,6 +72,26 @@ class Blocklist {
   void AddRule(std::string pattern, BlockCategory category, bool third_party_only = true,
                bool path_rule = false);
 
+  /// Imports a plain-text rule list the user wrote or downloaded.
+  ///
+  /// Two formats are understood, because two are what people actually have:
+  ///   * a hosts file:  `0.0.0.0 ads.example`  /  `127.0.0.1 tracker.example`
+  ///   * a simple ABP line: `||ads.example^`  (host rule), `! comment`
+  ///
+  /// Anything else is counted as skipped rather than guessed at. A filter list is full of
+  /// syntax this blocker deliberately does not implement - element hiding, regex, options
+  /// like `$third-party` - and silently accepting those lines as if they worked would make
+  /// the blocked count a lie about coverage.
+  struct ImportReport {
+    size_t added = 0;
+    size_t duplicates = 0;
+    size_t skipped = 0;
+    /// The first few lines that were not understood, so the user can see why the count
+    /// does not match the file.
+    std::vector<std::string> examples;
+  };
+  ImportReport ImportRules(std::string_view text, BlockCategory category = BlockCategory::kAds);
+
   void SetEnabled(bool enabled) { enabled_ = enabled; }
   bool enabled() const { return enabled_; }
 

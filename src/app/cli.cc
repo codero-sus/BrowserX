@@ -36,6 +36,7 @@ const char* const kOwnSwitches[] = {
     "write-bench-page",
     "list-modes",   "smoke-test",       "benchmark",   "doctor",   "help",
     "version",      "disable-gpu",      "tab",         "no-features-check",
+    "tor",          "no-tor",           "tor-port",    "extensions",  "no-extensions",
 };
 
 bool IsOwnSwitch(const std::string& name) {
@@ -352,6 +353,36 @@ LaunchOptions ParseCli(int argc, const char* const* argv) {
     }
     if (name == "reset-settings") {
       options.reset_settings = true;
+      continue;
+    }
+    if (name == "tor") {
+      options.tor = true;
+      continue;
+    }
+    if (name == "no-tor") {
+      options.tor = false;
+      continue;
+    }
+    if (name == "extensions") {
+      options.extensions = true;
+      continue;
+    }
+    if (name == "no-extensions") {
+      options.extensions = false;
+      continue;
+    }
+    if (name == "tor-port") {
+      if (!need_value("tor-port")) continue;
+      int port = 0;
+      if (!browserx::core::ParseTorPort(value, &port)) {
+        // A port that is not a port would silently produce a proxy pointing at nothing,
+        // which looks like "Tor is broken" rather than "the argument was wrong".
+        options.parse_error = "--tor-port needs a port number between 1 and 65535, not '" +
+                              value + "'";
+        continue;
+      }
+      options.tor_port = port;
+      options.tor = true;   // naming a port implies wanting Tor
       continue;
     }
     if (name == "profile") {

@@ -85,6 +85,7 @@ class BrowserShellImpl : public BrowserShell {
   void ToggleShield() { shield_.SetEnabled(!shield_.enabled()); }
   int blocked_request_count() const { return static_cast<int>(shield_.blocked_total()); }
   const core::Blocklist& shield() const { return shield_; }
+  const core::Blocklist* blocklist() const override { return &shield_; }
   /// The resource policy of the mode running right now: the request guard reads it
   /// on every load, so it must be the live policy, not the one captured at launch.
   const core::RuntimePolicy& runtime_policy() const { return host_->plan().runtime; }

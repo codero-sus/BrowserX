@@ -372,3 +372,70 @@ rendered pages and the preview in a headless DOM: palette open/close with ARIA s
 filters, the history and bookmark readers, the mode diff lines, the page picker, and the
 ledger panel.
 
+## 14. Native features and the modern chrome (added for the Tor / extensions / assist pass)
+
+Four native features and a chrome refresh, each with the same constraint as everything
+else here: it must be real, and it must say what it cannot do.
+
+**Tor (real proxy, honest about what it is not).** The switch set is the part that can be
+verified: `socks5://127.0.0.1:<port>` (remote DNS, so the resolver is the exit node's
+problem), `host-resolver-rules=MAP * ~NOTFOUND` so a missed lookup cannot silently resolve
+locally, `disable-quic` because QUIC is UDP and ignores an HTTP proxy, and
+`force-webrtc-ip-handling-policy=disable_non_proxied_udp` so WebRTC does not open a path
+around it. `--tor` refuses to pretend: it probes the port, reports what it found, and the
+`browserx://tor` page states the leak surface plainly — fingerprinting, canvas, extensions,
+downloads, and an exit node that can read plain HTTP. BrowserX is not Tor Browser, and the
+page says so before it says anything else.
+
+**Ad blocker (light, and labelled as light).** The curated rule set already exists (163
+rules, categories, per-site allowlist, counters). What was missing is a way for a person to
+add their own: `ImportHostsText()` accepts hosts-file lines and simple `||domain^` ABP
+rules, ignores comments, de-duplicates, and reports what it skipped. It is still not
+uBlock Origin, and the shield panel says so.
+
+**Extensions (unpacked, with CEF's real limits stated per extension).** A folder is scanned
+for `manifest.json`; each is parsed and validated, and the ones that CEF can plausibly load
+are passed to Chromium through `--load-extension` / `--disable-extensions-except`. The
+report names, per extension, what will not work — Manifest V3 service workers, the Web
+Store, `chrome.*` APIs CEF does not implement — because an extension that half-works
+silently is worse than one that is refused.
+
+**CAPTCHA assist (never solves, never clicks).** An injected, read-only detector observes
+the DOM for known challenge widgets and reports over the console channel. BrowserX then
+tells the user where it is and offers to scroll to and outline it. It does not solve,
+submit, focus-then-enter, or call any solving service: the policy is a constant, the
+injected script is asserted to contain no click/submit/dispatch call, and the page states
+the rule. This is the one feature where "weak" is the correct design.
+
+**Chrome.** A security indicator that tells the truth about the page's transport
+(`https` / `http` / `browserx://` / `file:` / unknown), rendered from a pure, tested
+function so the toolbar and the site panel cannot disagree; a new-tab page that leads with
+the four native features instead of a paragraph; and the design system extended rather than
+duplicated.
+
+**State as built (this pass).** What exists, and what is still open:
+
+| Piece | Where | State |
+| --- | --- | --- |
+| Transport classifier | `core/security_state.{h,cc}` | done, 8 tests |
+| Omnibox indicator + click-through | `browser/browser_window.cc` (`kIdSecurity`) | done |
+| `browserx://security` | `web/internal_pages.cc` (`RenderSecurity`) | done |
+| Tor plan / port / probe | `core/tor.cc`, `app/tor_probe.cc` | done, 4 + 3 tests |
+| `--tor`, `--tor-port`, `--no-tor` | `app/cli.cc` → `CefHost::BuildBootFlags()` | done |
+| `browserx://tor` | `web/internal_pages.cc` (`RenderTor`) | done |
+| Manifest parse / load flags | `core/extensions.cc` | done, 9 tests |
+| Folder scan | `app/extensions_store.cc` | done |
+| `--extensions`, `--no-extensions` | `app/cli.cc` | done |
+| `browserx://extensions` | `web/internal_pages.cc` (`RenderExtensions`) | done |
+| Shield rule import | `core/blocklist.cc` (`ImportRules`) | done, 8 tests |
+| Rules file wiring | `browser/browser_shell.cc` → `CefHost::rule_import()` | done |
+| `browserx://shield` | `web/internal_pages.cc` (`RenderShield`) | done, 2 tests |
+| Detector + highlight scripts | `core/captcha_assist.{h,cc}` | done |
+| Console detection + `Ctrl+Shift+H` | `browser/browser_window.cc` (`OnConsoleMessage`, `kIdCaptchaAssist`) | done |
+| Menu + start-page cards | `browser/browser_window.cc`, `web/internal_pages.cc` | done |
+
+Still open, and deliberately not faked: the shield stats on the page are the live rule
+count but not a per-day blocked chart (the shell does not persist counters); Tor has no
+in-app start/stop (it never had one — the browser cannot manage a daemon it does not own);
+and extension reload requires a restart because `--load-extension` is read once at boot.
+Each of these is stated in the UI rather than left to discover.
