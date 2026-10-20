@@ -143,6 +143,28 @@ void CefHost::Initialize(const LaunchOptions& options, const Paths& paths) {
         "Use --no-sandbox for development only.");
   }
 
+  // --- native features -----------------------------------------------------
+  // Tor: build the switch set, then ask whether anything is on the port. The probe result
+  // is only informational - the switches are applied either way, because falling back to a
+  // direct connection when Tor is absent would be the one outcome this feature must never
+  // produce silently.
+  if (options_.tor) {
+    tor_plan_ = core::MakeTorPlan(options_.tor_port);
+    tor_probe_ = ProbeTor(tor_plan_.port);
+    tor_probe_done_ = true;
+    core::log::InfoF("tor", "port %d reachable=%d (%s)", tor_plan_.port,
+                     tor_probe_.reachable ? 1 : 0, tor_probe_.detail.c_str());
+    for (const std::string& warning : tor_plan_.warnings) {
+      core::log::Warn("tor", warning);
+    }
+  }
+
+  // Extensions: scanned once. A folder that does not exist is a normal first run.
+  if (options_.extensions) {
+    extension_scan_ = ScanExtensions(ExtensionsDirectory(paths_.profile_dir));
+    extension_scan_done_ = true;
+  }
+
   core::log::InfoF("plan", "%s -> %zu boot switches, %zu child switches, cache %d MB",
                    core::DescribePlanOneLine(plan_).c_str(), plan_.boot.switches().size(),
                    plan_.child.switches().size(), plan_.runtime.cache_size_mb);
@@ -162,6 +184,29 @@ std::vector<std::string> CefHost::BuildBootFlags() const {
   const std::string disabled = JoinFeatureList(plan_.boot.disabled_features());
   if (!enabled.empty()) flags.push_back(FormatSwitch("enable-features", enabled));
   if (!disabled.empty()) flags.push_back(FormatSwitch("disable-features", disabled));
+
+  // --- Tor ---------------------------------------------------------------
+  // Appended after the mode's switches and before the sandbox note, so a mode can never
+  // overwrite the proxy: these are the ones that decide whether traffic leaves this
+  // machine directly, and they win.
+  if (options_.tor) {
+    for (const core::PlannedSwitch& entry : tor_plan().switches) {
+      flags.push_back(entry.ToFlag());
+    }
+  }
+
+  // --- unpacked extensions -----------------------------------------------
+  // Both switches are needed: --load-extension adds ours, and --disable-extensions-except
+  // stops Chromium from also loading whatever it remembers from a previous profile, which
+  // would make the folder the user chose a suggestion rather than the list.
+  if (options_.extensions && extension_scan_done_) {
+    const std::string load = core::LoadExtensionValue(extension_scan_.extensions);
+    if (!load.empty()) {
+      flags.push_back(FormatSwitch("load-extension", load));
+      flags.push_back(FormatSwitch("disable-extensions-except",
+                                   core::DisableExceptValue(extension_scan_.extensions)));
+    }
+  }
 
   // Sandbox state is CefSettings' business, but the flag keeps the command line
   // self-documenting (and matches what `--flag-plan` prints).

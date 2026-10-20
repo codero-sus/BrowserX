@@ -7,6 +7,7 @@
 #include "web/bench_page.h"
 
 #include "core/format.h"
+#include "core/security_state.h"
 #include "core/json.h"
 #include "core/mode_engine.h"
 #include "core/net_errors.h"
@@ -183,6 +184,13 @@ p.lede strong { color: var(--text); font-weight: 650; }
 .card > :first-child { margin-top: 0; }
 .card > :last-child { margin-bottom: 0; }
 .card.flat { box-shadow: none; background: transparent; }
+/* The four native features are links, not cards that happen to be clickable: the whole
+   tile is the target, and hover lifts it like the speed dial below. */
+.card.feature { display: block; text-decoration: none; color: inherit; margin-bottom: 0; }
+.card.feature:hover { border-color: var(--accent); transform: translateY(-1px); }
+.card.feature h3 { margin: 0 0 6px; font-size: 15px; }
+.card.feature p { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.grid.features { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin: 18px 0 26px; }
 .tile {
   position: relative; display: block; overflow: hidden; text-decoration: none; color: inherit;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
@@ -652,6 +660,10 @@ const std::vector<HostEntry>& HostTable() {
       {"find", PageKind::kFind, "Find in page"},
       {"error", PageKind::kError, "What went wrong"},
       {"bench", PageKind::kBench, "Benchmark"},
+      {"tor", PageKind::kTor, "Tor mode"},
+      {"extensions", PageKind::kExtensions, "Extensions"},
+      {"security", PageKind::kSecurity, "Connection"},
+      {"shield", PageKind::kShield, "Tracker shield"},
   };
   return table;
 }
@@ -856,6 +868,27 @@ std::string RenderNewTab(const PageData& data) {
   out += "<p class=\"note tight\" style=\"margin-top:12px\">Searches with the engine from your "
          "settings; anything that looks like an address goes straight there.</p>\n";
   out += "</section>\n";
+
+  // The four native features first, because they are the reason to use this browser
+  // rather than any other Chromium build. Each links to the page that explains it,
+  // including its limits - a start page that only advertised would be an advert.
+  out += "<div class=\"grid features\">\n";
+  out += "<a class=\"card feature\" href=\"browserx://tor\"><h3>Tor mode</h3>"
+         "<p>Route every request through a Tor process you run. Started with "
+         "<code>--tor</code>.</p><span class=\"pill\">proxy, not Tor Browser</span></a>\n";
+  out += "<a class=\"card feature\" href=\"browserx://extensions\"><h3>Extensions</h3>"
+         "<p>Unpacked extensions from a folder, each listed with what will and will not "
+         "work.</p><span class=\"pill\">no Web Store</span></a>\n";
+  out += "<a class=\"card feature\" href=\"browserx://security\"><h3>Connection info</h3>"
+         "<p>What the padlock actually means for the page you are on - and what it does "
+         "not mean.</p><span class=\"pill\">per page</span></a>\n";
+  out += "<a class=\"card feature\" href=\"browserx://shield\"><h3>Tracker shield</h3>"
+         "<p>Curated host rules plus your own list. Stops requests before they are "
+         "sent.</p><span class=\"pill\">light, not uBlock</span></a>\n";
+  out += "<a class=\"card feature\" href=\"browserx://shortcuts\"><h3>CAPTCHA assist</h3>"
+         "<p>Finds the challenge and shows you where it is. Never solves it, never "
+         "clicks.</p><span class=\"pill\">Ctrl+Shift+H</span></a>\n";
+  out += "</div>\n";
 
   // The pages people actually open, one click away.
   out += "<div class=\"grid\">\n";
@@ -1147,6 +1180,190 @@ std::string RenderSession(const PageData& data) {
   out += "<summary>Session JSON (the file that gets restored)</summary><pre>";
   out += EscapeImpl(data.session_json);
   out += "</pre></details></div>\n";
+  return out;
+}
+
+std::string RenderShield(const PageData& data) {
+  std::string out;
+  out += "<h1>Tracker shield</h1>\n";
+  out += "<p class=\"lede\">" +
+         std::string(data.shield_on ? "On. " : "Off. ") +
+         "A curated host list, plus any rules you keep in <code class=\"mono\">" +
+         EscapeImpl(data.rules_file) + "</code>.</p>\n";
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">What it is</h2>\n"
+         "<p><strong>Light by design.</strong> " + std::to_string(data.shield_rules) +
+         " host rules, matched by host name and by a few hundred path fragments. It "
+         "is not uBlock Origin and does not claim to be: no element hiding, no cosmetic "
+         "filters, no per-request negotiation, no filter-list syntax beyond the two forms "
+         "below. It stops the common ad, analytics, social and miner hosts at the request "
+         "layer, before the bytes arrive, which is also why it helps speed.</p>\n";
+
+  if (data.shield_categories.empty()) {
+    out += "<p class=\"note\">The running shell has not reported its list yet.</p>\n";
+  } else {
+    out += "<ul>\n";
+    for (const std::string& line : data.shield_categories) {
+      out += "<li>" + EscapeImpl(line) + "</li>\n";
+    }
+    out += "</ul>\n";
+  }
+  out += "</div>\n";
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Your own rules</h2>\n";
+  if (!data.rules_present) {
+    out += "<p>No rule file yet. Create <code class=\"mono\">" +
+           EscapeImpl(data.rules_file) + "</code> and restart BrowserX; it is read once at "
+           "start-up, so the blocked count always describes one list.</p>\n";
+  } else {
+    out += "<p>Read " + std::to_string(data.rules_added) + " rules";
+    if (data.rules_duplicates > 0) {
+      out += ", ignored " + std::to_string(data.rules_duplicates) + " already present";
+    }
+    if (data.rules_skipped > 0) {
+      out += ", skipped " + std::to_string(data.rules_skipped) + " line(s) this importer "
+             "does not understand";
+    }
+    out += ".</p>\n";
+    if (!data.rules_examples.empty()) {
+      out += "<p class=\"note tight\">Skipped, verbatim:</p>\n<ul class=\"mono\">\n";
+      for (const std::string& line : data.rules_examples) {
+        out += "<li>" + EscapeImpl(line) + "</li>\n";
+      }
+      out += "</ul>\n";
+    }
+  }
+  out += "<p class=\"note\">Two line forms are understood: a hosts-file line "
+         "(<code>0.0.0.0 ads.example</code>, or <code>127.0.0.1 ads.example</code>) and a "
+         "simple rule (<code>||ads.example^</code>). Lines starting with <code>#</code> or "
+         "<code>!</code> are comments. Everything else is counted as skipped rather than "
+         "guessed at - a rule that silently does nothing is worse than a line that says "
+         "so.</p>\n";
+  out += "</div>\n";
+  return out;
+}
+
+std::string RenderSecurity(const PageData& data) {
+  std::string out;
+  out += "<h1>Connection</h1>\n";
+
+  if (data.security_url.empty()) {
+    out += "<p class=\"lede\">Open a page, then click the mark at the left of the address "
+           "bar to see what BrowserX can and cannot tell you about its connection.</p>\n";
+  } else {
+    const core::Transport transport = core::ClassifyTransport(data.security_url);
+    out += "<p class=\"lede\">" + EscapeImpl(core::TransportLabel(transport)) +
+           " <span class=\"mono\">" + EscapeImpl(core::TransportGlyph(transport)) +
+           "</span></p>\n";
+    out += "<div class=\"card\"><h2 style=\"margin-top:0\">Address</h2>\n";
+    out += "<p class=\"mono break\">" + EscapeImpl(data.security_url) + "</p>\n";
+    out += "</div>\n";
+    out += "<div class=\"card\"><h2 style=\"margin-top:0\">What that means</h2>\n<p>" +
+           EscapeImpl(core::TransportDetail(transport)) + "</p>\n</div>\n";
+  }
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">What this page does not tell you"
+         "</h2>\n<ul>\n"
+         "<li>Whether the site is honest. A certificate proves which server answered, not "
+         "that its owner means well.</li>\n"
+         "<li>Which certificate was used, or who issued it. That needs the certificate "
+         "chain, which this page does not read.</li>\n"
+         "<li>Whether the content inside the page is trying to track you. That is the "
+         "tracker shield's job, not this page's.</li>\n"
+         "</ul>\n<p class=\"note\">Saying this is the point: an indicator that implies more "
+         "than it checked is worse than no indicator at all.</p>\n</div>\n";
+  return out;
+}
+
+std::string RenderTor(const PageData& data) {
+  std::string out;
+  out += "<h1>Tor mode</h1>\n<p class=\"lede\">BrowserX can route every request through a "
+         "Tor process you run. This page is here to be clear about what that buys you and "
+         "what it does not.</p>\n";
+
+  // The status first, because it is the thing a person came to find out.
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Status</h2>\n";
+  if (!data.tor_on) {
+    out += "<p><strong>Tor mode is off.</strong> Start the browser with "
+           "<code>--tor</code> to route traffic through Tor (default port 9050), or "
+           "<code>--tor --tor-port=9150</code> for a Tor Browser bundle.</p>\n";
+  } else {
+    out += data.tor_reachable
+               ? "<p><strong class=\"good\">On, and routed.</strong> "
+               : "<p><strong class=\"bad\">On, but nothing answered.</strong> ";
+    out += EscapeImpl(data.tor_status) + "</p>\n";
+    out += "<p>Port <code class=\"mono\">" + std::to_string(data.tor_port) +
+           "</code>. The proxy settings are read at start-up, so a change needs a restart.</p>\n";
+  }
+  out += "</div>\n";
+
+  // Then the limits, in the same weight of type as the status. A warning in small print is
+  // a warning the design decided not to deliver.
+  if (!data.tor_warnings.empty()) {
+    out += "<div class=\"card warn\"><h2 style=\"margin-top:0\">What this does not do</h2>\n<ul>\n";
+    for (const std::string& warning : data.tor_warnings) {
+      out += "<li>" + EscapeImpl(warning) + "</li>\n";
+    }
+    out += "</ul>\n</div>\n";
+  }
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Running Tor</h2>\n"
+         "<p>BrowserX does not bundle Tor. Install it, start it, then start BrowserX with "
+         "<code>--tor</code>.</p>\n"
+         "<pre class=\"mono\">tor                (the daemon; listens on 127.0.0.1:9050)\n"
+         "BrowserX --tor</pre>\n"
+         "<p class=\"note\">If the port does not answer, pages fail to load. That is "
+         "deliberate: falling back to a direct connection would be a silent leak.</p>\n"
+         "</div>\n";
+  return out;
+}
+
+std::string RenderExtensions(const PageData& data) {
+  std::string out;
+  out += "<h1>Extensions</h1>\n<p class=\"lede\">BrowserX loads <strong>unpacked</strong> "
+         "extensions from a folder. There is no Web Store, and CEF does not implement every "
+         "extension API - so each one is listed below with what to expect.</p>\n";
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Folder</h2>\n";
+  out += "<p class=\"mono\">" + EscapeImpl(data.extensions_dir) + "</p>\n";
+  out += "<p>Put each extension in its own folder inside it, then restart the browser. "
+         "Extensions are read at start-up, not watched.</p>\n";
+  if (!data.extensions_on) {
+    out += "<p><strong>Extensions are disabled for this run</strong> (<code>--no-extensions</code>).</p>\n";
+  }
+  out += "</div>\n";
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">Loaded</h2>\n";
+  if (data.extension_lines.empty()) {
+    out += "<p>None yet. A folder without a valid <code>manifest.json</code> is not an "
+           "extension, and is not listed here.</p>\n";
+  } else {
+    out += "<ul>\n";
+    for (const std::string& line : data.extension_lines) {
+      out += "<li>" + EscapeImpl(line) + "</li>\n";
+    }
+    out += "</ul>\n";
+  }
+  out += "</div>\n";
+
+  if (!data.extension_refused.empty()) {
+    out += "<div class=\"card warn\"><h2 style=\"margin-top:0\">Refused, and why</h2>\n<ul>\n";
+    for (const std::string& line : data.extension_refused) {
+      out += "<li>" + EscapeImpl(line) + "</li>\n";
+    }
+    out += "</ul>\n</div>\n";
+  }
+
+  out += "<div class=\"card\"><h2 style=\"margin-top:0\">What will not work</h2>\n<ul>\n"
+         "<li>The Chrome Web Store: extensions cannot be installed from a store page.</li>\n"
+         "<li>Manifest V3 background service workers: CEF's support is partial, so "
+         "background behaviour may not run.</li>\n"
+         "<li>APIs CEF does not implement: <code>chrome.debugger</code>, "
+         "<code>tabCapture</code>, <code>desktopCapture</code>, <code>nativeMessaging</code>.</li>\n"
+         "<li>Anything that checks for Chrome-specific behaviour may refuse to run.</li>\n"
+         "</ul>\n<p class=\"note\">If an extension loads and does nothing, the reason is "
+         "usually in this list. The browser cannot tell you which, because it cannot see "
+         "inside the extension.</p>\n</div>\n";
   return out;
 }
 
@@ -1702,6 +1919,10 @@ std::string RenderPage(PageKind kind, const PageData& data) {
     case PageKind::kHistory: return Shell(kind, data, RenderHistory(data));
     case PageKind::kBookmarks: return Shell(kind, data, RenderBookmarks(data));
     case PageKind::kDownloads: return Shell(kind, data, RenderNotWired(kind));
+    case PageKind::kTor: return Shell(kind, data, RenderTor(data));
+    case PageKind::kExtensions: return Shell(kind, data, RenderExtensions(data));
+    case PageKind::kSecurity: return Shell(kind, data, RenderSecurity(data));
+    case PageKind::kShield: return Shell(kind, data, RenderShield(data));
     case PageKind::kUnknown: break;
   }
   return Shell(PageKind::kUnknown, data,

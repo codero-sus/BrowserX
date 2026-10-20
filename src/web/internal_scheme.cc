@@ -120,6 +120,38 @@ class InternalSchemeFactory : public CefSchemeHandlerFactory {
 
     PageData data = BuildPageData(*host_);
     data.requested_host = parsed.host;
+    // browserx://security?url=<encoded>: the page explains the connection the indicator
+    // was clicked on. Decoded here - a query string is not text until it is decoded once,
+    // and the page must not do that itself with string surgery.
+    if (parsed.host == "security" && !parsed.query.empty()) {
+      const std::string key = "url=";
+      const size_t at = parsed.query.find(key);
+      if (at != std::string::npos) {
+        std::string raw = parsed.query.substr(at + key.size());
+        const size_t amp = raw.find('&');
+        if (amp != std::string::npos) raw = raw.substr(0, amp);
+        std::string decoded;
+        for (size_t i = 0; i < raw.size(); ++i) {
+          if (raw[i] == '%' && i + 2 < raw.size()) {
+            const auto hex = [](char c) -> int {
+              if (c >= '0' && c <= '9') return c - '0';
+              if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+              if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+              return -1;
+            };
+            const int hi = hex(raw[i + 1]);
+            const int lo = hex(raw[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+              decoded += static_cast<char>(hi * 16 + lo);
+              i += 2;
+              continue;
+            }
+          }
+          decoded += raw[i] == '+' ? ' ' : raw[i];
+        }
+        data.security_url = decoded;
+      }
+    }
     const PageKind kind = KindForHost(parsed.host);
     return new InternalResourceHandler(RenderPage(kind, data), ContentTypeFor(kind));
   }
@@ -136,6 +168,49 @@ PageData BuildPageData(const app::CefHost& host) {
   PageData data;
   data.version = BROWSERX_VERSION;
   data.git_revision = BROWSERX_GIT;
+
+  // --- native features -----------------------------------------------------
+  // Read from the same host state the boot flags were built from, so the page cannot
+  // describe a Tor configuration different from the one in force.
+  data.tor_on = host.options().tor;
+  data.tor_port = host.tor_plan().port;
+  data.tor_reachable = host.tor_probe().reachable;
+  if (data.tor_on) {
+    data.tor_status = core::DescribeTorStatus(data.tor_reachable, data.tor_port);
+    data.tor_warnings = host.tor_plan().warnings;
+  }
+  data.extensions_on = host.options().extensions;
+  data.extensions_dir = host.extension_scan().directory;
+  for (const core::ExtensionInfo& extension : host.extension_scan().extensions) {
+    data.extension_lines.push_back(core::DescribeExtension(extension));
+  }
+  data.extension_refused = host.extension_scan().refused;
+
+  const app::CefHost::RuleImport& imported = host.rule_import();
+  data.rules_file = imported.file;
+  data.rules_present = imported.file_present;
+  data.rules_added = imported.report.added;
+  data.rules_duplicates = imported.report.duplicates;
+  data.rules_skipped = imported.report.skipped;
+  data.rules_examples = imported.report.examples;
+  if (const BrowserShell* shell = host.shell()) {
+    if (const core::Blocklist* blocklist = shell->blocklist()) {
+    const core::Blocklist& shield = *blocklist;
+    data.shield_on = shield.enabled();
+    data.shield_rules = shield.rule_count();
+    for (const core::BlockCategory category :
+         {core::BlockCategory::kAds, core::BlockCategory::kAnalytics,
+          core::BlockCategory::kSocial, core::BlockCategory::kCrypto,
+          core::BlockCategory::kFingerprint}) {
+      size_t count = 0;
+      for (const core::BlockRule& rule : shield.rules()) {
+        if (rule.category == category) ++count;
+      }
+      data.shield_categories.push_back(std::string(core::BlockCategoryLabel(category)) +
+                                       " - " + std::to_string(count) + " rules");
+    }
+    }
+  }
 
   const core::ModeInfo& info = core::GetModeInfo(host.plan().mode);
   data.active_mode_id = info.id != nullptr ? info.id : "ultra";

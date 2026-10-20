@@ -653,3 +653,70 @@ TEST(InternalPages, ErrorPageIsReachableAndNamedLikeEveryOtherPage) {
   }
   EXPECT_TRUE(listed);
 }
+
+// --- the native-feature pages ----------------------------------------------
+TEST(InternalPages, SecurityPageExplainsAndDisclaims) {
+  PageData data;
+  data.security_url = "https://bank.example/login";
+  const std::string html = RenderPage(PageKind::kSecurity, data);
+  EXPECT_TRUE(html.find("Secure") != std::string::npos);
+  EXPECT_TRUE(html.find("bank.example") != std::string::npos);
+  // The disclaimer is the product: an indicator may not imply it checked honesty.
+  EXPECT_TRUE(html.find("certificate") != std::string::npos);
+  EXPECT_TRUE(html.find("honest") != std::string::npos);
+}
+
+TEST(InternalPages, SecurityPageWarnsOnPlainHttp) {
+  PageData data;
+  data.security_url = "http://neighbourhood.example/";
+  const std::string html = RenderPage(PageKind::kSecurity, data);
+  EXPECT_TRUE(html.find("Not secure") != std::string::npos);
+  EXPECT_TRUE(html.find("not the same as the site being malicious") != std::string::npos);
+}
+
+TEST(InternalPages, SecurityPageWithoutAnAddressAsksForOneInsteadOfGuessing) {
+  const std::string html = RenderPage(PageKind::kSecurity, PageData{});
+  EXPECT_TRUE(html.find("Open a page") != std::string::npos);
+  EXPECT_TRUE(html.find("Not secure") == std::string::npos) << "nothing was checked";
+}
+
+TEST(InternalPages, ShieldPageReportsTheImportedFileHonestly) {
+  PageData data;
+  data.shield_rules = 400;
+  data.shield_categories = {"Ads - 250 rules"};
+  data.rules_file = "/home/u/.browserx/profile/rules.txt";
+  data.rules_present = true;
+  data.rules_added = 3;
+  data.rules_duplicates = 2;
+  data.rules_skipped = 1;
+  data.rules_examples = {"example.com##.ad"};
+  const std::string html = RenderPage(PageKind::kShield, data);
+  EXPECT_TRUE(html.find("400") != std::string::npos) << "the live rule count, not a guess";
+  EXPECT_TRUE(html.find("3 rules") != std::string::npos);
+  EXPECT_TRUE(html.find("2 already present") != std::string::npos);
+  EXPECT_TRUE(html.find("1 line(s)") != std::string::npos);
+  EXPECT_TRUE(html.find("example.com##.ad") != std::string::npos)
+      << "a skip count without the skipped line would not tell the user which side is wrong";
+  EXPECT_TRUE(html.find("not uBlock") != std::string::npos);
+}
+
+TEST(InternalPages, ShieldPageWithoutAFileSaysWhereToPutIt) {
+  PageData data;
+  data.rules_file = "/p/rules.txt";
+  const std::string html = RenderPage(PageKind::kShield, data);
+  EXPECT_TRUE(html.find("No rule file yet") != std::string::npos);
+  EXPECT_TRUE(html.find("/p/rules.txt") != std::string::npos);
+}
+
+TEST(InternalPages, CaptchaNoticesAreNotAdsForSolving) {
+  // The start page links to the assist, so the wording of that link is load-bearing:
+  // it must never read like a solver.
+  PageData data;
+  const std::string html = RenderPage(PageKind::kNewTab, data);
+  EXPECT_TRUE(html.find("browserx://tor") != std::string::npos);
+  EXPECT_TRUE(html.find("browserx://extensions") != std::string::npos);
+  EXPECT_TRUE(html.find("browserx://security") != std::string::npos);
+  EXPECT_TRUE(html.find("browserx://shield") != std::string::npos);
+  EXPECT_TRUE(html.find("Never solves") != std::string::npos);
+  EXPECT_TRUE(html.find("solver") == std::string::npos || html.find("never") != std::string::npos);
+}

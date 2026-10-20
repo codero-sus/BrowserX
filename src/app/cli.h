@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "core/settings_schema.h"
+#include "core/tor.h"
 
 namespace browserx {
 namespace app {
@@ -60,6 +61,14 @@ struct LaunchOptions {
   bool allow_multiple = false;
   bool disable_gpu = false;
   bool reset_settings = false;
+
+  // --- native features -----------------------------------------------------
+  /// Route every request through a Tor process' SOCKS port. See core/tor.h for what this
+  /// does *not* protect against - the warnings are shown before the first page loads.
+  bool tor = false;
+  int tor_port = core::kDefaultTorSocksPort;
+  /// Unpacked extensions are loaded from <profile>/extensions unless --no-extensions.
+  bool extensions = true;
 
   // Overrides.
   std::string profile_dir;
