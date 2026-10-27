@@ -355,3 +355,5 @@ were written beside.
 | 331 | Extensions | The extensions page lists every folder that was searched, so \'my extension is not loading\' has an answer | src/web/internal_pages.cc | `Folders searched` |
 | 332 | Extensions | The extensions page explains how to install a Store extension unpacked, and says plainly which APIs will not work rather than implying parity with Chrome | src/web/internal_pages.cc | `Chrome Web Store` |
 | 333 | Docs | The About page credits Cortex_LLMHoster, Ollama, Chromium and CEF, and names codero-sus and the-codero.web.app as the author | src/web/internal_pages.cc | `the-codero.web.app` |
+| 334 | Tooling | A pull_request build checks out a detached HEAD, whose branch name is the literal HEAD; the self-test now falls back to a real branch instead of failing every PR for a reason unrelated to adopting | tools/adopt_clone.py | `def branch_name_of(repo: Path, fallback: str = DEFAULT_BRANCH) -> str:` |
+| 335 | Tooling | The detached-HEAD case is reproduced in the self-test, so the fix cannot be removed without a red check | tools/adopt_clone.py | `a detached HEAD does not produce a branch literally called HEAD` |

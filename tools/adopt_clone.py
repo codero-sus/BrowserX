@@ -309,6 +309,21 @@ def verify(workdir: Path, branch: str) -> list[str]:
     return problems
 
 
+def branch_name_of(repo: Path, fallback: str = DEFAULT_BRANCH) -> str:
+    """The branch checked out in `repo`, or `fallback` when HEAD is detached.
+
+    A detached HEAD reports the literal string "HEAD", and `git checkout -B HEAD` is an
+    error. GitHub Actions hands a `pull_request` build exactly that, so the self-test used
+    to fail there for a reason that had nothing to do with adopting a folder - which is
+    how this function came to exist.
+    """
+    code, out = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo, allow_failure=True)
+    name = out.strip() if code == 0 else ""
+    if not name or name == "HEAD" or name.startswith("-"):
+        return fallback
+    return name
+
+
 # ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------
@@ -326,7 +341,7 @@ def self_test() -> int:
         print("\n  1 self-test failure(s)\n")
         return EXIT_FAILED
 
-    branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=REPO_ROOT)[1].strip()
+    branch = branch_name_of(REPO_ROOT)
     scratch = Path(tempfile.mkdtemp(prefix="browserx-adopt-test-"))
     try:
         # A fake "remote" holding this repository's files at HEAD, built from git archive
@@ -393,6 +408,28 @@ def self_test() -> int:
         except AdoptError as error:
             expect("already a git checkout" in str(error),
                    "adopting an existing checkout is refused, and says why")
+
+        # --- a detached HEAD ---------------------------------------------------------
+        # GitHub Actions checks out a pull_request build at a merge ref, i.e. a detached
+        # HEAD, whose branch name is the literal "HEAD" - and `git checkout -B HEAD` is an
+        # error. The self-test used to inherit that name and fail on every PR for a reason
+        # unrelated to adopting. A detached repository must name a usable branch.
+        detached = scratch / "detached"
+        detached.mkdir()
+        git(["init", "--quiet", "-b", "main"], cwd=detached)
+        (detached / "a.txt").write_text("x\n")
+        git(["add", "--all"], cwd=detached)
+        git(["-c", "user.name=BrowserX self-test", "-c", "user.email=test@example.invalid",
+             "commit", "--quiet", "-m", "one"], cwd=detached)
+        git(["checkout", "--quiet", "--detach", "HEAD"], cwd=detached)
+        expect(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=detached)[1].strip() == "HEAD",
+               "the fixture really is a detached HEAD (the shape a PR build has)")
+        detached_name = branch_name_of(detached)
+        expect(detached_name != "HEAD",
+               "a detached HEAD does not produce a branch literally called HEAD")
+        expect(git(["check-ref-format", "--branch", detached_name], cwd=detached,
+                   allow_failure=True)[0] == 0,
+               f"the name it falls back to ({detached_name}) is a legal branch name")
 
         # A branch that does not exist must fail before anything is written.
         fresh = scratch / "fresh"
