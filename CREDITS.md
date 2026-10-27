@@ -16,7 +16,9 @@ BrowserX — an ULTRA-optimised Chromium browser with fifteen performance modes
 (ULTRA · GAME · HIGH PERFORMANCE · LOW RAM · ECO · SUPER INTERNET · DOWNLOAD ·
 STREAMING · PRIVACY · DATA SAVER · WEAK NETWORK · LOW LATENCY · READER ·
 BENCHMARK · KIOSK), Auto-Pilot and a tracker shield, in two editions
-(C++/CEF desktop, Android mobile) that share one performance core.
+(C++/CEF desktop, Android mobile) that share one performance core. Built-in AI
+runs against Cortex_LLMHoster, Ollama or an OpenAI-compatible cloud endpoint, and a
+cloud key is only ever entered by the person using the browser.
 
 **Licence, in plain words.** BrowserX is *source-available*, not open source.
 You may read the code and run the browser for your own personal, non-commercial
@@ -34,6 +36,8 @@ sending them does not give you rights over the Software (LICENSE section 6).
 | [CEF — Chromium Embedded Framework](https://github.com/chromiumembedded/cef) | embedding Chromium in a C++ application: process model, Views UI toolkit, resource loading | BSD-3-Clause |
 | [AndroidX-free Android platform APIs](https://developer.android.com/) | the mobile edition's UI (framework widgets only) and `WebView`, which is Chromium | — |
 | [Chromium source tree](https://source.chromium.org/) | the ground truth behind every optimisation: each switch in `src/core/chromium_catalog.cc` records the file it was verified against | — |
+| [Cortex_LLMHoster](https://github.com/codero-sus/Cortex_LLMHoster) | codero-sus's local LLM hoster — one of the three providers behind the built-in AI (`browserx://ai`) | codero-sus |
+| [Ollama](https://ollama.com/) | the machine-local model runner the AI panel talks to on `127.0.0.1:11434` | MIT |
 
 The bundled Chromium/CEF runtime that `make deps` downloads and `make package`
 ships stays under its own licences — see `Resources/` in a packaged build and the

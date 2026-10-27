@@ -48,6 +48,8 @@
 
 #include "app/cef_host.h"
 #include "browser/tab_strip.h"
+#include "core/captcha_assist.h"
+#include "core/security_state.h"
 
 namespace browserx {
 namespace browser {
@@ -65,6 +67,12 @@ enum ChromeId {
   kIdHome,
   kIdOmnibox,
   kIdShield,
+  kIdSecurity,   // the transport indicator at the left of the omnibox
+  kIdCaptchaAssist,
+  kIdOpenTor,
+  kIdOpenExtensions,
+  kIdOpenShield,
+  kIdOpenAi,
   kIdMode,
   kIdMenu,
   kIdStatusLeft,
@@ -205,6 +213,13 @@ class BrowserWindow : public CefWindowDelegate,
   /// start page (and the restored active tab is the one shown).
   void Create(const std::string& url, const std::string& restored_session_json = std::string());
   void Close();
+  /// Injects the read-only text collector the AI panel asked for. Public because the
+  /// shell, not the window, decides when a summary is wanted.
+  void InjectAiPageTextCollector();
+  /// The address and title the pending collector was injected into. The answer arrives
+  /// asynchronously, and by then the address bar may show a different page.
+  std::string ai_text_url_;
+  std::string ai_text_title_;
 
   CefRefPtr<CefBrowser> browser() const { return browser_; }
   CefRefPtr<CefWindow> window() const { return window_; }
@@ -248,6 +263,15 @@ class BrowserWindow : public CefWindowDelegate,
 
  private:
   void BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel> root);
+
+  /// Re-reads the transport of the visible tab and repaints the indicator.
+  void UpdateSecurityIndicator();
+  /// Puts text in the status bar without disturbing the load state.
+  void SetStatusText(const std::string& text);
+  /// Injects the read-only CAPTCHA detector into the visible page.
+  void InjectCaptchaDetector();
+  /// Injects the read-only text collector the AI panel asked for. Public because the
+  /// shell, not the window, decides when a summary is wanted.
   /// Opens `url` in a new tab (session + view) and optionally activates it.
   int OpenTab(const std::string& url, bool activate);
   /// Replaces the session with the tabs of a saved session (see Create()).
@@ -373,6 +397,14 @@ class BrowserWindow : public CefWindowDelegate,
   CefRefPtr<CefLabelButton> home_button_;
   CefRefPtr<CefTextfield> omnibox_;
   CefRefPtr<CefLabelButton> shield_button_;
+  /// The padlock/warning at the left of the omnibox. Its glyph is a pure function of the
+  /// URL (core::ClassifyTransport), so it cannot disagree with the site panel.
+  CefRefPtr<CefLabelButton> security_button_;
+  core::Transport transport_ = core::Transport::kUnknown;
+  /// The challenge seen on the current page, if any. Reset on every navigation, because a
+  /// notice that survived to the next page would be a false claim about that page.
+  core::CaptchaKind captcha_ = core::CaptchaKind::kUnknown;
+  bool captcha_seen_ = false;
   CefRefPtr<CefMenuButton> mode_button_;
   CefRefPtr<CefMenuButton> menu_button_;
   CefRefPtr<CefLabelButton> status_left_;

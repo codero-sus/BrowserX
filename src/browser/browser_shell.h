@@ -30,6 +30,7 @@
 #include "app/metrics_sampler.h"
 #include "browser/browser_window.h"
 #include "core/auto_pilot.h"
+#include "app/ai_controller.h"
 #include "core/blocklist.h"
 #include "core/memory_policy.h"
 #include "core/request_guard.h"
@@ -85,6 +86,21 @@ class BrowserShellImpl : public BrowserShell {
   void ToggleShield() { shield_.SetEnabled(!shield_.enabled()); }
   int blocked_request_count() const { return static_cast<int>(shield_.blocked_total()); }
   const core::Blocklist& shield() const { return shield_; }
+  const core::Blocklist* blocklist() const override { return &shield_; }
+  bool AiAction(const std::string& action, const std::string& payload,
+                std::string* error) override;
+  std::string AiStateJson() const override;
+  const app::AiSession* ai_session() const override { return &ai_.session(); }
+  /// Stores the visible text of the page the AI panel is about. Called from the window's
+  /// console handler when the injected collector answers; never on its own.
+  void NoteAiPageText(const std::string& url, const std::string& title,
+                      std::vector<std::string> lines) {
+    ai_.session().SetPage(url, title, std::move(lines));
+  }
+  /// Asks the visible page for its text by injecting the collector. The answer arrives
+  /// through the console handler above, which is the only path that stores it.
+  void RequestAiPageText(BrowserWindow* window);
+  app::AiState ai_state() const override { return ai_.Snapshot(); }
   /// The resource policy of the mode running right now: the request guard reads it
   /// on every load, so it must be the live policy, not the one captured at launch.
   const core::RuntimePolicy& runtime_policy() const { return host_->plan().runtime; }
@@ -128,6 +144,7 @@ class BrowserShellImpl : public BrowserShell {
 
   app::MetricsSampler metrics_;
   core::Blocklist shield_;
+  app::AiController ai_;
   core::MemoryPolicy policy_;
   core::AutoPilot auto_pilot_;
   core::MemoryDecision last_decision_;

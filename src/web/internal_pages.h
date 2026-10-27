@@ -38,6 +38,11 @@ enum class PageKind {
   kDownloads,
   kFind,
   kBench,    // rendering/script benchmark (the measuring stick for speed claims)
+  kTor,       // Tor mode: what it does, what it does not, and whether it is reachable
+  kSecurity,  // connection details for the page the indicator was clicked on
+  kShield,    // the tracker shield: what it blocks, and what the user's own file added
+  kAi,        // built-in AI: provider, key state, prompt, answer - and what is sent
+  kExtensions,
   kError,    // what a failed load means, in plain language (core::ExplainNetError)
   kUnknown,  // anything else -> a helpful "no such page" listing
 };
@@ -88,6 +93,68 @@ struct PageData {
   std::string session_json;
   /// Escape hatch for the app: extra HTML appended to the About page.
   std::string extra_about_html;
+  // --- native features (browserx://tor, browserx://extensions) -----------------
+  /// The address whose connection details are shown on browserx://security. Empty when the
+  /// page is opened directly, with nothing to explain.
+  std::string security_url;
+  /// True when the browser was started with Tor mode on.
+  bool tor_on = false;
+  int tor_port = 9050;
+  /// Whether something answered on the SOCKS port; the page must not guess.
+  bool tor_reachable = false;
+  /// What the probe found, in plain words.
+  std::string tor_status;
+  /// The leak surface, verbatim from core::TorWarnings(). Never empty when tor_on.
+  std::vector<std::string> tor_warnings;
+  bool extensions_on = true;
+  std::string extensions_dir;
+  /// Every folder that was searched, in order. A user who put an extension somewhere else
+  /// needs to see that this browser looked in a specific list, not "everywhere".
+  std::vector<std::string> extension_roots;
+  /// One line per extension: name, version, manifest generation.
+  std::vector<std::string> extension_lines;
+  /// Why each refused folder was refused.
+  std::vector<std::string> extension_refused;
+  // --- built-in AI (browserx://ai) --------------------------------------------
+  /// "cortex" | "ollama" | "cloud". The page shows the location, not just the name.
+  std::string ai_provider = "ollama";
+  std::string ai_provider_label = "Ollama";
+  std::string ai_location;   // one sentence: does the prompt leave this machine?
+  std::string ai_endpoint;
+  std::string ai_model;
+  std::string ai_problem;    // non-empty: the page says what is wrong, not a spinner
+  std::vector<std::string> ai_status_lines;
+  std::vector<std::string> ai_privacy_notes;
+  std::vector<std::string> ai_models;      // from the last successful test, if any
+  std::string ai_models_note;              // "not tested yet" / "test failed: …"
+  std::string ai_question;                 // the last question, so a reload does not lose it
+  std::string ai_prompt_preview;           // exactly what would be sent for a summary
+  std::vector<std::string> ai_turns;       // questions asked, oldest first
+  std::vector<std::string> ai_answers;     // answers, aligned with ai_turns
+  std::vector<std::string> ai_turn_errors; // failures, aligned with ai_turns
+  std::string ai_turn_disclaimer;          // "generated text, not a source"
+  std::string page_title;                  // the visible page, for the text attachment
+  std::string page_url;
+  std::string ai_request_preview;          // the last request, key redacted
+  int ai_context_chars = 0;
+  std::string ai_store_note;               // where the key lives, in plain words
+
+  // --- the shield (browserx://shield) -----------------------------------------
+  bool shield_on = true;
+  /// Rules in the live list: curated defaults plus whatever the user's file added.
+  size_t shield_rules = 0;
+  /// `core::Blocklist::Describe()`-style counts per category, pre-formatted.
+  std::vector<std::string> shield_categories;
+  /// `<profile>/rules.txt` and what came out of it.
+  std::string rules_file;
+  bool rules_present = false;
+  size_t rules_added = 0;
+  size_t rules_duplicates = 0;
+  size_t rules_skipped = 0;
+  /// The lines the importer did not understand. Shown verbatim: a skip count alone would
+  /// not tell the user whether their list or the importer is at fault.
+  std::vector<std::string> rules_examples;
+
   /// The user's search template (core::Settings::search_template). The start page
   /// searches where the omnibox searches; the default is only a fallback for callers
   /// that render pages without settings (tests, the preview).

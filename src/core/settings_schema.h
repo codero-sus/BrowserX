@@ -84,6 +84,21 @@ struct Settings {
   bool ask_where_to_save = false;
   int history_limit = 20000;
 
+  // --- built-in AI ---------------------------------------------------------
+  // Stored here because this is the one file the user already knows about, and because a
+  // separate key file would be one more thing to lose. `ai_api_key` is plain text, and the
+  // AI page says so: pretending otherwise with an obfuscation layer would be security
+  // theatre on a file this browser writes itself.
+  std::string ai_provider = "ollama";              // "cortex" | "ollama" | "cloud"
+  std::string ai_endpoint;                        // empty = the provider's default
+  std::string ai_model;                           // empty = the provider picks
+  std::string ai_api_key;                         // cloud only
+  double ai_temperature = 0.2;
+  int ai_max_tokens = 512;
+  bool ai_send_page_context = false;              // attach visible page text?
+  int ai_max_context_chars = 4000;
+  bool ai_stream = false;                         // stored for the next protocol change
+
   // --- diagnostics ---------------------------------------------------------
   std::string log_level = "info";
   bool verbose_startup_timing = false;

@@ -40,6 +40,8 @@ struct Paths {
   std::string history_file() const;
   std::string bookmarks_file() const;
   std::string session_file() const;
+  /// `<profile>/rules.txt`: the user's own block list (hosts-file or `||host^` lines).
+  std::string rules_file() const;
   std::string log_file() const;
 };
 

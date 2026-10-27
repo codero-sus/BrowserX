@@ -204,3 +204,97 @@ TEST(Blocklist, AllowlistingASiteAlsoAllowsWhatThatSiteLoads) {
   EXPECT_TRUE(match.category == BlockCategory::kAnalytics);
   EXPECT_TRUE(match.matched_rule);
 }
+
+// --- importing a user's own list -------------------------------------------
+// The importer's job is to be trusted: every line it does not understand must be counted
+// as skipped, never approximated into a rule that pretends to work.
+TEST(Blocklist, ImportsHostsFileLines) {
+  Blocklist list;
+  const Blocklist::ImportReport report = list.ImportRules(
+      "# my hosts file\n"
+      "0.0.0.0 ads.example.com\n"
+      "127.0.0.1  tracker.example.net  # trailing comment\n");
+  EXPECT_EQ(report.added, 2u);
+  EXPECT_EQ(report.skipped, 0u);
+  EXPECT_TRUE(list.DecideDetailed("news.example", "ads.example.com", "/a.js",
+                                  ResourceType::kScript)
+                  .decision == BlockDecision::kBlock);
+  EXPECT_TRUE(list.DecideDetailed("news.example", "sub.tracker.example.net", "/a.png",
+                                  ResourceType::kImage)
+                  .decision == BlockDecision::kBlock)
+      << "a host rule covers subdomains, as it does in every hosts-based blocker";
+}
+
+TEST(Blocklist, ImportsSimpleAbpHostRules) {
+  Blocklist list;
+  const Blocklist::ImportReport report =
+      list.ImportRules("! title\n||ads.example^\n||cdn.tracker.example^\n");
+  EXPECT_EQ(report.added, 2u);
+  EXPECT_EQ(report.skipped, 0u);
+  EXPECT_TRUE(list.DecideDetailed("site.example", "ads.example", "/x", ResourceType::kScript)
+                  .decision == BlockDecision::kBlock);
+}
+
+TEST(Blocklist, SkipsSyntaxItDoesNotImplementInsteadOfGuessing) {
+  Blocklist list;
+  const Blocklist::ImportReport report = list.ImportRules(
+      "example.com##.ad-banner\n"      // element hiding
+      "||ads.example^$third-party\n"   // options
+      "/banner\\d+\\.gif/\n"           // regex
+      "|https://exact.example/|\n"     // exact anchor
+      "0.0.0.0\n");                    // address with no name
+  EXPECT_EQ(report.added, 0u);
+  EXPECT_EQ(report.skipped, 5u);
+  EXPECT_EQ(report.examples.size(), 5u) << "the user must be able to see what was skipped";
+  EXPECT_TRUE(report.examples[0].find("##") != std::string::npos);
+}
+
+TEST(Blocklist, DeduplicatesWithinTheFileAndAgainstTheExistingList) {
+  Blocklist list;
+  list.AddRule("already.example", BlockCategory::kAds);
+  const Blocklist::ImportReport report =
+      list.ImportRules("0.0.0.0 already.example\n"
+                       "0.0.0.0 new.example\n"
+                       "||new.example^\n");
+  EXPECT_EQ(report.added, 1u);
+  EXPECT_EQ(report.duplicates, 2u);
+  EXPECT_EQ(report.skipped, 0u);
+}
+
+TEST(Blocklist, NeverBlocksThisMachine) {
+  Blocklist list;
+  const Blocklist::ImportReport report =
+      list.ImportRules("127.0.0.1 localhost\n0.0.0.0 localhost.localdomain\n0.0.0.0 router\n");
+  EXPECT_EQ(report.added, 0u) << "blocking localhost breaks loopback pages and the updater";
+  EXPECT_EQ(report.skipped, 3u);
+}
+
+TEST(Blocklist, ImportedRulesAreFoundImmediatelyAndClassifiedByArgument) {
+  Blocklist list;
+  const size_t before = list.rule_count();
+  const Blocklist::ImportReport report =
+      list.ImportRules("||metrics.example^\n", BlockCategory::kAnalytics);
+  EXPECT_EQ(list.rule_count(), before + 1);
+  EXPECT_EQ(report.added, 1u);
+  const BlockMatch match =
+      list.DecideDetailed("news.example", "metrics.example", "/v1", ResourceType::kScript);
+  EXPECT_TRUE(match.decision == BlockDecision::kBlock);
+  EXPECT_TRUE(match.category == BlockCategory::kAnalytics)
+      << "an imported rule reports the category the user chose, not a guess";
+}
+
+TEST(Blocklist, HandlesCrLfAndAMissingTrailingNewline) {
+  Blocklist list;
+  const Blocklist::ImportReport report = list.ImportRules("0.0.0.0 one.example\r\n0.0.0.0 two.example");
+  EXPECT_EQ(report.added, 2u) << "a file that ends without a newline still ends with a rule";
+  EXPECT_EQ(report.skipped, 0u);
+}
+
+TEST(Blocklist, EmptyInputImportsNothingAndSaysSo) {
+  Blocklist list;
+  const size_t before = list.rule_count();
+  const Blocklist::ImportReport report = list.ImportRules("");
+  EXPECT_EQ(report.added, 0u);
+  EXPECT_EQ(report.skipped, 0u);
+  EXPECT_EQ(list.rule_count(), before);
+}

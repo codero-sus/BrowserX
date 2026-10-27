@@ -182,6 +182,118 @@ void Blocklist::AddDefaults() {
   RebuildIndex();
 }
 
+namespace {
+
+// A host rule has to be a host. Without this check a line like `example.com##.ad-banner`
+// (element hiding, not a host rule) would be imported as a rule for a "host" called
+// `example.com##.ad-banner`, which matches nothing and quietly inflates the rule count.
+bool LooksLikeHost(const std::string& host) {
+  if (host.empty() || host.size() > 253) return false;
+  if (host.front() == '.' || host.front() == '-' || host.back() == '.' || host.back() == '-') {
+    return false;
+  }
+  bool only_address_chars = true;
+  for (const char c : host) {
+    const bool alpha = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    if (!alpha && c != '.' && c != '-') return false;
+    if (c != '.' && !(c >= '0' && c <= '9') && c != ':') only_address_chars = false;
+  }
+  if (host.find("..") != std::string::npos) return false;
+  return !only_address_chars;  // 0.0.0.0 / 127.0.0.1 are addresses, not names
+}
+
+}  // namespace
+
+Blocklist::ImportReport Blocklist::ImportRules(std::string_view text,
+                                                BlockCategory category) {
+  ImportReport report;
+  std::vector<std::string> seen;  // patterns already in the list, for duplicate counting
+  for (const BlockRule& rule : rules_) {
+    if (!rule.path_rule) seen.push_back(rule.pattern);
+  }
+
+  size_t line_start = 0;
+  while (line_start < text.size()) {
+    size_t line_end = text.find('\n', line_start);
+    if (line_end == std::string_view::npos) line_end = text.size();
+    std::string line(fmt::Trim(text.substr(line_start, line_end - line_start)));
+    line_start = line_end + 1;  // one past the newline; == size() ends the loop
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty()) continue;
+    // Comments: hosts files use '#', filter lists use '!'. Both are common enough that
+    // rejecting either would look like the importer was broken.
+    if (line[0] == '#' || line[0] == '!') continue;
+    // Hosts-file section markers ([Adblock Plus 2.0]) are headers, not rules.
+    if (line.front() == '[' && line.back() == ']') continue;
+
+    std::string host;
+    if (line.rfind("||", 0) == 0) {
+      // ||ads.example^  - the anchor means "this host and its subdomains" in ABP, which
+      // is what a host-suffix match already does here. Only a bare host rule is
+      // understood; anything carrying options or wildcards is skipped, not approximated.
+      std::string rest = line.substr(2);
+      if (!rest.empty() && rest.back() == '^') rest.pop_back();
+      if (rest.empty() || rest.find_first_of("^*/$|") != std::string::npos ||
+          rest.find_first_of(" \t") != std::string::npos) {
+        ++report.skipped;
+        if (report.examples.size() < 5) report.examples.push_back(line);
+        continue;
+      }
+      host = rest;
+    } else if (line[0] == '|') {
+      // Single-pipe anchors (||...| exact, |... prefix) are not host rules.
+      ++report.skipped;
+      if (report.examples.size() < 5) report.examples.push_back(line);
+      continue;
+    } else {
+      // Hosts file: an address, whitespace, then one or more names.
+      size_t space = line.find_first_of(" \t");
+      if (space == std::string::npos) {
+        // A bare domain is a reasonable thing for a person to type into a rule file.
+        host = line;
+      } else {
+        const std::string address = line.substr(0, space);
+        if (address != "0.0.0.0" && address != "127.0.0.1" && address != "::" &&
+            address != "::1") {
+          ++report.skipped;  // a real address mapping is not an ad rule
+          if (report.examples.size() < 5) report.examples.push_back(line);
+          continue;
+        }
+        size_t name_start = line.find_first_not_of(" \t", space);
+        if (name_start == std::string::npos) {
+          ++report.skipped;
+          if (report.examples.size() < 5) report.examples.push_back(line);
+          continue;
+        }
+        size_t name_end = line.find_first_of(" \t", name_start);
+        host = line.substr(name_start, name_end == std::string::npos
+                                         ? std::string::npos
+                                         : name_end - name_start);
+      }
+    }
+
+    host = fmt::ToLower(fmt::Trim(host));
+    if (host == "localhost" || host == "localhost.localdomain" || host.empty()) {
+      ++report.skipped;  // never block the machine you are on
+      continue;
+    }
+    if (host.find('.') == std::string::npos || !LooksLikeHost(host)) {
+      ++report.skipped;  // a LAN name, an address, or syntax this importer does not read
+      if (report.examples.size() < 5) report.examples.push_back(line);
+      continue;
+    }
+    if (std::find(seen.begin(), seen.end(), host) != seen.end()) {
+      ++report.duplicates;
+      continue;
+    }
+    seen.push_back(host);
+    AppendRule(host, category);
+    ++report.added;
+  }
+  if (report.added > 0) RebuildIndex();
+  return report;
+}
+
 void Blocklist::AllowlistHost(std::string host) {
   const std::string normalized = fmt::ToLower(fmt::Trim(host));
   if (normalized.empty()) return;

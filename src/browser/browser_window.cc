@@ -38,6 +38,9 @@ constexpr cef_color_t kColorText = 0xFFE9EFF7;
 constexpr cef_color_t kColorTextDim = 0xFF94A3B8;
 constexpr cef_color_t kColorAccent = 0xFF3DDC84;
 constexpr cef_color_t kColorAccentAlt = 0xFF4AA8FF;
+// Amber, not red: plain HTTP is a caution about what the wire can do, not an alarm about
+// the page. Red is kept for things that are actually wrong.
+constexpr cef_color_t kColorWarn = 0xFFE0A92F;
 
 constexpr int kToolbarHeight = 48;
 constexpr int kStatusHeight = 24;
@@ -105,6 +108,9 @@ CefSize ToolbarButtonDelegate::GetMinimumSize(CefRefPtr<CefView> view) {
 CefSize ToolbarButtonDelegate::GetMaximumSize(CefRefPtr<CefView> view) {
   // The shield button carries a wider glyph and a blocked count.
   if (view.get() != nullptr && view->GetID() == kIdShield) return CefSize(64, kButtonHeight);
+  // The security indicator is one glyph; giving it a full button's width would push the
+  // omnibox right for no benefit.
+  if (view.get() != nullptr && view->GetID() == kIdSecurity) return CefSize(34, kButtonHeight);
   return CefSize(kButtonWidth * 2, kButtonHeight);
 }
 
@@ -205,6 +211,9 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   omnibox_->SetAccessibleName("Address and search bar");
   omnibox_->SetBackgroundColor(kColorField);
 
+  security_button_ = MakeToolbarButton(button_delegate_, kIdSecurity, "\xE2\x80\xA6",
+                                       "Connection information");
+  security_button_->SetTextColor(CEF_BUTTON_STATE_NORMAL, kColorTextDim);
   shield_button_ = MakeToolbarButton(button_delegate_, kIdShield, "\xF0\x9F\x9B\xA1", "Tracker shield");
   mode_button_ = CefMenuButton::CreateMenuButton(menu_delegate_, "ULTRA");
   mode_button_->SetID(kIdMode);
@@ -220,6 +229,7 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   toolbar_->AddChildView(forward_button_);
   toolbar_->AddChildView(reload_button_);
   toolbar_->AddChildView(home_button_);
+  toolbar_->AddChildView(security_button_);
   toolbar_->AddChildView(omnibox_);
   toolbar_->AddChildView(shield_button_);
   toolbar_->AddChildView(mode_button_);
@@ -322,6 +332,12 @@ void BrowserWindow::BuildChrome(CefRefPtr<CefWindow> window, CefRefPtr<CefPanel>
   // The benchmark page is the on-machine measuring stick, so it gets a key of its own -
   // running the same file in another browser is the whole point of it.
   bind(kIdOpenBench, 'B', true, true, false);
+  // Ctrl+Shift+H: "show me the CAPTCHA". Ctrl+Shift+C/H are the conventions browsers use
+  // for developer and helper tools; H is free and mnemonic enough for "human check".
+  bind(kIdCaptchaAssist, 'H', true, true, false);
+  // Ctrl+Shift+A for the AI panel: A for assistant, and not taken by any browser
+  // convention that would make it surprising.
+  bind(kIdOpenAi, 'A', true, true, false);
   // The jump list: every page and every mode, from anywhere, on one key.
   bind(kIdJumpTo, 'K', false, true, false);
   // Only one more is worth a key: PRIVACY is the other mode people reach for in a
@@ -395,6 +411,24 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
         browser_->Reload();
       }
       return;
+    case kIdSecurity:
+      // The page, not a tooltip: connection details are prose, and prose in a tooltip is
+      // prose nobody reads.
+      OpenInternalPage("security" + (current_url_.empty()
+                                        ? std::string()
+                                        : std::string("?url=") +
+                                              core::url::EncodeQuery(current_url_, false)));
+      return;
+    case kIdCaptchaAssist:
+      if (!captcha_seen_ || browser_.get() == nullptr) {
+        SetStatusText("No CAPTCHA seen on this page.");
+        return;
+      }
+      // Show it. Never solve it, never click it - see core/captcha_assist.h.
+      browser_->GetMainFrame()->ExecuteJavaScript(core::HighlightScript(), "", 0);
+      SetStatusText(std::string("Showing ") + core::CaptchaName(captcha_) +
+                    " - it is yours to complete.");
+      return;
     case kIdHome:
       Navigate(shell_->home_page());
       return;
@@ -464,6 +498,10 @@ void BrowserWindow::OnToolbarCommand(int command_id) {
     case kIdOpenSettings: OpenInternalPage("settings"); return;
     case kIdOpenTelemetry: OpenInternalPage("telemetry"); return;
     case kIdOpenModes: OpenInternalPage("modes"); return;
+    case kIdOpenTor: OpenInternalPage("tor"); return;
+    case kIdOpenExtensions: OpenInternalPage("extensions"); return;
+    case kIdOpenShield: OpenInternalPage("shield"); return;
+    case kIdOpenAi: OpenInternalPage("ai"); return;
     case kIdOpenBench: OpenInternalPage("bench"); return;
     case kIdOpenShortcuts: OpenInternalPage("shortcuts"); return;
     case kIdOpenHistory: OpenInternalPage("history"); return;
@@ -578,6 +616,55 @@ void BrowserWindow::Close() {
     if (browser.get() != nullptr) browser->GetHost()->CloseBrowser(/*force_close=*/false);
   }
   if (views.empty() && window_.get() != nullptr && window_->IsValid()) window_->Close();
+}
+
+void BrowserWindow::SetStatusText(const std::string& text) {
+  status_message_ = text;
+  if (status_left_.get() != nullptr && status_left_->IsValid()) status_left_->SetText(text);
+}
+
+void BrowserWindow::UpdateSecurityIndicator() {
+  transport_ = core::ClassifyTransport(current_url_);
+  if (security_button_.get() == nullptr || !security_button_->IsValid()) return;
+  security_button_->SetText(core::TransportGlyph(transport_));
+  // The tooltip carries the label and the first sentence of the explanation: enough to be
+  // useful on hover, and the page has the rest.
+  std::string tip = core::TransportLabel(transport_);
+  const std::string detail = core::TransportDetail(transport_);
+  const size_t stop = detail.find(". ");
+  tip += " - ";
+  tip += stop == std::string::npos ? detail : detail.substr(0, stop + 1);
+  tip += " Click for details.";
+  security_button_->SetTooltipText(tip);
+  // Colour is the second signal. Relying on the glyph alone would be a design that assumes
+  // everyone reads emoji the same way.
+  security_button_->SetTextColor(
+      CEF_BUTTON_STATE_NORMAL,
+      core::NeedsWarning(transport_) ? kColorWarn : kColorTextDim);
+}
+
+void BrowserWindow::InjectCaptchaDetector() {
+  if (browser_.get() == nullptr) return;
+  CefRefPtr<CefFrame> frame = browser_->GetMainFrame();
+  if (frame.get() == nullptr) return;
+  // Only pages that can contain one. Injecting into browserx:// or file:// pages would run
+  // our script on our own UI for no reason.
+  if (transport_ != core::Transport::kSecure && transport_ != core::Transport::kInsecure) {
+    return;
+  }
+  frame->ExecuteJavaScript(core::DetectorScript(), "", 0);
+}
+
+void BrowserWindow::InjectAiPageTextCollector() {
+  if (browser_.get() == nullptr) return;
+  CefRefPtr<CefFrame> frame = browser_->GetMainFrame();
+  if (frame.get() == nullptr) return;
+  if (transport_ != core::Transport::kSecure && transport_ != core::Transport::kInsecure) {
+    return;  // a browserx:// page has no article to summarise
+  }
+  ai_text_url_ = current_url_;
+  ai_text_title_ = current_title_;
+  frame->ExecuteJavaScript(core::PageTextScript(), "", 0);
 }
 
 void BrowserWindow::UpdateStatus(const std::string& left, const std::string& right) {
@@ -763,7 +850,18 @@ void BrowserWindow::ShowMainMenu(const CefPoint& screen_point) {
   model->AddItem(kIdOpenBookmarks, "Bookmarks");
   model->AddItem(kIdOpenDownloads, "Downloads");
   model->AddSeparator();
+  // Grouped, and above the utility items, because these are the four features that are
+  // specific to this browser rather than to any browser.
+  model->AddItem(kIdOpenAi, "AI assistant\tCtrl+Shift+A");
+  model->AddItem(kIdSecurity, "Connection details for this page");
+  model->AddItem(kIdOpenTor, "Tor mode...");
+  model->AddItem(kIdOpenExtensions, "Extensions...");
+  model->AddItem(kIdCaptchaAssist, "Show the CAPTCHA on this page\tCtrl+Shift+H");
+  model->AddSeparator();
   model->AddItem(kIdToggleShield, "Toggle tracker shield");
+  // The page explains what the shield does and what it does not: a toggle alone would
+  // leave "weak" as something the user has to find out for themselves.
+  model->AddItem(kIdOpenShield, "Shield rules and import...");
   model->AddItem(kIdFindInPage, "Find in page\tCtrl+F");
   model->AddItem(kIdPrint, "Print\tCtrl+P");
   model->AddItem(kIdDevTools, "Developer tools\tF12");
@@ -1099,6 +1197,11 @@ void BrowserWindow::OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<Cef
   if (tab_id != 0) session_.SetUrl(tab_id, address);
   if (browser_ == nullptr || browser != browser_) return;  // background tab
   current_url_ = address;
+  UpdateSecurityIndicator();
+  // A tab activated after it finished loading never saw a load-end event in this window,
+  // so the detector is re-injected here. The script's own guard makes that a no-op when it
+  // is already running.
+  if (!loading_) InjectCaptchaDetector();
   if (omnibox_.get() != nullptr && omnibox_->IsValid() && !omnibox_->HasFocus()) {
     // Idle omnibox shows the readable form; the raw URL appears on focus.
     omnibox_->SetText(core::url::PrettyForDisplay(current_url_, 200));
@@ -1140,6 +1243,35 @@ void BrowserWindow::OnFullscreenModeChange(CefRefPtr<CefBrowser> browser, bool f
 
 bool BrowserWindow::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
                                      const CefString& message, const CefString& source, int line) {
+  // CAPTCHA assist listens on the console channel (core/captcha_assist.h explains why).
+  // Detection only: nothing here acts on the page.
+  core::CaptchaKind kind = core::CaptchaKind::kUnknown;
+  if (core::ParseDetectorMessage(message.ToString(), &kind) &&
+      browser_ != nullptr && browser == browser_) {
+    captcha_ = kind;
+    captcha_seen_ = true;
+    // The notice says what BrowserX will not do, in the same breath as saying what it
+    // found - otherwise "CAPTCHA detected" reads as "dealt with".
+    SetStatusText(std::string("CAPTCHA on this page (") + core::CaptchaName(kind) +
+                  "). BrowserX will not solve or click it - Ctrl+Shift+H shows you where.");
+    return false;
+  }
+
+  // The AI page's "attach this page" uses the same channel for the same reason: the text
+  // is read by the browser process, not fetched by the page's own script.
+  std::string page_text;
+  if (core::ParsePageTextMessage(message.ToString(), &page_text) &&
+      browser_ != nullptr && browser == browser_ && shell_ != nullptr) {
+    std::vector<std::string> lines;
+    if (!page_text.empty()) lines.push_back(page_text);
+    // The URL stored with the text is the one the collector ran on, not whatever the
+    // address bar shows now: an answer about the wrong page is worse than none.
+    shell_->NoteAiPageText(ai_text_url_.empty() ? current_url_ : ai_text_url_,
+                           ai_text_title_.empty() ? current_title_ : ai_text_title_,
+                           std::move(lines));
+    return false;
+  }
+
   const core::LogLevel mapped = level <= LOGSEVERITY_ERROR ? core::LogLevel::kError
                                                           : core::LogLevel::kDebug;
   core::Logger::Get().Log(mapped, "page",
@@ -1157,6 +1289,21 @@ void BrowserWindow::OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool is_
     return;  // background tab: no toolbar changes
   }
   loading_ = is_loading;
+  if (is_loading) {
+    // A new navigation clears the previous page's challenge: a notice that survived to the
+    // next page would be a claim about a page nobody looked at.
+    captcha_seen_ = false;
+    captcha_ = core::CaptchaKind::kUnknown;
+  } else {
+    // Inject after the load, not before: the detector observes mutations, so starting it
+    // on a parsed document catches widgets that appear later.
+    InjectCaptchaDetector();
+    // The AI panel needs the visible text of the page it will summarise, and by the time
+    // the panel is open the page is no longer visible to the panel's own script. The text
+    // is read locally into this process and is never sent unless the person asks; the AI
+    // page states that in as many words.
+    InjectAiPageTextCollector();
+  }
   if (back_button_.get() != nullptr && back_button_->IsValid()) back_button_->SetEnabled(can_go_back);
   if (forward_button_.get() != nullptr && forward_button_->IsValid()) {
     forward_button_->SetEnabled(can_go_forward);

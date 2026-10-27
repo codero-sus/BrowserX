@@ -26,6 +26,11 @@
 #include "core/chromium_catalog.h"
 #include "core/json.h"
 #include "core/library.h"
+#include "app/ai_session.h"
+#include "core/ai.h"
+#include "core/blocklist.h"
+#include "core/security_state.h"
+#include "core/tor.h"
 #include "core/mode_engine.h"
 #include "core/report.h"
 #include "core/system_profile.h"
@@ -101,6 +106,70 @@ int main(int argc, char** argv) {
   data.plan_text = active_plan.ToReport();
   data.catalog_report = browserx::core::RenderCatalogReport(/*include_removed=*/false);
 
+  // The native-feature pages, with representative state: a Tor run that was configured
+  // but whose daemon is not listening, and one extension plus one refusal, so every
+  // branch of the page is visible in `make pages`.
+  data.tor_on = true;
+  data.tor_port = 9050;
+  data.tor_reachable = false;
+  data.tor_status = browserx::core::DescribeTorStatus(false, 9050);
+  data.tor_warnings = browserx::core::TorWarnings();
+  data.extensions_on = true;
+  data.extensions_dir = "/profile/extensions";
+  data.extension_lines = {"uBlock Origin 1.60.0 - Manifest V2"};
+  data.extension_refused = {"broken: manifest.json is not valid JSON"};
+  data.shield_on = true;
+  {
+    browserx::core::Blocklist defaults;
+    defaults.AddDefaults();
+    data.shield_rules = defaults.rule_count();
+    for (const browserx::core::BlockCategory category :
+         {browserx::core::BlockCategory::kAds, browserx::core::BlockCategory::kAnalytics,
+          browserx::core::BlockCategory::kSocial, browserx::core::BlockCategory::kCrypto,
+          browserx::core::BlockCategory::kFingerprint}) {
+      size_t count = 0;
+      for (const browserx::core::BlockRule& rule : defaults.rules()) {
+        if (rule.category == category) ++count;
+      }
+      data.shield_categories.push_back(
+          std::string(browserx::core::BlockCategoryLabel(category)) + " - " +
+          std::to_string(count) + " rules");
+    }
+  }
+  data.rules_file = "/profile/rules.txt";
+  data.rules_present = true;
+  data.rules_added = 3;
+  data.rules_duplicates = 1;
+  data.rules_skipped = 2;
+  data.rules_examples = {"example.com##.ad-banner", "||ads.example^$third-party"};
+  data.security_url = "http://example.com/";
+
+  // The AI page: a local provider, one answered question, and the prompt preview, so the
+  // dump shows the page a person actually sees rather than an empty shell.
+  data.ai_provider = "ollama";
+  data.ai_provider_label = "Ollama";
+  data.ai_location = browserx::core::AiProviderLocation(browserx::core::AiProvider::kOllama);
+  data.ai_endpoint = "http://127.0.0.1:11434";
+  data.ai_model = "";
+  {
+    browserx::app::AiSession session;
+    browserx::core::Settings settings = browserx::core::Settings::Defaults();
+    session.LoadFromSettings(settings);
+    data.ai_status_lines = session.StatusLines();
+  }
+  data.ai_privacy_notes = browserx::core::AiPrivacyNotes();
+  data.ai_turn_disclaimer = browserx::core::AiAnswerDisclaimer();
+  data.ai_store_note = "A local provider needs no key.";
+  data.ai_turns = {"What is this page about?"};
+  data.ai_answers = {"A short sample answer, shown so the layout can be reviewed offline."};
+  data.ai_turn_errors = {""};
+  data.ai_question = data.ai_turns.back();
+  data.ai_prompt_preview = browserx::core::BuildSummaryPrompt(
+      "Example page", "https://example.com/article", "Some visible page text.", 4000);
+  data.ai_context_chars = 21;
+  data.page_title = "Example page";
+  data.page_url = "https://example.com/article";
+
   std::vector<browserx::core::ModePlan> plans;
   for (const browserx::core::ModeInfo& info : browserx::core::AllModes()) {
     plans.push_back(browserx::core::BuildPlan(info.mode, context));
@@ -173,7 +242,10 @@ int main(int argc, char** argv) {
         browserx::web::PageKind::kShortcuts, browserx::web::PageKind::kCatalog,
         browserx::web::PageKind::kSession, browserx::web::PageKind::kAbout,
         browserx::web::PageKind::kHistory, browserx::web::PageKind::kBookmarks,
-        browserx::web::PageKind::kFind, browserx::web::PageKind::kError}) {
+        browserx::web::PageKind::kFind, browserx::web::PageKind::kError,
+        browserx::web::PageKind::kTor, browserx::web::PageKind::kExtensions,
+        browserx::web::PageKind::kSecurity, browserx::web::PageKind::kShield,
+        browserx::web::PageKind::kAi}) {
     const std::string path = output_dir + "/" + browserx::web::PageName(kind) + ".html";
     if (!WriteFile(path, browserx::web::RenderPage(kind, data))) return 1;
     std::printf("  wrote %s\n", path.c_str());
